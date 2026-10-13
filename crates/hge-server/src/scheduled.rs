@@ -39,8 +39,8 @@ pub fn prepare(metadata: &Metadata) -> (ScheduledTriggers, Vec<InconsistentObjec
             Err(e) => issues.push(InconsistentObject::new(
                 "cron_trigger",
                 format!("cron_trigger {name}"),
-                e,
-                raw.clone(),
+                format!("in cron trigger {name}: {e}"),
+                hge_events::admin::sorted(raw.clone()),
             )),
         }
     }

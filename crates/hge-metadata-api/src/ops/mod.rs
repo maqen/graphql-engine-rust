@@ -4,8 +4,10 @@
 //! then calls `ctx.check(..)` (modifying commands) or just reads state.
 
 pub mod actions;
+mod args;
 pub mod event_triggers;
 pub mod metadata;
+pub mod scheduled;
 
 use hge_core::Code;
 use serde_json::Value;
@@ -197,6 +199,15 @@ pub async fn run_agnostic<R: Runtime>(ctx: &mut Ctx<'_, R>, cmd: &Command) -> Ap
             event_triggers::switch_event_trigger_cleanups(ctx, args, false).await
         }
         "test_webhook_transform" => actions::test_webhook_transform(args),
+        "create_cron_trigger" => scheduled::create_cron_trigger(ctx, args).await,
+        "delete_cron_trigger" => scheduled::delete_cron_trigger(ctx, args).await,
+        "get_cron_triggers" => scheduled::get_cron_triggers(ctx),
+        "create_scheduled_event" => scheduled::create_scheduled_event(ctx, args).await,
+        "delete_scheduled_event" => scheduled::delete_scheduled_event(ctx, args).await,
+        "get_scheduled_events" => scheduled::get_scheduled_events(ctx, args).await,
+        "get_scheduled_event_invocations" => {
+            scheduled::get_scheduled_event_invocations(ctx, args).await
+        }
         name => Err(not_implemented(name)),
     }
 }

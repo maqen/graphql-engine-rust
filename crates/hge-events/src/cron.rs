@@ -241,6 +241,35 @@ impl CronSchedule {
         Self::parse_fields(lower.split_whitespace().collect())
     }
 
+    /// [`CronSchedule::parse`] with the attoparsec messages V2 reports for a bad schedule
+    /// (`Failed reading: takeWhile1`, `' ': not enough input`, `endOfInput`, ...).
+    pub fn parse_v2(s: &str) -> Result<CronSchedule, String> {
+        CronSchedule::parse(s).map_err(|_| {
+            let lower = s.to_lowercase();
+            let parts: Vec<&str> = lower.split(' ').collect();
+            let kinds = [
+                Kind::Minute,
+                Kind::Hour,
+                Kind::DayOfMonth,
+                Kind::Month,
+                Kind::DayOfWeek,
+            ];
+            for (i, kind) in kinds.into_iter().enumerate() {
+                let Some(part) = parts.get(i) else {
+                    return "' ': not enough input".to_owned();
+                };
+                if let Err(e) = parse_field(part, kind) {
+                    return if e.starts_with(kind.out_of_range_msg()) {
+                        format!("Failed reading: {}", kind.out_of_range_msg())
+                    } else {
+                        "Failed reading: takeWhile1".to_owned()
+                    };
+                }
+            }
+            "endOfInput".to_owned()
+        })
+    }
+
     fn keyword(s: &str) -> Option<CronSchedule> {
         let spec = match s {
             "@yearly" => "0 0 1 1 *",
@@ -585,6 +614,19 @@ pub fn format_utc(secs: i64) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn v2_messages() {
+        let err = |s: &str| CronSchedule::parse_v2(s).unwrap_err();
+        assert_eq!(err("garbage"), "Failed reading: takeWhile1");
+        assert_eq!(err("* * * *"), "' ': not enough input");
+        assert_eq!(err("61 * * * *"), "Failed reading: minutes out of range");
+        assert_eq!(err("* * * * * *"), "endOfInput");
+        assert_eq!(
+            CronSchedule::parse_v2("@daily").unwrap().to_string(),
+            "0 0 * * *"
+        );
+    }
+
     use super::*;
 
     /// Parse `YYYY-MM-DDTHH:MM:SSZ`.

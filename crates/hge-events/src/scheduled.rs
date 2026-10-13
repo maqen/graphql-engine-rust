@@ -376,14 +376,14 @@ pub enum Kind {
 }
 
 impl Kind {
-    fn events_table(self) -> &'static str {
+    pub fn events_table(self) -> &'static str {
         match self {
             Kind::Cron => "hdb_cron_events",
             Kind::OneOff => "hdb_scheduled_events",
         }
     }
 
-    fn invocations_table(self) -> &'static str {
+    pub fn invocations_table(self) -> &'static str {
         match self {
             Kind::Cron => "hdb_cron_event_invocation_logs",
             Kind::OneOff => "hdb_scheduled_event_invocation_logs",

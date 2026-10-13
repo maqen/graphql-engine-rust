@@ -1034,6 +1034,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "bytes",
+ "deadpool-postgres",
  "futures",
  "hge-actions",
  "hge-auth",
