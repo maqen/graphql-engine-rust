@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use deadpool_postgres::{Object, Pool};
-use hge_core::{Code, Error, QualifiedTable, Session, SourceCatalog};
+use hge_core::{Code, Error, QualifiedFunction, QualifiedTable, Session, SourceCatalog};
 use hge_ir::{BoxFuture, MultiplexedQuery, MultiplexedRow, Mutation, QueryRoot, SourceExecutor};
 use serde_json::json;
 use tokio_postgres::types::{ToSql, Type};
@@ -61,8 +61,12 @@ impl PgSource {
         })
     }
 
-    /// Introspect the given tables (and all enum types).
-    pub async fn introspect(&self, tables: &[QualifiedTable]) -> Result<SourceCatalog, Error> {
+    /// Introspect the given tables and functions (and all enum types).
+    pub async fn introspect(
+        &self,
+        tables: &[QualifiedTable],
+        functions: &[QualifiedFunction],
+    ) -> Result<SourceCatalog, Error> {
         let param = introspect::tables_param(tables);
         let tables_json = self
             .query_text(introspect::TABLES_SQL, &[Some(&param)])
@@ -72,7 +76,16 @@ impl PgSource {
             .query_text(introspect::ENUMS_SQL, &[])
             .await?
             .unwrap_or_else(|| "[]".to_owned());
-        introspect::parse_catalog(&tables_json, &enums_json)
+        let mut catalog = introspect::parse_catalog(&tables_json, &enums_json)?;
+        if !functions.is_empty() {
+            let param = introspect::tables_param(functions);
+            let functions_json = self
+                .query_text(introspect::FUNCTIONS_SQL, &[Some(&param)])
+                .await?
+                .unwrap_or_else(|| "[]".to_owned());
+            catalog.functions = introspect::parse_functions(&functions_json)?;
+        }
+        Ok(catalog)
     }
 
     /// Run a statement returning (at most) one row with one text column.

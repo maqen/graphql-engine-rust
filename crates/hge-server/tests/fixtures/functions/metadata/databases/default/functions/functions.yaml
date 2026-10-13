@@ -1,0 +1,5 @@
+- "!include public_search_articles.yaml"
+- "!include public_top_rated.yaml"
+- "!include public_my_articles.yaml"
+- "!include public_first_article.yaml"
+- "!include public_publish_article.yaml"

@@ -1,6 +1,6 @@
 //! Selections from tables.
 
-use hge_core::{ColumnType, QualifiedTable};
+use hge_core::{ColumnType, QualifiedFunction, QualifiedTable};
 
 use crate::{AggregateOrderBy, AggregationPredicate, RelationshipAggregate, Value};
 
@@ -15,6 +15,36 @@ pub struct Select {
     pub permission_filter: Option<BoolExp>,
     /// Row limit from permissions; the effective limit is `min(args.limit, permission_limit)`.
     pub permission_limit: Option<u64>,
+    /// Select from the rows this function returns (of type `table`) instead of the table
+    /// itself: table computed fields and tracked functions.
+    pub from_function: Option<FunctionCall>,
+}
+
+/// A call of a SQL function.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionCall {
+    pub function: QualifiedFunction,
+    pub args: Vec<FunctionArgument>,
+}
+
+/// One argument of a [`FunctionCall`]: positional, or named (`name => value`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionArgument {
+    pub name: Option<String>,
+    pub value: FunctionArgValue,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum FunctionArgValue {
+    Value(Value),
+    /// The current row of `table` (the row a computed field is evaluated on), rebuilt from
+    /// all of its `columns`.
+    Row {
+        table: QualifiedTable,
+        columns: Vec<String>,
+    },
+    /// The session variables as a `json` object (the function's session argument).
+    Session,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -36,6 +66,22 @@ pub enum Field {
     ArrayRelationship(Box<RelationshipSelect>),
     /// `<rel>_aggregate { … }`
     ArrayAggregate(Box<RelationshipAggregate>),
+    /// A scalar computed field: the function's value for the current row.
+    ComputedScalar(Box<ComputedScalarField>),
+    /// A table computed field: rows of the select's `from_function` (called on the current
+    /// row), as a JSON array.
+    ComputedTable(Box<Select>),
+}
+
+#[derive(Debug, Clone)]
+pub struct ComputedScalarField {
+    pub call: FunctionCall,
+    /// The function's return type.
+    pub ty: ColumnType,
+    /// Return the value as a JSON string (`HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES`).
+    pub stringify: bool,
+    /// `path` argument on json/jsonb results.
+    pub json_path: Option<Vec<JsonPathElement>>,
 }
 
 #[derive(Debug, Clone)]
@@ -78,6 +124,8 @@ pub enum OrderByTarget {
         column: String,
         condition: Box<BoolExp>,
     },
+    /// A scalar computed field's value for the row.
+    ComputedField(FunctionCall),
     /// A column reached through an object relationship
     /// (`mapping`: `(this column, remote column)`).
     ObjectRelationship {
@@ -132,6 +180,17 @@ pub enum BoolExp {
     Relationship {
         table: QualifiedTable,
         mapping: Vec<(String, String)>,
+        exp: Box<BoolExp>,
+    },
+    /// A scalar computed field's value for the row compared with `op`.
+    CompareComputed {
+        call: FunctionCall,
+        ty: ColumnType,
+        op: CompareOp,
+    },
+    /// Some row returned by a table computed field (called on the row) satisfies `exp`.
+    ComputedTable {
+        call: FunctionCall,
         exp: Box<BoolExp>,
     },
     /// `_exists`: some row of an unrelated table satisfies `exp`.

@@ -1,0 +1,7 @@
+function:
+  name: top_rated
+  schema: public
+configuration:
+  custom_root_fields:
+    function: best_articles
+comment: The best articles

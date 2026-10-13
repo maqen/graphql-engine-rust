@@ -6,11 +6,35 @@
 //! session variable references.
 
 use hge_core::{ColumnType, QualifiedTable};
-use hge_ir::{BoolExp, ColumnCompareOp, ColumnRef, CompareOp, Value};
+use hge_ir::{BoolExp, ColumnCompareOp, ColumnRef, CompareOp, FunctionCall, Value};
 use serde_json::Value as Json;
 
+use crate::functions::{ComputedFieldInfo, ComputedReturn};
 use crate::scalars;
 use crate::tables::{ColumnInfo, TableInfo, Tables};
+
+/// Turn the column comparisons [`Parser::column`] produced for a computed field into
+/// comparisons of its value.
+fn computed_comparison(exp: BoolExp, call: &FunctionCall) -> Result<BoolExp, PermError> {
+    Ok(match exp {
+        BoolExp::And(items) => BoolExp::And(
+            items
+                .into_iter()
+                .map(|e| computed_comparison(e, call))
+                .collect::<Result<_, _>>()?,
+        ),
+        BoolExp::Compare { ty, op, .. } => BoolExp::CompareComputed {
+            call: call.clone(),
+            ty,
+            op,
+        },
+        _ => {
+            return Err(
+                "column comparison operators are not supported on computed fields".to_owned(),
+            );
+        }
+    })
+}
 
 /// A permission problem; becomes a metadata inconsistency.
 pub type PermError = String;
@@ -85,10 +109,59 @@ impl Parser<'_> {
                         exp: Box::new(self.exp(target, root, value)?),
                     });
                 }
+                if let Some(cf) = table.computed_field(key) {
+                    return self.computed_field(table, root, cf, value);
+                }
                 Err(format!(
                     "no such column exists: \"{key}\" in table \"{}\"",
                     table.display_name()
                 ))
+            }
+        }
+    }
+
+    /// A computed field without input arguments, compared like a column (scalar) or
+    /// filtered like a relationship (table).
+    fn computed_field(
+        &self,
+        table: &TableInfo,
+        root: &TableInfo,
+        cf: &ComputedFieldInfo,
+        value: &Json,
+    ) -> Result<BoolExp, PermError> {
+        if cf.has_input_args() {
+            return Err(format!(
+                "computed field \"{}\" has input arguments and cannot be used in a boolean expression",
+                cf.name
+            ));
+        }
+        let call = cf.call(&table.name, vec![]).map_err(str::to_owned)?;
+        match &cf.returns {
+            ComputedReturn::Scalar(ty) => {
+                // Parse the operators as if the value were a column, then compare the call.
+                let as_column = ColumnInfo {
+                    name: cf.name.clone(),
+                    gql_name: cf.name.clone(),
+                    ty: ty.clone(),
+                    nullable: true,
+                    description: None,
+                    mutable: false,
+                };
+                let exp = self.column(table, root, &as_column, value)?;
+                computed_comparison(exp, &call)
+            }
+            ComputedReturn::Table(target) => {
+                let target = self.tables.get(&table.source, target).ok_or_else(|| {
+                    format!(
+                        "computed field \"{}\" of table \"{}\" returns an untracked table",
+                        cf.name,
+                        table.display_name()
+                    )
+                })?;
+                Ok(BoolExp::ComputedTable {
+                    call,
+                    exp: Box::new(self.exp(target, root, value)?),
+                })
             }
         }
     }

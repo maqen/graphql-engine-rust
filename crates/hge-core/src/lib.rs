@@ -11,10 +11,10 @@ pub mod names;
 pub mod session;
 
 pub use catalog::{
-    ColumnInfo, ColumnType, ForeignKey, SourceCatalog, TableCatalog, TableKind, TableMutability,
-    TypeKind, UniqueConstraint,
+    ColumnInfo, ColumnType, ForeignKey, FunctionArg, FunctionCatalog, SourceCatalog, TableCatalog,
+    TableKind, TableMutability, TypeKind, UniqueConstraint, Volatility,
 };
 pub use error::{Code, Error, Result};
 pub use inconsistency::InconsistentObject;
-pub use names::QualifiedTable;
+pub use names::{QualifiedFunction, QualifiedTable};
 pub use session::{ADMIN_ROLE, RoleName, Session, SessionVariables};

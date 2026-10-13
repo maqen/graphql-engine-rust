@@ -247,8 +247,12 @@ fn admin_permissions(table: &TableInfo) -> TablePermissions {
             filter: BoolExp::always_true(),
             limit: None,
             allow_aggregations: true,
-            // Filled with every scalar computed field once tables resolve computed fields.
-            computed_fields: vec![],
+            computed_fields: table
+                .computed_fields
+                .iter()
+                .filter(|c| c.scalar_type().is_some())
+                .map(|c| c.name.clone())
+                .collect(),
             query_root_fields: RootFields::ALL,
             subscription_root_fields: RootFields::ALL,
         }),
@@ -333,6 +337,19 @@ fn select_permission(
         }
         Ok(rf)
     };
+    for name in &p.computed_fields {
+        match table.computed_field(name) {
+            None => return Err(format!("computed field \"{name}\" does not exist")),
+            Some(cf) => {
+                if let crate::functions::ComputedReturn::Table(t) = &cf.returns {
+                    return Err(format!(
+                        "select permissions on computed field \"{name}\" are auto-derived from the permissions on its returning table \"{}\" and cannot be specified manually",
+                        t.v2_text()
+                    ));
+                }
+            }
+        }
+    }
     Ok(SelectPermission {
         query_root_fields: root_fields(&p.query_root_fields, false)?,
         subscription_root_fields: root_fields(&p.subscription_root_fields, true)?,

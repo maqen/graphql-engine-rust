@@ -856,6 +856,7 @@ mod tests {
         let catalog = SourceCatalog {
             tables: [(name, table)].into_iter().collect(),
             enums: HashMap::new(),
+            functions: HashMap::new(),
         };
         let (tables, errs) =
             crate::resolve_tables(&m, &[("default".to_owned(), catalog)].into_iter().collect());
