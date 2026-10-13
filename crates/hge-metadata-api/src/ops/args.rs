@@ -2,6 +2,7 @@
 
 use hge_core::Code;
 use hge_events::model::HeaderConf;
+use hge_transforms::{RequestTransform, ResponseTransform, parse_optional};
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 
@@ -140,4 +141,32 @@ pub(crate) fn db_error(prefix: &str, e: String) -> ApiError {
         format!("{prefix}: database query error"),
     )
     .with_internal(json!({ "error": { "message": e } }))
+}
+
+/// `request_transform` and `response_transform` of `$.args` (`null` is the same as absent).
+pub(crate) fn transforms(
+    obj: &Obj,
+) -> ApiResult<(Option<RequestTransform>, Option<ResponseTransform>)> {
+    let bad = |error| ApiError { status: 400, error };
+    let request = parse_optional(
+        obj.get("request_transform"),
+        "args.request_transform",
+        RequestTransform::from_json,
+    )
+    .map_err(bad)?;
+    let response = parse_optional(
+        obj.get("response_transform"),
+        "args.response_transform",
+        ResponseTransform::from_json,
+    )
+    .map_err(bad)?;
+    Ok((request, response))
+}
+
+/// A template that does not parse: V2's `validation-failed` at `$.args`.
+pub(crate) fn transform_invalid(error: hge_core::Error) -> ApiError {
+    ApiError {
+        status: 400,
+        error: error.with_path("$.args"),
+    }
 }

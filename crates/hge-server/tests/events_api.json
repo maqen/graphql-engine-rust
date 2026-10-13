@@ -1105,7 +1105,7 @@
    },
    "status": 200,
    "response": {
-    "event_id": "d2cfcea2-88e8-4783-bc06-640c67f1d5f3"
+    "event_id": "432e9d12-9e27-4114-8425-f58d118bc526"
    }
   },
   {
@@ -1191,7 +1191,7 @@
       "0"
      ],
      [
-      "97676b6c-8d39-4249-85f4-85fbafaec211",
+      "e25a5fa2-fbd2-4c1a-8ea1-f02b5c286bfd",
       "tk",
       "INSERT",
       "{\"new\": {\"c1\": 1, \"c2\": \"x\", \"id\": 1}, \"old\": null}",
@@ -1230,8 +1230,8 @@
       },
       "trace_context": {
        "sampling_state": "1",
-       "span_id": "aa6c5875f9c03a4e",
-       "trace_id": "d6424b69da80e5ca67ba5c604f3de2ee"
+       "span_id": "19d59e00d403c760",
+       "trace_id": "b54503158546cc3f720644a225716227"
       }
      },
      "delivered": false,
@@ -1262,8 +1262,8 @@
       },
       "trace_context": {
        "sampling_state": "1",
-       "span_id": "aa6c5875f9c03a4e",
-       "trace_id": "d6424b69da80e5ca67ba5c604f3de2ee"
+       "span_id": "19d59e00d403c760",
+       "trace_id": "b54503158546cc3f720644a225716227"
       }
      },
      "delivered": false,
@@ -1314,8 +1314,8 @@
       },
       "trace_context": {
        "sampling_state": "1",
-       "span_id": "7db110e9ce526e26",
-       "trace_id": "ad6ecba12106bd74c28b82388983d393"
+       "span_id": "7964381fbb6ac744",
+       "trace_id": "eee1f2d986ff45b0ec75b8db3ca2da9d"
       }
      },
      "delivered": false,
@@ -1377,8 +1377,8 @@
       },
       "trace_context": {
        "sampling_state": "1",
-       "span_id": "aa6c5875f9c03a4e",
-       "trace_id": "d6424b69da80e5ca67ba5c604f3de2ee"
+       "span_id": "19d59e00d403c760",
+       "trace_id": "b54503158546cc3f720644a225716227"
       }
      },
      "delivered": false,
@@ -1584,8 +1584,8 @@
       },
       "trace_context": {
        "sampling_state": "1",
-       "span_id": "aa6c5875f9c03a4e",
-       "trace_id": "d6424b69da80e5ca67ba5c604f3de2ee"
+       "span_id": "19d59e00d403c760",
+       "trace_id": "b54503158546cc3f720644a225716227"
       }
      },
      "delivered": false,
@@ -1741,8 +1741,8 @@
       },
       "trace_context": {
        "sampling_state": "1",
-       "span_id": "aa6c5875f9c03a4e",
-       "trace_id": "d6424b69da80e5ca67ba5c604f3de2ee"
+       "span_id": "19d59e00d403c760",
+       "trace_id": "b54503158546cc3f720644a225716227"
       }
      },
      "delivered": false,
@@ -1825,8 +1825,8 @@
       },
       "trace_context": {
        "sampling_state": "1",
-       "span_id": "aa6c5875f9c03a4e",
-       "trace_id": "d6424b69da80e5ca67ba5c604f3de2ee"
+       "span_id": "19d59e00d403c760",
+       "trace_id": "b54503158546cc3f720644a225716227"
       }
      },
      "delivered": false,
@@ -2935,7 +2935,7 @@
    },
    "status": 200,
    "response": {
-    "event_id": "668c0d6e-fa17-4a54-8900-f05471c6fc52"
+    "event_id": "3b1e4647-f245-4b50-81ab-1a669d3e3c4c"
    }
   },
   {
@@ -3163,6 +3163,497 @@
            "timeout_sec": 60
           },
           "webhook": "http://127.0.0.1:1/hook"
+         }
+        ]
+       },
+       {
+        "table": {
+         "name": "ev_t2",
+         "schema": "public"
+        }
+       }
+      ],
+      "configuration": {
+       "connection_info": {
+        "database_url": {
+         "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+        },
+        "isolation_level": "read-committed",
+        "use_prepared_statements": false
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "tt",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "request_transform": {
+      "version": 2,
+      "body": {
+       "action": "transform",
+       "template": "{{ $body.x "
+      }
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "request transform validation failed",
+    "path": "$.args",
+    "code": "validation-failed",
+    "internal": [
+     {
+      "error_code": "Parse Error",
+      "message": "ParseError: Empty token stream.",
+      "source_position": {
+       "end_column": 12,
+       "end_line": 0,
+       "start_column": 11,
+       "start_line": 0
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "tt",
+     "table": {
+      "schema": "public",
+      "name": "nope"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "response_transform": {
+      "version": 2,
+      "body": {
+       "action": "transform",
+       "template": "{{ $body.x "
+      }
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "response transform validation failed",
+    "path": "$.args",
+    "code": "validation-failed",
+    "internal": [
+     {
+      "error_code": "Parse Error",
+      "message": "ParseError: Empty token stream.",
+      "source_position": {
+       "end_column": 12,
+       "end_line": 0,
+       "start_column": 11,
+       "start_line": 0
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "tt",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "request_transform": {
+      "version": 2,
+      "method": 5
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: parsing Method failed, expected String, but encountered Number",
+    "path": "$.args.request_transform.method",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "tt",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "request_transform": {
+      "version": 3
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: expected 1 or 2, encountered 3",
+    "path": "$.args.request_transform.version",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "tt",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "request_transform": "nope"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: parsing RequestTransform failed, expected Object, but encountered String",
+    "path": "$.args.request_transform",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "tt",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "request_transform": {
+      "version": 2,
+      "body": {
+       "action": "nope"
+      }
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: invalid transform action",
+    "path": "$.args.request_transform.body",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "tt",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "response_transform": {
+      "version": 2,
+      "body": {
+       "action": "nope"
+      }
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: invalid transform action",
+    "path": "$.args.response_transform.body",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "tt",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "request_transform": {
+      "version": 2,
+      "url": "{{$base_url}}/x",
+      "query_params": "{{ bad"
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "request transform validation failed",
+    "path": "$.args",
+    "code": "validation-failed",
+    "internal": [
+     {
+      "error_code": "Parse Error",
+      "message": "Unexpected token '\"'.",
+      "source_position": {
+       "end_column": 9,
+       "end_line": 0,
+       "start_column": 8,
+       "start_line": 0
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "tt",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "request_transform": null,
+     "response_transform": null
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "tu",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "request_transform": {
+      "version": 1,
+      "body": "{{$body}}"
+     },
+     "response_transform": {
+      "version": 2,
+      "body": {
+       "action": "x_www_form_urlencoded",
+       "form_template": {
+        "a": "b"
+       }
+      }
+     }
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "tv",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "request_transform": {
+      "version": 2,
+      "method": "PUT",
+      "query_params": {
+       "a": "{{$body.id}}"
+      },
+      "request_headers": {
+       "add_headers": {
+        "x": "y"
+       },
+       "remove_headers": [
+        "z"
+       ]
+      },
+      "body": {
+       "action": "remove"
+      }
+     }
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "version": 3,
+    "sources": [
+     {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+       {
+        "table": {
+         "name": "ev_t1",
+         "schema": "public"
+        },
+        "event_triggers": [
+         {
+          "name": "tk",
+          "definition": {
+           "enable_manual": false,
+           "insert": {
+            "columns": "*"
+           }
+          },
+          "retry_conf": {
+           "interval_sec": 10,
+           "num_retries": 0,
+           "timeout_sec": 60
+          },
+          "webhook": "http://127.0.0.1:1/hook"
+         },
+         {
+          "name": "tt",
+          "definition": {
+           "enable_manual": false,
+           "insert": {
+            "columns": "*"
+           }
+          },
+          "retry_conf": {
+           "interval_sec": 10,
+           "num_retries": 0,
+           "timeout_sec": 60
+          },
+          "webhook": "http://127.0.0.1:1/hook"
+         },
+         {
+          "name": "tu",
+          "definition": {
+           "enable_manual": false,
+           "insert": {
+            "columns": "*"
+           }
+          },
+          "retry_conf": {
+           "interval_sec": 10,
+           "num_retries": 0,
+           "timeout_sec": 60
+          },
+          "webhook": "http://127.0.0.1:1/hook",
+          "request_transform": {
+           "body": "{{$body}}",
+           "template_engine": "Kriti",
+           "version": 1
+          },
+          "response_transform": {
+           "body": {
+            "action": "x_www_form_urlencoded",
+            "form_template": {
+             "a": "b"
+            }
+           },
+           "template_engine": "Kriti",
+           "version": 2
+          }
+         },
+         {
+          "name": "tv",
+          "definition": {
+           "enable_manual": false,
+           "insert": {
+            "columns": "*"
+           }
+          },
+          "retry_conf": {
+           "interval_sec": 10,
+           "num_retries": 0,
+           "timeout_sec": 60
+          },
+          "webhook": "http://127.0.0.1:1/hook",
+          "request_transform": {
+           "body": {
+            "action": "remove"
+           },
+           "method": "PUT",
+           "query_params": {
+            "a": "{{$body.id}}"
+           },
+           "request_headers": {
+            "add_headers": {
+             "x": "y"
+            },
+            "remove_headers": [
+             "z"
+            ]
+           },
+           "template_engine": "Kriti",
+           "version": 2
+          }
          }
         ]
        },

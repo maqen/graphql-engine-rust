@@ -16,10 +16,12 @@ use hge_events::scheduled::Kind;
 use hge_events::scheduled_admin::{
     self as sa, CronEventChange, InvocationsOf, NewOneOff, OrderBy, Page,
 };
+use hge_transforms::{RequestTransform, ResponseTransform, validate_transforms};
 use serde_json::{Map, Number, Value, json};
 
 use super::args::{
     Obj, boolean, field, headers, int, missing, object, required_string, required_text, text,
+    transform_invalid, transforms,
 };
 use crate::api::json_kind;
 use crate::ctx::{Check, Ctx};
@@ -103,8 +105,8 @@ struct CronArgs {
     include_in_metadata: bool,
     comment: Option<String>,
     replace: bool,
-    request_transform: Option<Value>,
-    response_transform: Option<Value>,
+    request_transform: Option<RequestTransform>,
+    response_transform: Option<ResponseTransform>,
 }
 
 impl CronArgs {
@@ -138,6 +140,11 @@ impl CronArgs {
                 ));
             }
         };
+        let comment = text(obj, "comment", p)?;
+        let replace = boolean(obj, "replace", p)?.unwrap_or(false);
+        let (request_transform, response_transform) = transforms(obj)?;
+        validate_transforms(request_transform.as_ref(), response_transform.as_ref())
+            .map_err(transform_invalid)?;
         Ok(CronArgs {
             name,
             webhook,
@@ -146,10 +153,10 @@ impl CronArgs {
             headers,
             schedule,
             include_in_metadata,
-            comment: text(obj, "comment", p)?,
-            replace: boolean(obj, "replace", p)?.unwrap_or(false),
-            request_transform: field(obj, "request_transform").cloned(),
-            response_transform: field(obj, "response_transform").cloned(),
+            comment,
+            replace,
+            request_transform,
+            response_transform,
         })
     }
 
@@ -172,13 +179,11 @@ impl CronArgs {
         if let Some(c) = &self.comment {
             m.insert("comment".into(), json!(c));
         }
-        for (key, value) in [
-            ("request_transform", &self.request_transform),
-            ("response_transform", &self.response_transform),
-        ] {
-            if let Some(v) = value {
-                m.insert(key.into(), v.clone());
-            }
+        if let Some(t) = &self.request_transform {
+            m.insert("request_transform".into(), t.to_json());
+        }
+        if let Some(t) = &self.response_transform {
+            m.insert("response_transform".into(), t.to_json());
         }
         Value::Object(m)
     }
@@ -525,12 +530,9 @@ pub async fn create_scheduled_event<R: Runtime>(
     let headers = Value::Array(headers(obj, p)?.unwrap_or_default()).to_string();
     let retry_conf = retry_conf(obj, p)?.to_string();
     let comment = text(obj, "comment", p)?;
-    if field(obj, "request_transform").is_some() || field(obj, "response_transform").is_some() {
-        return Err(ApiError::bad(
-            Code::NotSupported,
-            "request/response transforms of scheduled events are not supported yet",
-        ));
-    }
+    // Checked but not kept: like V2, which has nowhere to store them, one-off events are
+    // delivered untransformed.
+    transforms(obj)?;
     let pool = metadata_db(ctx)?;
     let id = sa::create_one_off(
         pool,

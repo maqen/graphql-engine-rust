@@ -17,7 +17,7 @@ use serde_json::{Map, Value, json};
 
 use super::args::{
     Obj, boolean, db_error, field, headers, int, missing, object, required_string, required_text,
-    text, typed,
+    text, transform_invalid, transforms, typed,
 };
 use crate::api::json_kind;
 use crate::ctx::{Check, Ctx};
@@ -25,6 +25,7 @@ use crate::response::{
     ApiError, ApiResult, already_exists, not_exists, not_supported, parse_failed, success,
 };
 use crate::runtime::Runtime;
+use hge_transforms::{RequestTransform, ResponseTransform, validate_transforms};
 
 const DEFAULT_LIMIT: i64 = 100;
 
@@ -110,8 +111,8 @@ struct CreateEventTrigger {
     webhook_from_env: Option<String>,
     headers: Option<Vec<Value>>,
     replace: bool,
-    request_transform: Option<Value>,
-    response_transform: Option<Value>,
+    request_transform: Option<RequestTransform>,
+    response_transform: Option<ResponseTransform>,
     cleanup_config: Option<Value>,
     trigger_on_replication: bool,
 }
@@ -142,6 +143,7 @@ impl CreateEventTrigger {
         let webhook_from_env = text(obj, "webhook_from_env", p)?;
         let headers = headers(obj, p)?;
         let replace = boolean(obj, "replace", p)?.unwrap_or(false);
+        let (request_transform, response_transform) = transforms(obj)?;
         let cleanup_config = field(obj, "cleanup_config")
             .map(|v| cleanup_config(v, &format!("{p}.cleanup_config")))
             .transpose()?;
@@ -158,12 +160,18 @@ impl CreateEventTrigger {
             webhook_from_env,
             headers,
             replace,
-            request_transform: field(obj, "request_transform").cloned(),
-            response_transform: field(obj, "response_transform").cloned(),
+            request_transform,
+            response_transform,
             cleanup_config,
             trigger_on_replication,
         };
         args.validate()?;
+        // V2 parse-checks the templates before looking at the table or the name.
+        validate_transforms(
+            args.request_transform.as_ref(),
+            args.response_transform.as_ref(),
+        )
+        .map_err(transform_invalid)?;
         Ok(args)
     }
 
@@ -223,14 +231,14 @@ impl CreateEventTrigger {
         if let Some(h) = &self.headers {
             m.insert("headers".into(), Value::Array(h.clone()));
         }
-        for (key, value) in [
-            ("request_transform", &self.request_transform),
-            ("response_transform", &self.response_transform),
-            ("cleanup_config", &self.cleanup_config),
-        ] {
-            if let Some(v) = value {
-                m.insert(key.into(), v.clone());
-            }
+        if let Some(t) = &self.request_transform {
+            m.insert("request_transform".into(), t.to_json());
+        }
+        if let Some(t) = &self.response_transform {
+            m.insert("response_transform".into(), t.to_json());
+        }
+        if let Some(v) = &self.cleanup_config {
+            m.insert("cleanup_config".into(), v.clone());
         }
         if self.trigger_on_replication {
             m.insert("trigger_on_replication".into(), Value::Bool(true));

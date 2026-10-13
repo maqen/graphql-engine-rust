@@ -1,6 +1,7 @@
 //! Event triggers resolved for one metadata version (V2's `EventTriggerInfo` in the schema
 //! cache): what the delivery worker reads, swapped atomically with the rest of the state.
 
+use crate::delivery::Transforms;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -22,6 +23,7 @@ pub struct EventTriggerInfo {
     pub webhook: ResolvedWebhook,
     pub headers: Vec<ResolvedHeader>,
     pub retry_conf: RetryConf,
+    pub transforms: Transforms,
     pub conf: EventTriggerConf,
 }
 
@@ -39,12 +41,17 @@ impl EventTriggerInfo {
             env,
         )?;
         let headers = resolve_headers(&conf.headers, env)?;
+        let transforms = Transforms::parse(
+            conf.request_transform.as_ref(),
+            conf.response_transform.as_ref(),
+        )?;
         Ok(EventTriggerInfo {
             name: conf.name.clone(),
             table: table.clone(),
             webhook,
             headers,
             retry_conf: conf.retry_conf,
+            transforms,
             conf,
         })
     }

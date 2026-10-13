@@ -19,7 +19,9 @@ use tracing::{error, info, warn};
 
 use crate::catalog::pg_err;
 use crate::cron::CronSchedule;
-use crate::delivery::{self, Attempt, AttemptResult, INVOCATION_VERSION_SCHEDULED, TraceIds};
+use crate::delivery::{
+    self, Attempt, AttemptResult, INVOCATION_VERSION_SCHEDULED, TraceIds, Transforms,
+};
 use crate::json::Json;
 use crate::model::{
     Env, HeaderConf, ResolvedHeader, ResolvedWebhook, resolve_headers, resolve_template,
@@ -125,6 +127,7 @@ pub struct CronTriggerInfo {
     pub schedule: CronSchedule,
     pub webhook: ResolvedWebhook,
     pub headers: Vec<ResolvedHeader>,
+    pub transforms: Transforms,
 }
 
 impl CronTriggerInfo {
@@ -134,11 +137,16 @@ impl CronTriggerInfo {
         conf.retry_conf.validate()?;
         let webhook = resolve_webhook(Some(&conf.webhook), None, env)?;
         let headers = resolve_headers(&conf.headers, env)?;
+        let transforms = Transforms::parse(
+            conf.request_transform.as_ref(),
+            conf.response_transform.as_ref(),
+        )?;
         Ok(CronTriggerInfo {
             conf,
             schedule,
             webhook,
             headers,
+            transforms,
         })
     }
 }
@@ -565,6 +573,8 @@ struct Target {
     retry: ScheduledRetryConf,
     body: Json,
     timeout_message: String,
+    /// A cron trigger's; one-off events have none (V2 does not store theirs).
+    transforms: Transforms,
 }
 
 fn cron_target(ev: &ScheduledEvent, info: &CronTriggerInfo) -> Target {
@@ -584,10 +594,18 @@ fn cron_target(ev: &ScheduledEvent, info: &CronTriggerInfo) -> Target {
     if let Some(c) = &info.conf.comment {
         body.push(("comment", Json::str(c)));
     }
+    // V2 sends its whole payload record, transforms included (in their metadata form).
+    if let Some(t) = &info.transforms.request {
+        body.push(("request_transform", Json::from(&t.to_json())));
+    }
+    if let Some(t) = &info.transforms.response {
+        body.push(("response_transform", Json::from(&t.to_json())));
+    }
     Target {
         url: info.webhook.url.clone(),
         headers: info.headers.clone(),
         retry: info.conf.retry_conf,
+        transforms: info.transforms.clone(),
         body: Json::object(body),
         timeout_message: format!(
             "Cron Scheduled event \"{}\" of cron trigger \"{}\" timed out while processing.",
@@ -681,6 +699,7 @@ fn one_off_target(
             "One-off Scheduled event \"{}\" timed out while processing.",
             ev.id
         ),
+        transforms: Transforms::default(),
     })
 }
 
@@ -741,13 +760,28 @@ async fn process(ctx: &Ctx, ev: &ScheduledEvent) -> Result<(), String> {
         Ok(t) => {
             let (headers, log_headers) =
                 delivery::prepare_headers(&ctx.config.user_agent, &t.headers);
-            let body_text = t.body.encode();
+            let request = match delivery::build_request(
+                &t.transforms,
+                &t.url,
+                headers,
+                t.body,
+                Value::Null,
+            ) {
+                Ok(r) => r,
+                Err(bundle) => {
+                    error!(
+                        target: "scheduled-trigger",
+                        event_id = %ev.id,
+                        errors = %bundle.to_json(),
+                        "Request Transformation Failed"
+                    );
+                    return set_status(&ctx.pool, ev, "error").await;
+                }
+            };
             let result = delivery::attempt(
                 ctx.client.as_ref(),
                 Attempt {
-                    url: &t.url,
-                    headers,
-                    body: body_text,
+                    request: request.clone(),
                     http_timeout: t.retry.http_timeout(),
                     processing_timeout: t.retry.processing_timeout(),
                     timeout_message: t.timeout_message.clone(),
@@ -757,9 +791,11 @@ async fn process(ctx: &Ctx, ev: &ScheduledEvent) -> Result<(), String> {
             .await;
             let (payload, log_headers) = match &result {
                 AttemptResult::Internal(m) => (Json::object([("error", Json::str(m))]), vec![]),
-                _ => (t.body, log_headers),
+                _ => (request.logged_payload.clone(), log_headers),
             };
-            (t.retry, result, log_headers, payload, t.url)
+            let result =
+                delivery::transform_response(&t.transforms, result, &request, &Value::Null);
+            (t.retry, result, log_headers, payload, request.url)
         }
     };
     let invocation = delivery::invocation(

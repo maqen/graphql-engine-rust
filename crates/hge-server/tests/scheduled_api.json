@@ -868,7 +868,7 @@
    },
    "status": 200,
    "response": {
-    "event_id": "3f693e2b-3243-4ba4-8b9f-a5722660d3d8",
+    "event_id": "1019a063-450b-41bb-b60d-1052f07ff43e",
     "message": "success"
    }
   },
@@ -883,7 +883,7 @@
    },
    "status": 200,
    "response": {
-    "event_id": "34fadf34-c718-42b6-a830-4c435620f3ee",
+    "event_id": "9eb0647c-5464-49f5-8ceb-0b0468c139eb",
     "message": "success"
    }
   },
@@ -1623,6 +1623,364 @@
    "status": 200,
    "response": {
     "cron_triggers": []
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "version": 3,
+    "sources": [
+     {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [],
+      "configuration": {
+       "connection_info": {
+        "database_url": {
+         "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+        },
+        "isolation_level": "read-committed",
+        "pool_settings": {
+         "connection_lifetime": 600,
+         "idle_timeout": 180,
+         "max_connections": 50,
+         "retries": 1
+        },
+        "use_prepared_statements": true
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "t",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true,
+     "request_transform": {
+      "version": 2,
+      "body": {
+       "action": "transform",
+       "template": "{{ $body.x "
+      }
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "request transform validation failed",
+    "path": "$.args",
+    "code": "validation-failed",
+    "internal": [
+     {
+      "error_code": "Parse Error",
+      "message": "ParseError: Empty token stream.",
+      "source_position": {
+       "end_column": 12,
+       "end_line": 0,
+       "start_column": 11,
+       "start_line": 0
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "t",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "bad",
+     "include_in_metadata": true,
+     "request_transform": {
+      "version": 2,
+      "body": {
+       "action": "transform",
+       "template": "{{ $body.x "
+      }
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Failed reading: takeWhile1",
+    "path": "$.args.schedule",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "nope",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true,
+     "replace": true,
+     "response_transform": {
+      "version": 2,
+      "body": {
+       "action": "transform",
+       "template": "{{ $body.x "
+      }
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "response transform validation failed",
+    "path": "$.args",
+    "code": "validation-failed",
+    "internal": [
+     {
+      "error_code": "Parse Error",
+      "message": "ParseError: Empty token stream.",
+      "source_position": {
+       "end_column": 12,
+       "end_line": 0,
+       "start_column": 11,
+       "start_line": 0
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "t",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true,
+     "request_transform": {
+      "version": 2,
+      "method": 5
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "parsing Method failed, expected String, but encountered Number",
+    "path": "$.args.request_transform.method",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "t",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true,
+     "request_transform": {
+      "version": 3
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "expected 1 or 2, encountered 3",
+    "path": "$.args.request_transform.version",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "t",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true,
+     "request_transform": "nope"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "parsing RequestTransform failed, expected Object, but encountered String",
+    "path": "$.args.request_transform",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "t",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true,
+     "response_transform": {
+      "version": 2,
+      "body": {
+       "action": "nope"
+      }
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "invalid transform action",
+    "path": "$.args.response_transform.body",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "t",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true,
+     "request_transform": {
+      "version": 1,
+      "body": "{{$body}}"
+     },
+     "response_transform": {
+      "version": 2,
+      "body": {
+       "action": "remove"
+      }
+     }
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_cron_triggers",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "cron_triggers": [
+     {
+      "headers": [],
+      "include_in_metadata": true,
+      "name": "t",
+      "request_transform": {
+       "body": "{{$body}}",
+       "template_engine": "Kriti",
+       "version": 1
+      },
+      "response_transform": {
+       "body": {
+        "action": "remove"
+       },
+       "template_engine": "Kriti",
+       "version": 2
+      },
+      "retry_conf": {
+       "num_retries": 0,
+       "retry_interval_seconds": 10,
+       "timeout_seconds": 60,
+       "tolerance_seconds": 21600
+      },
+      "schedule": "0 0 1 1 *",
+      "webhook": "http://127.0.0.1:1/hook"
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "delete_cron_trigger",
+    "args": {
+     "name": "t"
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_scheduled_event",
+    "args": {
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule_at": "2030-01-01T00:00:00Z",
+     "request_transform": {
+      "version": 2,
+      "method": 5
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "parsing Method failed, expected String, but encountered Number",
+    "path": "$.args.request_transform.method",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_scheduled_event",
+    "args": {
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule_at": "2030-01-01T00:00:00Z",
+     "request_transform": {
+      "version": 2,
+      "body": {
+       "action": "transform",
+       "template": "{{ $body.x "
+      }
+     }
+    }
+   },
+   "status": 200,
+   "response": {
+    "event_id": "bee51228-1d8f-441b-b7ec-884dea691175",
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "SELECT count(*) FROM hdb_catalog.hdb_scheduled_events"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "TuplesOk",
+    "result": [
+     [
+      "count"
+     ],
+     [
+      "2"
+     ]
+    ]
    }
   },
   {

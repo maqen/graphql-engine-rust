@@ -19,9 +19,7 @@ a restart with unchanged metadata issues no DDL. (V2 only writes trigger DDL on 
 calls; doing it on boot also covers a metadata directory applied at startup.)
 
 A trigger whose webhook or headers cannot be resolved from the environment is reported as
-inconsistent and gets no SQL trigger, as in V2. Triggers with `request_transform` /
-`response_transform` are reported inconsistent until transforms are supported, so events
-queue up instead of reaching the webhook with an untransformed body.
+inconsistent and gets no SQL trigger, as in V2.
 
 ## Delivery
 
@@ -36,6 +34,26 @@ On SIGTERM, events fetched but not started are unlocked at once (another replica
 them immediately); in-flight deliveries get `HASURA_GRAPHQL_GRACEFUL_SHUTDOWN_TIMEOUT`
 (60 s) and anything still locked after that is unlocked. Events locked by an instance that
 was killed are picked up again after 30 minutes (V2's rule).
+
+## Request and response transforms
+
+Event and cron triggers apply `request_transform` and `response_transform` like V2 (the
+engine is shared with actions, `hge-transforms`), checked against a V2 recording in
+`crates/hge-server/tests/event_transforms.rs`:
+
+* The request transform sees the webhook payload as `$body`, the resolved webhook as
+  `$base_url` and the event's session variables (`null` for cron triggers). If it fails, the
+  event is marked as an error without an attempt or invocation log.
+* The invocation log records the body that was sent, as JSON (`null` when it is not JSON,
+  e.g. a form body), and the headers from before the transform.
+* The response transform runs on 2xx responses only; its result is the logged response
+  body. `$request` is the context the request transform saw (`null` without one). If it
+  fails, the attempt counts as failed with status 500 and the error list as the message.
+* A cron trigger's webhook body includes its transforms, as in V2. One-off events accept
+  transforms but, like V2 (which has nowhere to store them), deliver untransformed.
+
+One difference: V2 writes form fields and `query_params` entries in hash-map order; here
+form fields are sorted by name and query parameters keep the order they are defined in.
 
 ## Metadata API
 
@@ -97,8 +115,6 @@ absent. Other differences:
 * `get_scheduled_events` quotes `order_by` columns, so an unknown column is a plain
   database error; V2 pastes the column into its SQL and reports the whole statement.
 * `get_cron_triggers` lists triggers by name (V2's order follows a hash map).
-* Request and response transforms are not supported yet: a cron trigger with one is
-  inconsistent, and `create_scheduled_event` rejects them.
 
 On shutdown, an instance stops fetching, gives running deliveries
 `HASURA_GRAPHQL_GRACEFUL_SHUTDOWN_TIMEOUT`, and puts unfinished events back to `scheduled`.
