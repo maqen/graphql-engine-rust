@@ -805,6 +805,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "hge-kriti"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "hge-metadata"
 version = "0.1.0"
 dependencies = [
