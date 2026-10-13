@@ -9,7 +9,7 @@ use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri, header};
 use axum::response::Response;
-use hge_core::{Error, Session};
+use hge_core::{Code, Error, RoleName, Session};
 use hge_rest::{RequestMethod, parse_query_string};
 
 use crate::graphql;
@@ -51,6 +51,34 @@ pub async fn handler(
         resp.headers_mut().append(header::SET_COOKIE, cookie);
     }
     resp
+}
+
+/// `GET /api/swagger/json`: the OpenAPI document of the REST endpoints (admin only).
+pub async fn openapi(
+    State(engine): State<Arc<Engine>>,
+    method: Method,
+    headers: HeaderMap,
+) -> Response {
+    let rid = request_id(&headers);
+    if method != Method::GET {
+        let e = Error::new(Code::NotFound, "resource does not exist");
+        return error_response(&e, StatusCode::NOT_FOUND, false, rid);
+    }
+    let session = match engine.auth.authenticate(&headers, None).await {
+        Ok(auth) => auth.session,
+        Err(e) => return error_response(&e.error, e.status, false, rid),
+    };
+    if !session.role.is_admin() {
+        let e = Error::new(
+            Code::AccessDenied,
+            "You have to be an admin to access this endpoint",
+        );
+        return error_response(&e, StatusCode::BAD_REQUEST, false, rid);
+    }
+    let state = engine.state.load_full();
+    let admin = state.role_schema(&RoleName::admin(), false);
+    let doc = hge_rest::openapi(&admin.schema, &state.prepared.rest);
+    json_response(StatusCode::OK, doc.to_string(), Some(rid))
 }
 
 fn error_response(e: &Error, status: StatusCode, include_internal: bool, rid: String) -> Response {

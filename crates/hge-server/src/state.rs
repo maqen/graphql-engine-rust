@@ -128,6 +128,7 @@ impl AppState {
         // Reuse the admin schema built while preparing (same tables, actions and options).
         let mut schemas = HashMap::new();
         if let Some(admin) = prepared.admin_schema.clone()
+            && admin.options == options
             && !introspection_disabled.contains(&RoleName::admin())
         {
             schemas.insert(Some((RoleName::admin(), false)), admin);

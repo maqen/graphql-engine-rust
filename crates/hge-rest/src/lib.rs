@@ -7,6 +7,7 @@
 
 pub mod allowlist;
 mod build;
+mod openapi;
 mod validate;
 mod variables;
 
@@ -17,6 +18,7 @@ use hge_core::{Code, Error};
 use hge_metadata::EndpointMethod;
 
 pub use build::build;
+pub use openapi::openapi;
 pub use validate::{collection_issues, diagnose};
 pub use variables::{QueryParams, parse_query_string};
 
@@ -58,6 +60,7 @@ pub struct Endpoint {
     pub url: String,
     pub segments: Vec<Segment>,
     pub methods: Vec<EndpointMethod>,
+    pub comment: Option<String>,
     /// The stored query text.
     pub query: String,
     /// `query`, parsed once.

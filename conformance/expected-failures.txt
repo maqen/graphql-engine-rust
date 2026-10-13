@@ -57,7 +57,6 @@ rest-endpoints/TestCustomEndpoints/test_endpoint_trailing_slash
 rest-endpoints/TestCustomEndpoints/test_endpoint_with_pg_date_url_variable
 rest-endpoints/TestCustomEndpoints/test_query_validation
 rest-endpoints/TestOpenAPISpec/test_duplicate_field_name
-rest-endpoints/TestOpenAPISpec/test_empty_openapi_json
 rest-endpoints/TestOpenAPISpec/test_endpoint_simple
 rest-endpoints/TestOpenAPISpec/test_endpoint_with_aliases
 rest-endpoints/TestOpenAPISpec/test_endpoint_with_args

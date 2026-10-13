@@ -19,7 +19,7 @@ use crate::scalars::{self, BUILTIN_SCALARS};
 use crate::tables::{RelationshipInfo, TableInfo, Tables};
 
 /// Engine options that change the schema or the lowering.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchemaOptions {
     /// `HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES`
     pub stringify_numeric_types: bool,
@@ -403,7 +403,10 @@ impl Builder<'_> {
             table.description.clone(),
         )));
 
-        let mut obj = ObjectDef::new(table.type_name(), table.description.clone());
+        let description = table.description.clone().or_else(|| {
+            (!table.logical_model).then(|| format!("columns and relationships of \"{display}\""))
+        });
+        let mut obj = ObjectDef::new(table.type_name(), description);
         let what = if table.logical_model {
             "the logical model for"
         } else {

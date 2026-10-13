@@ -1,0 +1,8 @@
+description: Hand-written. The OpenAPI document (/api/swagger/json) of REST endpoints loaded from metadata, covering the endpoints of server/tests-py/test_openapi.py plus warnings, comments, enums, lists, path uuids and a bool_exp argument; and who may read it.
+upstream:
+  file: test_openapi.py
+  by_hand: true
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none

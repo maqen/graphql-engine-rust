@@ -1,0 +1,14 @@
+upstream:
+  file: test_openapi.py
+  by_hand: true
+steps:
+- description: A non-admin role may not read it
+  url: /api/swagger/json
+  method: GET
+  status: 400
+  headers:
+    X-Hasura-Role: user
+  response:
+    error: You have to be an admin to access this endpoint
+    path: $
+    code: access-denied

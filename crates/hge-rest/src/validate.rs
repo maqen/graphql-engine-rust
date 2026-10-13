@@ -6,14 +6,14 @@
 //! response key have one type, and variable types are input types. Arguments, directives
 //! and fragment type conditions are not checked, and neither are we.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use async_graphql_parser::Positioned;
 use async_graphql_parser::types::{
-    DocumentOperations, ExecutableDocument, FragmentDefinition, OperationType, Selection,
-    SelectionSet,
+    DocumentOperations, ExecutableDocument, FragmentDefinition, OperationDefinition, OperationType,
+    Selection, SelectionSet,
 };
-use async_graphql_value::Name;
+use async_graphql_value::{ConstValue, Name};
 use hge_core::InconsistentObject;
 use hge_metadata::Metadata;
 use hge_schema::model::{ObjectDef, Schema, TypeDef, TypeRef};
@@ -75,7 +75,10 @@ fn endpoint_users(endpoints: &RestEndpoints, query: &str) -> Vec<String> {
     users.sort_by(|a, b| (&a.url, &a.name).cmp(&(&b.url, &b.name)));
     users
         .into_iter()
-        .flat_map(|e| std::iter::repeat_n(e.name.clone(), e.methods.len()))
+        .flat_map(|e| {
+            let methods: HashSet<_> = e.methods.iter().collect();
+            std::iter::repeat_n(e.name.clone(), methods.len())
+        })
         .collect()
 }
 
@@ -109,8 +112,8 @@ fn mentions_typename(doc: &ExecutableDocument) -> bool {
             Selection::Field(f) => {
                 f.node.name.node == "__typename" || in_set(&f.node.selection_set.node)
             }
-            Selection::InlineFragment(i) => in_set(&i.node.selection_set.node),
-            Selection::FragmentSpread(_) => false,
+            // V2's normalization does not look inside inline fragments.
+            Selection::InlineFragment(_) | Selection::FragmentSpread(_) => false,
         })
     }
     doc.operations
@@ -142,45 +145,65 @@ pub fn diagnose(schema: &Schema, query: &str) -> Option<Vec<String>> {
         }
         Err(_) => return None,
     };
-    let (ty, selection_set) = match &doc.operations {
-        DocumentOperations::Single(op) => (op.node.ty, &op.node.selection_set.node),
+    let op = match &doc.operations {
+        DocumentOperations::Single(op) => &op.node,
         DocumentOperations::Multiple(ops) if ops.len() == 1 => {
-            let op = ops.values().next().expect("one operation");
-            (op.node.ty, &op.node.selection_set.node)
+            &ops.values().next().expect("one operation").node
         }
         DocumentOperations::Multiple(_) => return Some(vec![EXACTLY_ONE.to_owned()]),
     };
-    if let Err(e) = check_fragments(&doc, selection_set, &mut vec![], &mut HashSet::new()) {
+    let set = &op.selection_set.node;
+    if let Err(e) = check_fragments(&doc, set, &mut vec![], &mut HashSet::new()) {
         return Some(vec![e]);
     }
+    let (_, errors) = analyze(schema, op, &doc.fragments);
+    (!errors.is_empty()).then_some(errors)
+}
 
+/// What V2's analysis learns of an operation: its selected fields (failing ones left out)
+/// and its variables whose type is an input type.
+pub(crate) struct Structure {
+    pub fields: Fields,
+    pub variables: Vec<(String, VarInfo)>,
+}
+
+pub(crate) struct VarInfo {
+    pub ty: TypeRef,
+    pub default: Option<ConstValue>,
+}
+
+/// V2's `analyzeGraphQLQuery` over an operation whose fragments are known to inline. The
+/// errors are in the order found.
+pub(crate) fn analyze(
+    schema: &Schema,
+    op: &OperationDefinition,
+    fragments: &Fragments,
+) -> (Structure, Vec<String>) {
     let mut analysis = Analysis {
         schema,
-        fragments: &doc.fragments,
+        fragments,
         path: vec!["$".to_owned()],
         errors: vec![],
     };
-    let root = match ty {
+    let root = match op.ty {
         OperationType::Query => "query_root",
         OperationType::Mutation => "mutation_root",
         OperationType::Subscription => "subscription_root",
     };
     let result = match schema.get(root) {
         None => Err(analysis.diagnosis(format!("type '{root}' not found in the schema"))),
-        Some(TypeDef::Object(o)) => analysis.object_selection_set(o, selection_set).map(drop),
+        Some(TypeDef::Object(o)) => analysis.object_selection_set(o, &op.selection_set.node),
         Some(_) => Err(analysis.diagnosis("the root type is not an object".to_owned())),
     };
-    if let Err(e) = result {
+    let fields = result.unwrap_or_else(|e| {
         analysis.errors.push(e);
-    }
-    let variables = match &doc.operations {
-        DocumentOperations::Single(op) => &op.node.variable_definitions,
-        DocumentOperations::Multiple(ops) => &ops.values().next()?.node.variable_definitions,
-    };
-    for v in variables {
-        analysis.path.push(v.node.name.node.to_string());
-        let base = v.node.var_type.node.base.to_string();
-        let base = base.trim_start_matches('[').trim_end_matches([']', '!']);
+        Fields::new()
+    });
+    let mut variables = vec![];
+    for v in &op.variable_definitions {
+        let v = &v.node;
+        let ty = TypeRef::from_ast(&v.var_type.node);
+        let base = ty.base();
         let issue = match schema.get(base) {
             None => Some(format!("type '{base}' not found in the schema")),
             Some(TypeDef::Object(_)) => {
@@ -194,13 +217,23 @@ pub fn diagnose(schema: &Schema, query: &str) -> Option<Vec<String>> {
             )),
             Some(_) => None,
         };
-        if let Some(issue) = issue {
-            let e = analysis.diagnosis(issue);
-            analysis.errors.push(e);
+        match issue {
+            Some(issue) => {
+                analysis.path.push(v.name.node.to_string());
+                let e = analysis.diagnosis(issue);
+                analysis.errors.push(e);
+                analysis.path.pop();
+            }
+            None => variables.push((
+                v.name.node.to_string(),
+                VarInfo {
+                    ty,
+                    default: v.default_value.as_ref().map(|d| d.node.clone()),
+                },
+            )),
         }
-        analysis.path.pop();
     }
-    (!analysis.errors.is_empty()).then_some(analysis.errors)
+    (Structure { fields, variables }, analysis.errors)
 }
 
 const EXACTLY_ONE: &str =
@@ -255,24 +288,25 @@ fn english_list(items: &[&str]) -> String {
 }
 
 /// The type of a selected field, by what the analysis needs to know of it.
-enum FieldInfo {
+pub(crate) enum FieldInfo {
     Leaf(TypeRef),
     Object(TypeRef, IndexMap<String, FieldInfo>),
 }
 
 impl FieldInfo {
-    fn ty(&self) -> &TypeRef {
+    pub fn ty(&self) -> &TypeRef {
         match self {
             FieldInfo::Leaf(t) | FieldInfo::Object(t, _) => t,
         }
     }
 }
 
-type Fields = IndexMap<String, FieldInfo>;
+pub(crate) type Fields = IndexMap<String, FieldInfo>;
+type Fragments = HashMap<Name, Positioned<FragmentDefinition>>;
 
 struct Analysis<'a> {
     schema: &'a Schema,
-    fragments: &'a std::collections::HashMap<Name, Positioned<FragmentDefinition>>,
+    fragments: &'a Fragments,
     /// `$` and the field names (not aliases) down to the current selection set.
     path: Vec<String>,
     errors: Vec<String>,
