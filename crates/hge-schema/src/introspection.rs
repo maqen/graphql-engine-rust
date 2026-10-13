@@ -21,7 +21,8 @@ fn include_deprecated() -> InputValueDef {
 
 /// The introspection types, declared exactly as V2 declares them. V2's declarations are not the
 /// spec's (lists show as plain objects, most scalars as `String!`, no `specifiedByURL` or
-/// `__DirectiveLocation`), but the values returned are the spec's.
+/// `__DirectiveLocation`; `isDeprecated` is `String!` yet returns a boolean), but the values
+/// returned are the spec's. Don't "correct" them: the declarations show in introspection.
 pub fn add_introspection_types(schema: &mut Schema) {
     let s = |n: &str| TypeRef::named(n);
     let nn = |n: &str| TypeRef::nn(n);

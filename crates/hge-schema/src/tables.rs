@@ -141,6 +141,19 @@ impl TableInfo {
     }
 }
 
+/// A description from a metadata comment, as V2 resolves its `Comment`: an explicit comment
+/// wins, and an empty one means no description; without one, `default`.
+pub(crate) fn comment_or(
+    comment: Option<&str>,
+    default: impl FnOnce() -> Option<String>,
+) -> Option<String> {
+    match comment {
+        Some("") => None,
+        Some(c) => Some(c.to_owned()),
+        None => default(),
+    }
+}
+
 /// How V2 names a table in descriptions: unqualified in `public`, else `schema.name`.
 fn display_name(table: &QualifiedTable) -> String {
     if table.schema == "public" {
@@ -302,11 +315,13 @@ fn resolve_table(
         if !is_valid_name(&gql) {
             continue;
         }
-        let description = config
-            .column_config
-            .get(&col.name)
-            .and_then(|c| c.comment.clone())
-            .or_else(|| col.description.clone());
+        let description = comment_or(
+            config
+                .column_config
+                .get(&col.name)
+                .and_then(|c| c.comment.as_deref()),
+            || col.description.clone(),
+        );
         columns.insert(
             col.name.clone(),
             ColumnInfo {
@@ -436,17 +451,15 @@ fn resolve_table(
         source: source.clone(),
         name: entry.table.clone(),
         gql_name,
-        // An explicit metadata comment wins (an empty one means none); then the database
-        // comment; then V2's default.
-        description: match &config.comment {
-            Some(c) => Some(c.clone()),
-            None => Some(cat.description.clone().unwrap_or_else(|| {
+        // The metadata comment, else the database comment, else V2's default.
+        description: comment_or(config.comment.as_deref(), || {
+            Some(cat.description.clone().unwrap_or_else(|| {
                 format!(
                     "columns and relationships of \"{}\"",
                     display_name(&entry.table)
                 )
-            })),
-        },
+            }))
+        }),
         columns,
         primary_key: cat.primary_key.clone(),
         constraints: cat.constraints.clone(),

@@ -35,13 +35,13 @@ pub enum MutationField {
 /// Mutation root field names of a table (after `custom_root_fields`) and their descriptions.
 #[derive(Debug, Clone)]
 pub(crate) struct RootNames {
-    pub insert: (String, String),
-    pub insert_one: (String, String),
-    pub update: (String, String),
-    pub update_by_pk: (String, String),
-    pub update_many: (String, String),
-    pub delete: (String, String),
-    pub delete_by_pk: (String, String),
+    pub insert: (String, Option<String>),
+    pub insert_one: (String, Option<String>),
+    pub update: (String, Option<String>),
+    pub update_by_pk: (String, Option<String>),
+    pub update_many: (String, Option<String>),
+    pub delete: (String, Option<String>),
+    pub delete_by_pk: (String, Option<String>),
 }
 
 impl RootNames {
@@ -58,9 +58,7 @@ impl RootNames {
             let f = f.as_ref();
             (
                 f.and_then(|f| f.name()).map(str::to_owned).unwrap_or(name),
-                f.and_then(|f| f.comment())
-                    .map(str::to_owned)
-                    .unwrap_or(desc),
+                crate::tables::comment_or(f.and_then(|f| f.comment()), || Some(desc)),
             )
         };
         RootNames {

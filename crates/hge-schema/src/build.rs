@@ -152,6 +152,8 @@ pub(crate) fn table_schema_names(tables: &Tables) -> TableSchemaNames {
                 )
             })
             .map(|(name, ty)| (name.clone(), matches!(ty, TypeDef::Scalar(_))))
+            // Built-in scalars are reserved even when no table uses them (and so pruned).
+            .chain(BUILTIN_SCALARS.iter().map(|s| ((*s).to_owned(), true)))
             .collect(),
     }
 }
@@ -296,13 +298,10 @@ impl Builder<'_> {
             TypeRef::nn_list_nn(table.type_name()),
             FieldKind::SelectMany(table.clone()),
         )
-        .describe(
-            table
-                .root_fields
-                .select_comment
-                .clone()
-                .unwrap_or_else(|| format!("fetch data from the table: \"{display}\"")),
-        );
+        .describe_opt(crate::tables::comment_or(
+            table.root_fields.select_comment.as_deref(),
+            || Some(format!("fetch data from the table: \"{display}\"")),
+        ));
         let select = self.with_select_args(select, table);
         if access.query_root_fields.select {
             root.fields.insert(select.name.clone(), select);
@@ -317,17 +316,14 @@ impl Builder<'_> {
                 TypeRef::named(table.type_name()),
                 FieldKind::SelectByPk(table.clone()),
             )
-            .describe(
-                table
-                    .root_fields
-                    .select_by_pk_comment
-                    .clone()
-                    .unwrap_or_else(|| {
-                        format!(
-                            "fetch data from the table: \"{display}\" using primary key columns"
-                        )
-                    }),
-            );
+            .describe_opt(crate::tables::comment_or(
+                table.root_fields.select_by_pk_comment.as_deref(),
+                || {
+                    Some(format!(
+                        "fetch data from the table: \"{display}\" using primary key columns"
+                    ))
+                },
+            ));
             for col in pk {
                 let col = &table.columns[col];
                 let ty = self.column_value_type(col, false);
@@ -973,33 +969,17 @@ impl Builder<'_> {
             .types
             .retain(|name, ty| !matches!(ty, TypeDef::Scalar(_)) || used.contains(name.as_str()));
         // V2 lists types, fields, arguments, input fields (and enum values) sorted by name.
-        // An empty comment in metadata means no description.
-        let blank = |d: &mut Option<String>| {
-            if d.as_deref() == Some("") {
-                *d = None;
-            }
-        };
         self.schema.types.sort_keys();
         for ty in self.schema.types.values_mut() {
             match ty {
                 TypeDef::Object(obj) => {
-                    blank(&mut obj.description);
                     obj.fields.sort_keys();
                     for field in obj.fields.values_mut() {
-                        blank(&mut field.description);
                         field.args.sort_keys();
-                        field
-                            .args
-                            .values_mut()
-                            .for_each(|a| blank(&mut a.description));
                     }
                 }
                 TypeDef::InputObject(obj) => {
-                    blank(&mut obj.description);
                     obj.fields.sort_keys();
-                    obj.fields
-                        .values_mut()
-                        .for_each(|f| blank(&mut f.description));
                 }
                 // Enum values keep definition order; introspection sorts them.
                 TypeDef::Enum(_) => {}

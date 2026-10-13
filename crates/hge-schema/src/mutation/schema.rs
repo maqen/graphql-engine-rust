@@ -135,7 +135,7 @@ impl Builder<'_> {
                 TypeRef::named(response),
                 FieldKind::Mutation(MutationField::Insert(table.clone())),
             )
-            .describe(names.insert.1.clone())
+            .describe_opt(names.insert.1.clone())
             .arg(
                 InputValueDef::new("objects", TypeRef::nn_list_nn(input.clone()))
                     .describe("the rows to be inserted"),
@@ -154,7 +154,7 @@ impl Builder<'_> {
                     TypeRef::named(table.type_name()),
                     FieldKind::Mutation(MutationField::InsertOne(table.clone())),
                 )
-                .describe(names.insert_one.1.clone())
+                .describe_opt(names.insert_one.1.clone())
                 .arg(
                     InputValueDef::new("object", TypeRef::nn(input))
                         .describe("the row to be inserted"),
@@ -189,7 +189,7 @@ impl Builder<'_> {
                 TypeRef::named(response.clone()),
                 FieldKind::Mutation(MutationField::Update(table.clone())),
             )
-            .describe(names.update.1.clone())
+            .describe_opt(names.update.1.clone())
             .arg(where_arg());
             let f = with_ops(f);
             root.fields.insert(f.name.clone(), f);
@@ -201,7 +201,7 @@ impl Builder<'_> {
                     TypeRef::named(table.type_name()),
                     FieldKind::Mutation(MutationField::UpdateByPk(table.clone())),
                 )
-                .describe(names.update_by_pk.1.clone())
+                .describe_opt(names.update_by_pk.1.clone())
                 .arg(InputValueDef::new("pk_columns", TypeRef::nn(pk_input)));
                 let f = with_ops(f);
                 root.fields.insert(f.name.clone(), f);
@@ -223,7 +223,7 @@ impl Builder<'_> {
                 TypeRef::named(response).list(),
                 FieldKind::Mutation(MutationField::UpdateMany(table.clone())),
             )
-            .describe(names.update_many.1.clone())
+            .describe_opt(names.update_many.1.clone())
             .arg(
                 InputValueDef::new("updates", TypeRef::nn_list_nn(updates))
                     .describe("updates to execute, in order"),
@@ -239,7 +239,7 @@ impl Builder<'_> {
                 TypeRef::named(response),
                 FieldKind::Mutation(MutationField::Delete(table.clone())),
             )
-            .describe(names.delete.1.clone())
+            .describe_opt(names.delete.1.clone())
             .arg(
                 InputValueDef::new("where", TypeRef::nn(table.bool_exp_name()))
                     .describe("filter the rows which have to be deleted"),
@@ -252,7 +252,7 @@ impl Builder<'_> {
                     TypeRef::named(table.type_name()),
                     FieldKind::Mutation(MutationField::DeleteByPk(table.clone())),
                 )
-                .describe(names.delete_by_pk.1.clone());
+                .describe_opt(names.delete_by_pk.1.clone());
                 for col in table.primary_key.iter().flatten() {
                     let col = &table.columns[col];
                     let ty = self.column_value_type(col, false);
