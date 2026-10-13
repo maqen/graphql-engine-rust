@@ -8,6 +8,7 @@ pub mod catalog;
 pub mod error;
 pub mod inconsistency;
 pub mod names;
+pub mod scientific;
 pub mod session;
 
 pub use catalog::{
@@ -18,4 +19,5 @@ pub use catalog::{
 pub use error::{Code, Error, Result};
 pub use inconsistency::InconsistentObject;
 pub use names::{QualifiedFunction, QualifiedTable};
+pub use scientific::scientific_show;
 pub use session::{ADMIN_ROLE, RoleName, Session, SessionVariables};

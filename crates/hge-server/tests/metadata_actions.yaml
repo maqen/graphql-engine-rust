@@ -501,3 +501,82 @@ steps:
   - description: the custom types and every action are inconsistent
     query: {type: get_inconsistent_metadata, args: {}}
     response: {"inconsistent_objects": [{"definition": {"enums": [], "input_objects": [], "objects": [{"description": null, "fields": [{"arguments": null, "description": null, "name": "id", "type": "Int!"}], "name": "Out", "relationships": [{"field_mapping": {"id": "id"}, "name": "user", "remote_table": {"name": "ma_user", "schema": "public"}, "source": "default", "type": "object"}]}, {"description": null, "fields": [{"arguments": null, "description": null, "name": "id", "type": "Int!"}], "name": "Other", "relationships": []}], "scalars": []}, "name": "custom_types custom_types", "reason": "Inconsistent object: validation for the given custom types failed because the remote table \"ma_user\" for relationship \"user\" of object type \"Out\" does not exist", "type": "custom_types"}, {"definition": {"comment": null, "definition": {"arguments": [], "forward_client_headers": false, "handler": "http://localhost:1/x", "headers": [], "output_type": "Out", "timeout": 30, "type": "query"}, "name": "act"}, "name": "action act", "reason": "Inconsistent object: custom types are inconsistent", "type": "action"}, {"definition": {"comment": null, "definition": {"arguments": [], "forward_client_headers": false, "handler": "http://localhost:1/y", "headers": [{"name": "X", "value": "a"}], "kind": "synchronous", "output_type": "Other", "timeout": 30, "type": "mutation"}, "name": "otherAct"}, "name": "action otherAct", "reason": "Inconsistent object: custom types are inconsistent", "type": "action"}], "is_consistent": false}
+
+  # Timeouts: V2 reads any integral number (`toBoundedInteger`).
+
+  - description: replace_metadata reads an integral float timeout
+    query:
+      type: replace_metadata
+      args:
+        version: 3
+        sources: []
+        actions:
+          - name: slow
+            definition: {output_type: String, handler: "http://localhost:1/s", timeout: 2.0}
+    response: {message: success}
+
+  - description: the integral float timeout exports as an integer
+    query: {type: export_metadata, args: {}}
+    response: {"version": 3, "sources": [], "actions": [{"name": "slow", "definition": {"handler": "http://localhost:1/s", "output_type": "String", "ignored_client_headers": ["Content-Length", "Content-MD5", "User-Agent", "Host", "Origin", "Referer", "Accept", "Accept-Encoding", "Accept-Language", "Accept-Datetime", "Cache-Control", "Connection", "DNT", "Content-Type"], "type": "mutation", "kind": "synchronous", "timeout": 2}}]}
+
+  - description: create_action reads 1e1 as 10
+    query:
+      type: create_action
+      args:
+        name: slower
+        definition: {output_type: String, handler: "http://localhost:1/s", timeout: 1e1}
+    response: {message: success}
+
+  - description: a fractional timeout is out of bounds
+    query:
+      type: create_action
+      args:
+        name: slowest
+        definition: {output_type: String, handler: "http://localhost:1/s", timeout: 2.5}
+    status: 400
+    response: {"error": "2.5 is out of bounds", "path": "$.args.definition.timeout", "code": "parse-failed"}
+
+  - description: replace_metadata rejects a fractional timeout too
+    query:
+      type: replace_metadata
+      args:
+        version: 3
+        sources: []
+        actions:
+          - name: slow
+            definition: {output_type: String, handler: "http://localhost:1/s", timeout: 2.5}
+    status: 400
+    response: {"error": "2.5 is out of bounds", "path": "$.args.actions[0].definition.timeout", "code": "parse-failed"}
+
+  - description: a negative timeout makes the metadata unreadable
+    query:
+      type: replace_metadata
+      args:
+        version: 3
+        sources: []
+        actions:
+          - name: slow
+            definition: {output_type: String, handler: "http://localhost:1/s", timeout: -1}
+    status: 400
+    response: {"error": "timeout value cannot be negative", "path": "$.args.actions[0].definition.timeout", "code": "parse-failed"}
+
+  - description: a string timeout makes the metadata unreadable
+    query:
+      type: replace_metadata
+      args:
+        version: 3
+        sources: []
+        actions:
+          - name: slow
+            definition: {output_type: String, handler: "http://localhost:1/s", timeout: "2"}
+    status: 400
+    response: {"error": "parsing Timeout failed, expected Number, but encountered String", "path": "$.args.actions[0].definition.timeout", "code": "parse-failed"}
+
+  - description: out-of-range timeouts are shown as Haskell shows a Scientific
+    query:
+      type: create_action
+      args:
+        name: slowest
+        definition: {output_type: String, handler: "http://localhost:1/s", timeout: 0.05}
+    status: 400
+    response: {"error": "5.0e-2 is out of bounds", "path": "$.args.definition.timeout", "code": "parse-failed"}

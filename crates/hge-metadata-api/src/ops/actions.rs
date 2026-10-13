@@ -442,16 +442,7 @@ fn timeout(v: &Value, path: &str) -> ApiResult<u64> {
     let Value::Number(n) = v else {
         return Err(kind_error(path, Some("Timeout"), "Number", v));
     };
-    let integral = n.as_i64().or_else(|| {
-        n.as_f64()
-            .filter(|f| f.fract() == 0.0 && *f >= i64::MIN as f64 && *f <= i64::MAX as f64)
-            .map(|f| f as i64)
-    });
-    match integral {
-        Some(t) if t < 0 => Err(parse_failed(path, "timeout value cannot be negative")),
-        Some(t) => Ok(t.unsigned_abs()),
-        None => Err(parse_failed(path, format!("{n} is out of bounds"))),
-    }
+    hge_metadata::actions::timeout_secs(n).map_err(|e| parse_failed(path, e))
 }
 
 /// V2's serialisation of a parsed definition (`actionDefinitionToOrdJSON`): defaults are

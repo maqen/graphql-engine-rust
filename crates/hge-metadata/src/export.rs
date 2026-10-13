@@ -289,6 +289,12 @@ fn action_defaults(def: Value) -> Value {
             .collect();
         d.insert("ignored_client_headers".into(), Value::Array(defaults));
     }
+    // `Timeout` is an `Int`: `2.0` is written as `2`.
+    if let Some(Value::Number(n)) = d.get("timeout")
+        && let Ok(t) = crate::actions::timeout_secs(n)
+    {
+        d.insert("timeout".into(), Value::from(t));
+    }
     let default_valued = |key: &str, v: &Value| match key {
         "forward_client_headers" => matches!(v, Value::Null | Value::Bool(false)),
         "timeout" => v.is_null() || v.as_u64() == Some(crate::actions::DEFAULT_ACTION_TIMEOUT_SECS),
