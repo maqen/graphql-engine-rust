@@ -85,7 +85,10 @@ fn case_files() -> Vec<PathBuf> {
         for entry in std::fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
             if path.is_dir() {
-                walk(&path, out);
+                // `cases/events/` has its own format and runner (`tests/events.rs`).
+                if !path.ends_with("events") {
+                    walk(&path, out);
+                }
             } else if path.extension().is_some_and(|e| e == "yaml") {
                 out.push(path);
             }
