@@ -67,6 +67,14 @@ impl Lowerer<'_> {
             .ok_or_else(|| Error::unexpected(format!("unknown table {}", rel.target)))
     }
 
+    /// The role's select filter on `table`, unless it lets every row through.
+    fn permission_filter(&self, table: &TableInfo) -> Option<BoolExp> {
+        self.rs
+            .select_access(table)
+            .and_then(|a| a.row_filter())
+            .cloned()
+    }
+
     fn select(
         &self,
         table: &TableInfo,
@@ -83,7 +91,7 @@ impl Lowerer<'_> {
             table: table.name.clone(),
             fields,
             args,
-            permission_filter: None,
+            permission_filter: self.permission_filter(table),
             permission_limit: self.rs.select_access(table).and_then(|a| a.limit),
         })
     }
@@ -255,9 +263,14 @@ impl Lowerer<'_> {
                     } else if let Some(rel) = table.relationship_by_name(key) {
                         let target = self.target(rel)?;
                         if let Json::Object(o) = value {
-                            let exp = self
-                                .bool_exp(target, o, &item_path)?
-                                .unwrap_or_else(BoolExp::always_true);
+                            let user = self.bool_exp(target, o, &item_path)?;
+                            // Filtering through a relationship never sees rows the role
+                            // cannot select.
+                            let permission = self
+                                .permission_filter(target)
+                                .map(|p| BoolExp::Rooted(Box::new(p)));
+                            let exp =
+                                BoolExp::and(permission, user).unwrap_or_else(BoolExp::always_true);
                             items.push(BoolExp::Relationship {
                                 table: target.name.clone(),
                                 mapping: rel.mapping.clone(),
@@ -374,6 +387,7 @@ impl Lowerer<'_> {
                             target: OrderByTarget::ObjectRelationship {
                                 table: target.name.clone(),
                                 mapping: rel.mapping.clone(),
+                                filter: self.permission_filter(target).map(Box::new),
                                 target: Box::new(item.target),
                             },
                             direction: item.direction,

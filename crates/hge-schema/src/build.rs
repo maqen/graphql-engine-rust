@@ -140,9 +140,12 @@ impl Builder<'_> {
                 .unwrap_or_else(|| format!("fetch data from the table: \"{display}\"")),
         );
         let select = self.with_select_args(select, table);
-        root.fields.insert(select.name.clone(), select);
+        if access.query_root_fields.select {
+            root.fields.insert(select.name.clone(), select);
+        }
 
         if let Some(pk) = &table.primary_key
+            && access.query_root_fields.select_by_pk
             && pk.iter().all(|c| access.allows_column(c))
         {
             let mut by_pk = FieldDef::new(

@@ -1,0 +1,3 @@
+table:
+  name: allowed_reader
+  schema: public

@@ -4,7 +4,8 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use hge_core::{ColumnType, QualifiedTable, SourceCatalog, TableCatalog};
+use hge_core::{ColumnType, QualifiedTable, RoleName, SourceCatalog, TableCatalog};
+use hge_ir::TablePermissions;
 use hge_metadata::{
     ArrayRelUsing, ManualRelConfig, ObjectFkOn, ObjectRelUsing, Source, TableEntry,
 };
@@ -67,6 +68,8 @@ pub struct TableInfo {
     pub is_enum: bool,
     /// The metadata entry, for permission lookups.
     pub entry: TableEntry,
+    /// Resolved permissions by role (filled by [`crate::permissions::resolve_permissions`]).
+    pub permissions: HashMap<RoleName, Arc<TablePermissions>>,
 }
 
 impl TableInfo {
@@ -296,6 +299,7 @@ fn resolve_table(
         root_fields,
         is_enum: entry.is_enum,
         entry: entry.clone(),
+        permissions: HashMap::new(),
     })
 }
 

@@ -1,0 +1,58 @@
+table:
+  name: article
+  schema: public
+object_relationships:
+  - name: author
+    using:
+      foreign_key_constraint_on: author_id
+  - name: reviewer
+    using:
+      foreign_key_constraint_on: reviewer_id
+select_permissions:
+  # Published articles plus the user's own drafts, at most 3 rows per select.
+  - role: user
+    permission:
+      columns: [id, title, author_id, is_published]
+      filter:
+        _or:
+          - is_published:
+              _eq: true
+          - author:
+              id:
+                _eq: X-Hasura-User-Id
+      limit: 3
+  # Articles meeting their own minimum length.
+  - role: editor
+    permission:
+      columns: [id, title]
+      filter:
+        word_count:
+          _cgte: min_words
+  # Readers on the allow list see the articles whose ids they are given.
+  - role: reader
+    permission:
+      columns: [id, title, meta]
+      filter:
+        _and:
+          - _exists:
+              _table: allowed_reader
+              _where:
+                user_id:
+                  _eq: X-Hasura-User-Id
+          - id:
+              _in: X-Hasura-Article-Ids
+  # Unreviewed articles (null-safe equality against a nullable column).
+  - role: triage
+    permission:
+      columns: [id, title]
+      filter:
+        reviewer_id:
+          _eq: null
+  # Articles with any of the given meta keys; only the by-pk root field.
+  - role: keys
+    permission:
+      columns: [id, title]
+      filter:
+        meta:
+          _has_keys_any: X-Hasura-Keys
+      query_root_fields: [select_by_pk]

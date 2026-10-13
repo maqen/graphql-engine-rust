@@ -190,6 +190,7 @@ impl<'s> Translator<'s> {
             OrderByTarget::ObjectRelationship {
                 table,
                 mapping,
+                filter,
                 target,
             } => {
                 let rel_alias = self.fresh("_o");
@@ -204,6 +205,10 @@ impl<'s> Translator<'s> {
                     }
                     self.b.qualified(&rel_alias, remote).push(" = ");
                     self.b.qualified(alias, local);
+                }
+                if let Some(filter) = filter {
+                    self.b.push(" AND ");
+                    self.bool_exp(filter, &rel_alias)?;
                 }
                 self.b.push(" LIMIT 1)");
             }
