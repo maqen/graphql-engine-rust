@@ -1,7 +1,9 @@
-//! Executing mutations: one transaction per call, with `hasura.user` set for triggers.
+//! Executing mutations: one transaction per call, with `hasura.tracecontext` and `hasura.user`
+//! set for triggers.
 //!
 //! ```sql
 //! BEGIN ISOLATION LEVEL READ COMMITTED READ WRITE;
+//! SET LOCAL "hasura.tracecontext" = '{"sampling_state":"1","span_id":"…","trace_id":"…"}';
 //! SET LOCAL "hasura.user" = '{"x-hasura-role":"admin"}';
 //! <statements of every mutation root field, in order>
 //! COMMIT;  -- ROLLBACK on any error
@@ -20,6 +22,25 @@ use crate::param::TextParam;
 use crate::source::{CancelOnDrop, PgSource, pg_error_with};
 use crate::sql::SqlBuilder;
 use crate::translate::mutation::{self as sql, Row, Statement};
+
+/// The trace context event triggers record with the events this transaction creates. A fresh
+/// trace per mutation request, like V2 without an incoming trace header.
+fn trace_context() -> Json {
+    // Sorted keys, as V2 writes them.
+    serde_json::json!({
+        "sampling_state": "1",
+        "span_id": random_hex(8),
+        "trace_id": random_hex(16),
+    })
+}
+
+fn random_hex(bytes: usize) -> String {
+    use rand::Rng;
+    let mut rng = rand::rng();
+    (0..bytes)
+        .map(|_| format!("{:02x}", rng.random::<u8>()))
+        .collect()
+}
 
 const CHECK_FAILED: &str = "check constraint of an insert/update permission has failed";
 
@@ -42,9 +63,11 @@ pub(crate) async fn execute(
         prepared: source.use_prepared_statements(),
     };
     let begin = format!(
-        "BEGIN ISOLATION LEVEL {} READ WRITE; SET LOCAL \"hasura.user\" = {}",
+        "BEGIN ISOLATION LEVEL {} READ WRITE; SET LOCAL \"hasura.tracecontext\" = {}; \
+         SET LOCAL \"hasura.user\" = {}",
         source.isolation_level().sql(),
-        quote_literal(&session.variables.to_json().to_string()),
+        quote_literal(&trace_context().to_string()),
+        quote_literal(&session.variables.to_sorted_json_string()),
     );
     client.batch_execute(&begin).await.map_err(tx_error)?;
 
@@ -122,6 +145,10 @@ impl Tx<'_> {
                 Ok(out)
             }
             Mutation::Delete(d) => self.delete(d).await,
+            Mutation::Function(query) => {
+                let q = crate::translate::translate_query(&[&**query], self.session)?;
+                Ok(first_json(self.run(&q, "$").await?))
+            }
         }
     }
 

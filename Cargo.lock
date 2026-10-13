@@ -999,6 +999,7 @@ dependencies = [
  "hge-metadata",
  "indexmap",
  "postgres-types",
+ "rand 0.9.5",
  "rustls",
  "serde",
  "serde_json",

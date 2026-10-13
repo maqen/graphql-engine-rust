@@ -18,6 +18,7 @@ use hge_server::ServerConfig;
 use serde::Deserialize;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
+use tower::ServiceExt;
 
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/events");
 const CASES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/events_cases");
@@ -33,8 +34,24 @@ struct CaseFile {
 #[serde(deny_unknown_fields)]
 struct Case {
     description: String,
+    #[serde(default)]
     sql: String,
+    /// A GraphQL request to send after `sql` (headers in the given order).
+    #[serde(default)]
+    graphql: Option<GraphqlStep>,
     deliveries: Vec<Delivery>,
+    /// `hasura.user` as the last row inserted into `ev.item` saw it (V2 sorts the keys); the
+    /// row must also see a `hasura.tracecontext`.
+    #[serde(default)]
+    hasura_user: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GraphqlStep {
+    query: String,
+    #[serde(default)]
+    headers: Vec<(String, String)>,
 }
 
 #[derive(Deserialize)]
@@ -162,6 +179,7 @@ async fn event_trigger_cases() {
         ]
     );
 
+    let router = hge_server::routes::router(engine.clone());
     let shutdown = CancellationToken::new();
     let worker = hge_server::events::spawn_worker(&engine, shutdown.clone()).expect("worker");
 
@@ -178,6 +196,55 @@ async fn event_trigger_cases() {
         for case in cases.cases {
             calls.lock().unwrap().clear();
             client.batch_execute(&case.sql).await.unwrap();
+            if let Some(step) = &case.graphql {
+                let mut req = axum::http::Request::post("/v1/graphql")
+                    .header("content-type", "application/json");
+                for (k, v) in &step.headers {
+                    req = req.header(k, v);
+                }
+                let body = serde_json::to_vec(&serde_json::json!({"query": step.query})).unwrap();
+                let resp = router
+                    .clone()
+                    .oneshot(req.body(axum::body::Body::from(body)).unwrap())
+                    .await
+                    .unwrap();
+                let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                let resp: Value = serde_json::from_slice(&bytes).unwrap();
+                assert!(resp.get("errors").is_none(), "{}: {resp}", case.description);
+            }
+            if let Some(want) = &case.hasura_user {
+                // `ev.capture` records the settings as text, exactly as the engine set them.
+                let row = client
+                    .query_one(
+                        "SELECT hasura_user, hasura_trace FROM ev.capture ORDER BY id DESC LIMIT 1",
+                        &[],
+                    )
+                    .await
+                    .unwrap();
+                let got: Option<String> = row.get(0);
+                let trace: Option<String> = row.get(1);
+                if got.as_ref() != Some(want) {
+                    failures.push(format!(
+                        "{}: hasura.user {got:?}, expected {want}",
+                        case.description
+                    ));
+                }
+                // The mutation's trace: V2's sorted keys, 16- and 32-digit hex ids.
+                let trace_ok = trace.as_deref().is_some_and(|t| {
+                    let v: Value = serde_json::from_str(t).unwrap_or_default();
+                    t.starts_with(r#"{"sampling_state":"1","span_id":"#)
+                        && v["span_id"].as_str().is_some_and(|x| x.len() == 16)
+                        && v["trace_id"].as_str().is_some_and(|x| x.len() == 32)
+                });
+                if !trace_ok {
+                    failures.push(format!(
+                        "{}: hasura.tracecontext {trace:?}",
+                        case.description
+                    ));
+                }
+            }
             let want = case.deliveries.len();
             let mut got = vec![];
             for _ in 0..100 {

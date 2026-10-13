@@ -156,6 +156,9 @@ struct ServeArgs {
     #[arg(long, env = "HASURA_GRAPHQL_V1_BOOLEAN_NULL_COLLAPSE", value_parser = parse_bool, default_value = "false")]
     v1_boolean_null_collapse: bool,
 
+    #[arg(long, env = "HASURA_GRAPHQL_INFER_FUNCTION_PERMISSIONS", value_parser = parse_bool, default_value = "true")]
+    infer_function_permissions: bool,
+
     #[arg(long, env = "HASURA_GRAPHQL_CORS_DOMAIN", default_value = "*")]
     cors_domain: String,
 
@@ -411,6 +414,7 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
         admin_internal_errors: args.admin_internal_errors,
         stringify_numeric_types: args.stringify_numeric_types,
         v1_boolean_null_collapse: args.v1_boolean_null_collapse,
+        infer_function_permissions: args.infer_function_permissions,
         cors_domain: args.cors_domain.clone(),
         disable_cors: args.disable_cors,
         enabled_apis: args

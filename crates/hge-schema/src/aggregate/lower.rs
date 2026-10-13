@@ -44,6 +44,7 @@ impl Lowerer<'_> {
             args: self.select_args(table, field)?,
             permission_filter: self.permission_filter(table),
             permission_limit: self.rs.select_access(table).and_then(|a| a.limit),
+            from_function: None,
         })
     }
 

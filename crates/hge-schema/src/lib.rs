@@ -48,6 +48,19 @@ pub fn resolve_tables<C: std::borrow::Borrow<SourceCatalog>>(
     }
     tables::drop_conflicting(&mut tables, &mut inconsistencies);
     permissions::resolve_permissions(metadata, &mut tables, &mut inconsistencies);
+    let mut tracked = vec![];
+    for source in &metadata.sources {
+        if let Some(catalog) = catalogs.get(&source.name) {
+            tracked.extend(functions::tracked::resolve(
+                source,
+                catalog.borrow(),
+                &tables,
+                &metadata.inherited_roles,
+                &mut inconsistencies,
+            ));
+        }
+    }
+    tables.functions = functions::tracked::drop_conflicting(tracked, &tables, &mut inconsistencies);
     // V2 lists sources, then tables, then the objects inside tables.
     inconsistencies.sort_by_key(|o| match o.kind.as_str() {
         "source" => 0,
