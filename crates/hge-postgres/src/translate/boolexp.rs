@@ -145,6 +145,18 @@ impl Translator<'_> {
                 casts.push(to);
                 return self.compare_cast(op, &casts, lhs);
             }
+            JsonbPathExists(v) | JsonbPathMatch(v) => {
+                self.b.push(if matches!(op, JsonbPathExists(_)) {
+                    "jsonb_path_exists("
+                } else {
+                    "jsonb_path_match("
+                });
+                self.operand(casts, lhs)?;
+                self.b.push(", ");
+                self.value(v)?;
+                self.b.push(")");
+                return Ok(());
+            }
             Spatial(f, v) => {
                 self.b.push(f.function()).push("(");
                 self.operand(casts, lhs)?;
@@ -211,7 +223,12 @@ impl Translator<'_> {
             HasKey(v) => (" ? ", v, ""),
             HasKeysAny(v) => (" ?| ", v, ""),
             HasKeysAll(v) => (" ?& ", v, ""),
-            IsNull(_) | Cast { .. } | Spatial(..) | DWithin(_) => {
+            IsNull(_)
+            | Cast { .. }
+            | Spatial(..)
+            | DWithin(_)
+            | JsonbPathExists(_)
+            | JsonbPathMatch(_) => {
                 unreachable!("handled above")
             }
         };

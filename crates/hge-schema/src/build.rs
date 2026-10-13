@@ -909,6 +909,15 @@ impl Builder<'_> {
                 InputValueDef::new("_has_keys_any", TypeRef::nn("String").list())
                     .describe("do any of these strings exist as top-level keys in the column"),
             );
+            fields.push(
+                InputValueDef::new("_jsonb_path_exists", TypeRef::named("String"))
+                    .describe("does the jsonpath return any item for the specified JSON value"),
+            );
+            fields.push(
+                InputValueDef::new("_jsonb_path_match", TypeRef::named("String")).describe(
+                    "does the jsonpath predicate check return true for the specified JSON value",
+                ),
+            );
         }
         fields.sort_by(|a, b| a.name.cmp(&b.name));
 

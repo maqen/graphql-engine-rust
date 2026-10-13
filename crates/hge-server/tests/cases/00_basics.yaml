@@ -92,6 +92,21 @@ cases:
         author: [{ id: 1, info: rust }]
         hasKey: [{ id: 1 }]
 
+  - description: jsonb path operators
+    query:
+      query: |
+        query ($p: String) {
+          exists: author(where: {info: {_jsonb_path_exists: "$.langs[*] ? (@ == \"rust\")"}}) { id }
+          match: author(where: {info: {_jsonb_path_match: $p}}) { id }
+          none: author(where: {info: {_jsonb_path_exists: "$.nope"}}) { id } }
+      variables:
+        p: '$.city == "Oslo"'
+    response:
+      data:
+        exists: [{ id: 1 }]
+        match: [{ id: 1 }]
+        none: []
+
   - description: order by object relationship column
     query:
       query: "{ article(order_by: [{author: {name: desc}}, {id: asc}], limit: 2) { id } }"
