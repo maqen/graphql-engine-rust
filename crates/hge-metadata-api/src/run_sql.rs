@@ -243,19 +243,13 @@ async fn set_session(tx: &tokio_postgres::Transaction<'_>, session: &Session) ->
     tx.execute(
         SQL,
         &[
-            &session_json(session),
+            &session.variables.to_sorted_json_string(),
             &hge_events::delivery::new_trace_context(),
         ],
     )
     .await
     .map(drop)
     .map_err(|e| sql_error(e, SQL))
-}
-
-/// The session as V2 records it in `hasura.user`: a JSON object with sorted keys.
-pub(crate) fn session_json(session: &Session) -> String {
-    let sorted: std::collections::BTreeMap<&str, &str> = session.variables.iter().collect();
-    serde_json::to_string(&sorted).expect("string map serializes")
 }
 
 fn source_missing(name: &str) -> ApiError {

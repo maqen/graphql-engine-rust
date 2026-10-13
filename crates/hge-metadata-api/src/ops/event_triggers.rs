@@ -574,7 +574,7 @@ pub async fn invoke_event_trigger<R: Runtime>(
         &table,
         &name,
         &payload.to_string(),
-        &crate::run_sql::session_json(ctx.session),
+        &ctx.session.variables.to_sorted_json_string(),
         &hge_events::delivery::new_trace_context(),
     )
     .await
