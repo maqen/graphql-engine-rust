@@ -225,7 +225,7 @@ struct ServeArgs {
     #[arg(long, env = "HASURA_GRAPHQL_ENABLE_CONSOLE", value_parser = parse_bool, default_value = "false")]
     enable_console: bool,
 
-    /// Not implemented yet: refusing to start beats silently accepting every query.
+    /// Only allowlisted queries for non-admin roles (CE: global collections only).
     #[arg(long, env = "HASURA_GRAPHQL_ENABLE_ALLOWLIST", value_parser = parse_bool, default_value = "false")]
     enable_allowlist: bool,
 
@@ -481,11 +481,6 @@ fn log_startup(args: &ServeArgs, config: &ServerConfig, log: &LogConfig, ignored
 }
 
 fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
-    if args.enable_allowlist {
-        anyhow::bail!(
-            "HASURA_GRAPHQL_ENABLE_ALLOWLIST is not supported yet; refusing to start without it"
-        );
-    }
     let mut admin_secrets = vec![];
     if let Some(s) = args.admin_secret.as_ref().or(args.access_key.as_ref()) {
         admin_secrets.push(s.clone());
@@ -561,6 +556,7 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
         use_prepared_statements: args.use_prepared_statements,
         preserve_401_errors: args.preserve_401_errors,
         events: hge_events_config(args),
+        enable_allowlist: args.enable_allowlist,
         websocket: websocket_config(args),
         read_only: args.read_only_mode,
         schema_sync_poll_interval_ms: if args.schema_sync_poll_interval >= 0.0 {

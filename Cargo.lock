@@ -1002,6 +1002,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "hge-rest"
+version = "0.1.0"
+dependencies = [
+ "async-graphql-parser",
+ "async-graphql-value",
+ "hge-core",
+ "hge-metadata",
+ "serde_json",
+]
+
+[[package]]
 name = "hge-schema"
 version = "0.1.0"
 dependencies = [
@@ -1021,6 +1032,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arc-swap",
+ "async-graphql-parser",
  "async-trait",
  "axum",
  "base64 0.22.1",
@@ -1035,6 +1047,7 @@ dependencies = [
  "hge-metadata",
  "hge-metadata-api",
  "hge-postgres",
+ "hge-rest",
  "hge-schema",
  "hge-subscriptions",
  "hge-testdb",

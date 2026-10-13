@@ -190,13 +190,10 @@ impl<'a, R: Runtime> Ctx<'a, R> {
                 let own: Vec<&InconsistentObject> = new
                     .iter()
                     .copied()
-                    .filter(|o| o.kind == *kind && o.name == *name)
+                    .filter(|o| o.involves(kind, name))
                     .collect();
                 if !own.is_empty() {
-                    let reasons: Vec<String> = own
-                        .iter()
-                        .map(|o| format!("Inconsistent object: {}", o.reason))
-                        .collect();
+                    let reasons: Vec<String> = own.iter().map(|o| o.display_reason()).collect();
                     return Err(
                         ApiError::bad(Code::InvalidConfiguration, reasons.join(", "))
                             .with_internal(objects_json(&own)),

@@ -25,7 +25,13 @@ pub const VERSION: &str = concat!("v2.48.0-rs.", env!("CARGO_PKG_VERSION"));
 pub fn router(engine: Arc<Engine>) -> Router {
     let mut router = Router::new()
         .route("/healthz", get(healthz))
-        .route("/v1/version", get(version));
+        .route("/v1/version", get(version))
+        .route("/api/rest", axum::routing::any(crate::rest::handler))
+        .route("/api/rest/", axum::routing::any(crate::rest::handler))
+        .route(
+            "/api/rest/{*path}",
+            axum::routing::any(crate::rest::handler),
+        );
     if engine.config.api_enabled("graphql") {
         router = router
             .route("/v1/graphql", get(graphql_get).post(graphql_post))

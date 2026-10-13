@@ -21,6 +21,11 @@ pub struct InconsistentObject {
     pub definition: Value,
     /// Optional structured detail (V2's `message` key).
     pub message: Option<Value>,
+    /// Whether the reason is reported as `"Inconsistent object: <reason>"` (most objects)
+    /// or bare (e.g. REST endpoint path errors).
+    pub prefixed: bool,
+    /// Other objects (`(kind, name)`) this inconsistency is about, besides its own id.
+    pub involves: Vec<(String, String)>,
 }
 
 impl InconsistentObject {
@@ -36,6 +41,51 @@ impl InconsistentObject {
             reason: reason.into(),
             definition,
             message: None,
+            prefixed: true,
+            involves: vec![],
+        }
+    }
+
+    /// V2's `AmbiguousRestEndpoints`: several REST endpoints can match the same URL and
+    /// method. `conflicts` are `(endpoint name, endpoint JSON)`, sorted by name; V2
+    /// attributes the group to the first one (its id, what `drop_inconsistent_metadata`
+    /// drops, and the only endpoint whose creation reports it as its own error).
+    pub fn ambiguous_rest_endpoints(
+        reason: impl Into<String>,
+        conflicts: Vec<(String, Value)>,
+    ) -> Self {
+        let reason = reason.into();
+        let involves = conflicts
+            .iter()
+            .take(1)
+            .map(|(name, _)| ("rest_endpoint".to_owned(), format!("rest_endpoint {name}")))
+            .collect();
+        let definition = Value::Array(conflicts.into_iter().map(|(_, v)| v).collect());
+        InconsistentObject {
+            involves,
+            prefixed: false,
+            ..Self::new(AMBIGUOUS_REST_ENDPOINTS, reason.clone(), reason, definition)
+        }
+    }
+
+    /// Report the reason without the `"Inconsistent object: "` prefix.
+    pub fn bare(mut self) -> Self {
+        self.prefixed = false;
+        self
+    }
+
+    /// Whether this inconsistency is about the object `(kind, name)`.
+    pub fn involves(&self, kind: &str, name: &str) -> bool {
+        (self.kind == kind && self.name == name)
+            || self.involves.iter().any(|(k, n)| k == kind && n == name)
+    }
+
+    /// The reason as V2 reports it.
+    pub fn display_reason(&self) -> String {
+        if self.prefixed {
+            format!("Inconsistent object: {}", self.reason)
+        } else {
+            self.reason.clone()
         }
     }
 
@@ -119,7 +169,10 @@ impl InconsistentObject {
 
     /// Identity used to decide whether an inconsistency is new (V2 compares object ids).
     pub fn id(&self) -> (&str, &str) {
-        (&self.kind, &self.name)
+        match self.involves.first() {
+            Some((kind, name)) if self.kind == AMBIGUOUS_REST_ENDPOINTS => (kind, name),
+            _ => (&self.kind, &self.name),
+        }
     }
 
     /// The JSON object V2 returns.
@@ -132,21 +185,24 @@ impl InconsistentObject {
             obj.insert("type".into(), Value::String(self.kind.clone()));
             return Value::Object(obj);
         }
+        if self.kind == AMBIGUOUS_REST_ENDPOINTS {
+            obj.insert("conflicts".into(), sort_keys(self.definition.clone()));
+            obj.insert("reason".into(), Value::String(self.reason.clone()));
+            return Value::Object(obj);
+        }
         obj.insert("definition".into(), sort_keys(self.definition.clone()));
         if let Some(m) = &self.message {
             obj.insert("message".into(), m.clone());
         }
         obj.insert("name".into(), Value::String(self.name.clone()));
-        obj.insert(
-            "reason".into(),
-            Value::String(format!("Inconsistent object: {}", self.reason)),
-        );
+        obj.insert("reason".into(), Value::String(self.display_reason()));
         obj.insert("type".into(), Value::String(self.kind.clone()));
         Value::Object(obj)
     }
 }
 
 const CONFLICTING_INHERITED_PERMISSION: &str = "inherited role permission inconsistency";
+const AMBIGUOUS_REST_ENDPOINTS: &str = "ambiguous_rest_endpoints";
 
 /// V2 renders definitions from plain aeson values, whose keys come out sorted.
 fn sort_keys(v: Value) -> Value {

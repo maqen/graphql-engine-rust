@@ -145,6 +145,7 @@ pub fn plan(state: &AppState, session: &Session, req: GraphQLRequest) -> Result<
     };
     let rs = state.role_schema(&session.role, session.backend_only);
     let doc = hge_schema::parse_query(query)?;
+    crate::policies::check_allowlist(state, session, &doc, query)?;
     let op = hge_schema::plan(&rs, &doc, req.operation_name.as_deref(), &variables)?;
     if req.read_only && op.kind == hge_ir::OperationKind::Mutation {
         return Err(Error::new(

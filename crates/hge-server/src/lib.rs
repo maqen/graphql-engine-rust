@@ -6,6 +6,8 @@ pub mod events;
 pub mod graphql;
 pub mod load;
 pub mod migrations;
+pub mod policies;
+pub mod rest;
 pub mod routes;
 pub mod scheduled;
 pub mod state;

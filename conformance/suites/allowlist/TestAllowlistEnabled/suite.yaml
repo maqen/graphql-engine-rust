@@ -1,0 +1,8 @@
+description: Hand-written. Allowlist enforcement with HASURA_GRAPHQL_ENABLE_ALLOWLIST (CE global-only mode), including test_query_non_allowlist and TestRoleBasedAllowlistQueriesCE from server/tests-py/test_allowlist_queries.py
+upstream:
+  file: test_allowlist_queries.py
+  by_hand: true
+admin_secret: true
+env:
+  HASURA_GRAPHQL_ENABLE_ALLOWLIST: 'true'
+isolation: none

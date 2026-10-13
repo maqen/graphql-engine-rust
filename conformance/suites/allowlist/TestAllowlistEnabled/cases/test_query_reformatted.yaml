@@ -1,0 +1,21 @@
+upstream:
+  file: test_allowlist_queries.py
+  by_hand: true
+steps:
+- description: An allowlisted query with other whitespace, commas, comments and no __typename
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: |-
+      # comment
+      query ($id: Int!) { user_by_pk(id: $id) { id, name company } }
+    variables:
+      id: 1
+  response:
+    data:
+      user_by_pk:
+        id: 1
+        name: clarke
+        company: Symons

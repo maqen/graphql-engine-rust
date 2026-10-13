@@ -1,0 +1,17 @@
+upstream:
+  file: test_allowlist_queries.py
+  by_hand: true
+steps:
+- description: A query outside the allowlist
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: query { user { id name } }
+  response:
+    errors:
+    - extensions:
+        path: $
+        code: validation-failed
+      message: query is not allowed

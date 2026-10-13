@@ -1,0 +1,18 @@
+[package]
+name = "hge-rest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Query collections, the allowlist and RESTified endpoints (/api/rest/*) of Hasura V2"
+
+[dependencies]
+hge-core.workspace = true
+hge-metadata.workspace = true
+async-graphql-parser.workspace = true
+async-graphql-value.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

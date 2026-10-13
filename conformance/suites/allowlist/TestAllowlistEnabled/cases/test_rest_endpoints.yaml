@@ -1,0 +1,36 @@
+upstream:
+  file: test_allowlist_queries.py
+  by_hand: true
+steps:
+- description: A REST endpoint whose query is allowlisted
+  url: /api/rest/allowed
+  method: GET
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  response:
+    user:
+    - id: 1
+      name: clarke
+      company: Symons
+    - id: 2
+      name: reckler
+      company: null
+- description: A REST endpoint whose query is not
+  url: /api/rest/blocked
+  method: GET
+  status: 400
+  headers:
+    X-Hasura-Role: user
+  response:
+    error: query is not allowed
+    path: $
+    code: validation-failed
+- description: Admin can call it
+  url: /api/rest/blocked
+  method: GET
+  status: 200
+  response:
+    user:
+    - name: clarke
+    - name: reckler
