@@ -1,7 +1,7 @@
 //! Event triggers end to end against a real Postgres (`HASURA_GRAPHQL_DATABASE_URL`) and a
 //! mock webhook. Skipped when no database is configured.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -194,12 +194,13 @@ async fn event_triggers_end_to_end() {
         .iter()
         .map(|t| t.ddl(columns(), false))
         .collect();
-    let report = catalog::sync_triggers(&pool, &ddl).await.unwrap();
+    let keep: HashSet<String> = HashSet::new();
+    let report = catalog::sync_triggers(&pool, &ddl, &keep).await.unwrap();
     assert!(report.errors.is_empty(), "{:?}", report.errors);
     assert_eq!(report.functions_written, 9);
     assert_eq!(report.triggers_created, 9);
     // Idempotent: nothing to do the second time.
-    let again = catalog::sync_triggers(&pool, &ddl).await.unwrap();
+    let again = catalog::sync_triggers(&pool, &ddl, &keep).await.unwrap();
     assert_eq!((again.functions_written, again.triggers_created), (0, 0));
 
     // Writes with and without session variables.
@@ -388,4 +389,81 @@ async fn event_triggers_end_to_end() {
     )
     .await;
     assert_eq!(archived, json!([{"archived": true}]));
+
+    // Moving a trigger to another table drops the SQL triggers left on the old one; a trigger
+    // still named in metadata (inconsistent, so not installed) keeps its objects.
+    let moved = trigger(
+        "fails_ev",
+        &slow,
+        "fail",
+        json!({"num_retries": 0, "interval_sec": 1}),
+        addr,
+    );
+    let ddl = vec![moved.ddl(columns(), false)];
+    let keep: HashSet<String> = ["fails_ev", "slow_ev"].map(String::from).into();
+    let report = catalog::sync_triggers(&pool, &ddl, &keep).await.unwrap();
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    assert_eq!((report.triggers_dropped, report.triggers_created), (3, 3));
+    assert!(report.removed.is_empty());
+    let installed = || {
+        query(
+            &pool,
+            "SELECT tgname, tgrelid::regclass::text AS tbl FROM pg_trigger
+             WHERE tgname LIKE 'notify_hasura_%' ORDER BY 1, 2",
+        )
+    };
+    let rows = installed().await;
+    let rows: Vec<String> = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            format!(
+                "{} {}",
+                r["tgname"].as_str().unwrap(),
+                r["tbl"].as_str().unwrap()
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            "notify_hasura_fails_ev_DELETE et_slow",
+            "notify_hasura_fails_ev_INSERT et_slow",
+            "notify_hasura_fails_ev_UPDATE et_slow",
+            "notify_hasura_slow_ev_DELETE et_slow",
+            "notify_hasura_slow_ev_INSERT et_slow",
+            "notify_hasura_slow_ev_UPDATE et_slow",
+        ]
+    );
+
+    // A trigger gone from metadata loses its objects and its events are archived.
+    let keep: HashSet<String> = ["fails_ev"].map(String::from).into();
+    let report = catalog::sync_triggers(&pool, &ddl, &keep).await.unwrap();
+    assert_eq!(report.removed, ["slow_ev"]);
+    assert_eq!(report.functions_dropped, 3);
+    let left = query(
+        &pool,
+        "SELECT proname FROM pg_proc WHERE proname LIKE 'notify_hasura_slow_ev_%'",
+    )
+    .await;
+    assert_eq!(left, json!([]));
+    let archived = query(
+        &pool,
+        "SELECT DISTINCT archived FROM hdb_catalog.event_log WHERE trigger_name = 'slow_ev'",
+    )
+    .await;
+    assert_eq!(archived, json!([{"archived": true}]));
+    // Nothing left to do afterwards, including with no triggers to install.
+    let again = catalog::sync_triggers(&pool, &ddl, &keep).await.unwrap();
+    assert_eq!(
+        (
+            again.triggers_dropped,
+            again.functions_dropped,
+            again.functions_written
+        ),
+        (0, 0, 0)
+    );
+    let empty = catalog::sync_triggers(&pool, &[], &keep).await.unwrap();
+    assert!(empty.removed.is_empty());
 }

@@ -1,7 +1,7 @@
 //! Wiring for event triggers: resolve them for a metadata version, keep the source catalogs
 //! and SQL triggers in sync, and run the delivery worker.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use hge_events::catalog;
@@ -39,9 +39,12 @@ pub async fn prepare(
         };
         let mut triggers = HashMap::new();
         let mut ddl = vec![];
+        // Every trigger name in metadata, consistent or not: their SQL objects are kept.
+        let mut keep = HashSet::new();
         for entry in &source.tables {
             for raw in &entry.event_triggers {
                 let name = raw.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                keep.insert(name.to_owned());
                 let conf: EventTriggerConf = match serde_json::from_value(raw.clone()) {
                     Ok(c) => c,
                     Err(e) => {
@@ -105,10 +108,7 @@ pub async fn prepare(
                 }
             }
         }
-        if triggers.is_empty() {
-            continue;
-        }
-        if !config.events.disable_eventing {
+        if !config.events.disable_eventing && !triggers.is_empty() {
             let schema = source
                 .configuration
                 .extra
@@ -122,7 +122,9 @@ pub async fn prepare(
                 ));
                 continue;
             }
-            match catalog::sync_triggers(pg.pool(), &ddl).await {
+        }
+        if !config.events.disable_eventing {
+            match catalog::sync_triggers(pg.pool(), &ddl, &keep).await {
                 Ok(report) => {
                     for (name, e) in &report.errors {
                         triggers.remove(name);
@@ -131,7 +133,18 @@ pub async fn prepare(
                             source.name
                         ));
                     }
-                    if report.functions_written + report.triggers_created + report.functions_dropped
+                    if !report.removed.is_empty() {
+                        info!(
+                            target: "startup",
+                            source = %source.name,
+                            removed = ?report.removed,
+                            "dropped event triggers no longer in metadata and archived their events"
+                        );
+                    }
+                    if report.functions_written
+                        + report.triggers_created
+                        + report.functions_dropped
+                        + report.triggers_dropped
                         > 0
                     {
                         info!(
@@ -162,6 +175,7 @@ pub async fn prepare(
     (out, inconsistencies)
 }
 
+/// Columns a trigger listens to or sends in its payload; each must exist.
 fn listen_columns(conf: &EventTriggerConf) -> Vec<&str> {
     use hge_events::model::SubscribeColumns;
     [
@@ -171,7 +185,9 @@ fn listen_columns(conf: &EventTriggerConf) -> Vec<&str> {
     ]
     .into_iter()
     .flatten()
-    .flat_map(|spec| match &spec.columns {
+    .flat_map(|spec| [Some(&spec.columns), spec.payload.as_ref()])
+    .flatten()
+    .flat_map(|cols| match cols {
         SubscribeColumns::Star => vec![],
         SubscribeColumns::Columns(c) => c.iter().map(String::as_str).collect(),
     })

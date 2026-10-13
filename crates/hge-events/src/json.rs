@@ -138,7 +138,7 @@ fn write_string(s: &str, out: &mut String) {
 
 /// Render a JSON number literal the way aeson renders the `Scientific` it parses to.
 ///
-/// aeson writes a number whose parsed exponent is `>= 0` as an integer; otherwise it uses
+/// aeson writes a number whose parsed exponent is in `0..=1024` as an integer; otherwise it uses
 /// `formatScientific Generic`: fixed notation when the normalised decimal exponent is in
 /// `0..=7`, else `d.ddde<n>`.
 fn aeson_number(lit: &str) -> String {
@@ -156,7 +156,7 @@ fn aeson_number(lit: &str) -> String {
             "0.0".to_owned()
         };
     }
-    if exp >= 0 {
+    if (0..=1024).contains(&exp) {
         let mut s = String::with_capacity(digits.len() + exp as usize + 1);
         s.push_str(sign);
         s.push_str(digits);
@@ -438,6 +438,13 @@ mod tests {
         ] {
             assert_eq!(aeson_number(input), want, "{input}");
         }
+    }
+
+    #[test]
+    fn huge_exponents_use_scientific_notation() {
+        assert_eq!(aeson_number("1e1024"), format!("1{}", "0".repeat(1024)));
+        assert_eq!(aeson_number("1e1025"), "1.0e1025");
+        assert_eq!(aeson_number("12e999999999"), "1.2e1000000000");
     }
 
     #[test]

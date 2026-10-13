@@ -49,6 +49,15 @@ impl EventTriggerInfo {
         })
     }
 
+    /// Bound on processing one event: `min(30 min, timeout_sec)`, 30 min when unset.
+    pub fn processing_timeout(&self) -> std::time::Duration {
+        match self.retry_conf.timeout_sec {
+            Some(t) => std::time::Duration::from_secs(t.max(0) as u64)
+                .min(crate::delivery::MAX_PROCESSING_TIMEOUT),
+            None => crate::delivery::MAX_PROCESSING_TIMEOUT,
+        }
+    }
+
     pub fn timeout_seconds(&self) -> u64 {
         self.retry_conf
             .timeout_sec

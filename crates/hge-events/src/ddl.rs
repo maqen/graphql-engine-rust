@@ -2,6 +2,8 @@
 //!
 //! The catalog files are V2's own (`server/src-rsr/init_pg_source.sql` and
 //! `pg_source_migrations/*.sql`), so databases created by V2 and by this engine are identical.
+//! Trigger functions are semantically identical to V2's; only whitespace differs, so the first
+//! boot after V2 rewrites each function once.
 
 use hge_core::QualifiedTable;
 
@@ -84,10 +86,10 @@ fn column_expr(var: &str, col: &TriggerColumn, stringify_numeric: bool) -> Strin
 fn applicable<'a>(spec: &SubscribeColumns, all: &'a [TriggerColumn]) -> Vec<&'a TriggerColumn> {
     match spec {
         SubscribeColumns::Star => all.iter().collect(),
-        SubscribeColumns::Columns(names) => names
-            .iter()
-            .filter_map(|n| all.iter().find(|c| &c.name == n))
-            .collect(),
+        // V2's `getColInfos`: table order, unknown names skipped.
+        SubscribeColumns::Columns(names) => {
+            all.iter().filter(|c| names.contains(&c.name)).collect()
+        }
     }
 }
 

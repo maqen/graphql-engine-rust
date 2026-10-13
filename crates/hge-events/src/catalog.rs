@@ -5,6 +5,8 @@
 //! are only replaced when their body differs from what is installed, so a restart issues no
 //! DDL at all when nothing changed.
 
+use std::collections::{HashMap, HashSet};
+
 use deadpool_postgres::{Pool, Transaction};
 use hge_core::QualifiedTable;
 use tracing::info;
@@ -196,21 +198,68 @@ pub struct SyncReport {
     pub functions_written: usize,
     pub triggers_created: usize,
     pub functions_dropped: usize,
+    /// SQL triggers dropped because their event trigger moved to another table.
+    pub triggers_dropped: usize,
+    /// Event triggers no longer in metadata whose objects were dropped and events archived.
+    pub removed: Vec<String>,
     /// Triggers whose DDL failed, with the database's message.
     pub errors: Vec<(String, DdlError)>,
+}
+
+/// Installed `hdb_catalog.notify_hasura_*` functions, by event trigger name.
+const INSTALLED_FUNCTIONS_SQL: &str = "SELECT p.proname::text FROM pg_catalog.pg_proc p \
+     JOIN pg_catalog.pg_namespace n ON p.pronamespace = n.oid \
+     WHERE n.nspname = 'hdb_catalog' AND p.proname LIKE 'notify\\_hasura\\_%'";
+
+/// SQL triggers calling an `hdb_catalog.notify_hasura_*` function: (name, schema, table).
+const INSTALLED_TRIGGERS_SQL: &str = "SELECT t.tgname::text, tn.nspname::text, c.relname::text \
+     FROM pg_catalog.pg_trigger t \
+     JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid \
+     JOIN pg_catalog.pg_namespace tn ON tn.oid = c.relnamespace \
+     JOIN pg_catalog.pg_proc p ON p.oid = t.tgfoid \
+     JOIN pg_catalog.pg_namespace pn ON pn.oid = p.pronamespace \
+     WHERE NOT t.tgisinternal AND pn.nspname = 'hdb_catalog' \
+     AND t.tgname LIKE 'notify\\_hasura\\_%'";
+
+/// The event trigger a `notify_hasura_<name>_<OP>` object belongs to.
+fn trigger_of(object: &str) -> Option<&str> {
+    let rest = object.strip_prefix("notify_hasura_")?;
+    Op::ALL
+        .iter()
+        .find_map(|op| rest.strip_suffix(op.as_str())?.strip_suffix('_'))
 }
 
 /// Make the installed SQL match the definitions: write functions whose body differs, create
 /// missing SQL triggers, and drop functions of ops a trigger no longer listens to. One
 /// trigger's failure does not affect the others.
-pub async fn sync_triggers(pool: &Pool, triggers: &[TriggerDdl]) -> Result<SyncReport, DdlError> {
+///
+/// `keep` names every event trigger of the source in metadata, including inconsistent ones
+/// (their objects are left alone, as V2 does). Objects of any other trigger are dropped and
+/// its pending events archived, and SQL triggers left on a table a trigger moved away from
+/// are dropped, so a metadata change applied by a restart has the effect it has in V2.
+pub async fn sync_triggers(
+    pool: &Pool,
+    triggers: &[TriggerDdl],
+    keep: &HashSet<String>,
+) -> Result<SyncReport, DdlError> {
     let mut report = SyncReport::default();
-    if triggers.is_empty() {
-        return Ok(report);
-    }
     let mut client = pool.get().await.map_err(|e| e.to_string())?;
+    if triggers.is_empty() {
+        // Nothing to install: only take the lock when there is something to clean up.
+        let installed = client
+            .query(INSTALLED_FUNCTIONS_SQL, &[])
+            .await
+            .map_err(pg_err)?;
+        if !installed
+            .iter()
+            .any(|r| trigger_of(r.get(0)).is_none_or(|t| !keep.contains(t)))
+        {
+            return Ok(report);
+        }
+    }
     let tx = client.transaction().await.map_err(pg_err)?;
     lock(&tx).await?;
+    prune(&tx, triggers, keep, &mut report).await?;
     for t in triggers {
         tx.batch_execute("SAVEPOINT hge_trigger")
             .await
@@ -235,6 +284,75 @@ pub async fn sync_triggers(pool: &Pool, triggers: &[TriggerDdl]) -> Result<SyncR
     }
     tx.commit().await.map_err(pg_err)?;
     Ok(report)
+}
+
+async fn prune(
+    tx: &Transaction<'_>,
+    triggers: &[TriggerDdl],
+    keep: &HashSet<String>,
+    report: &mut SyncReport,
+) -> Result<(), DdlError> {
+    let tables: HashMap<&str, &QualifiedTable> = triggers
+        .iter()
+        .map(|t| (t.name.as_str(), &t.table))
+        .collect();
+    for row in tx
+        .query(INSTALLED_TRIGGERS_SQL, &[])
+        .await
+        .map_err(pg_err)?
+    {
+        let (tgname, schema, table): (String, String, String) =
+            (row.get(0), row.get(1), row.get(2));
+        let Some(desired) = trigger_of(&tgname).and_then(|t| tables.get(t)) else {
+            continue;
+        };
+        if desired.schema != schema || desired.name != table {
+            tx.batch_execute(&format!(
+                "DROP TRIGGER IF EXISTS {} ON {}.{}",
+                ddl::quote_ident(&tgname),
+                ddl::quote_ident(&schema),
+                ddl::quote_ident(&table)
+            ))
+            .await
+            .map_err(pg_err)?;
+            report.triggers_dropped += 1;
+        }
+    }
+    let mut removed: Vec<String> = vec![];
+    for row in tx
+        .query(INSTALLED_FUNCTIONS_SQL, &[])
+        .await
+        .map_err(pg_err)?
+    {
+        let function: String = row.get(0);
+        let Some(name) = trigger_of(&function) else {
+            continue;
+        };
+        if keep.contains(name) || tables.contains_key(name) {
+            continue;
+        }
+        tx.batch_execute(&format!(
+            "DROP FUNCTION IF EXISTS hdb_catalog.{}() CASCADE",
+            ddl::quote_ident(&function)
+        ))
+        .await
+        .map_err(pg_err)?;
+        report.functions_dropped += 1;
+        if !removed.iter().any(|r| r == name) {
+            removed.push(name.to_owned());
+        }
+    }
+    if !removed.is_empty() && exists(tx, "hdb_catalog.event_log").await? {
+        tx.execute(
+            "UPDATE hdb_catalog.event_log SET archived = 't' \
+             WHERE trigger_name = ANY($1)",
+            &[&removed],
+        )
+        .await
+        .map_err(pg_err)?;
+    }
+    report.removed = removed;
+    Ok(())
 }
 
 async fn installed_body(tx: &Transaction<'_>, function: &str) -> Result<Option<String>, DdlError> {
@@ -325,4 +443,21 @@ pub async fn drop_trigger(pool: &Pool, name: &str, archive: bool) -> Result<(), 
     }
     tx.commit().await.map_err(pg_err)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::trigger_of;
+
+    #[test]
+    fn object_names_map_back_to_triggers() {
+        assert_eq!(trigger_of("notify_hasura_items_INSERT"), Some("items"));
+        assert_eq!(
+            trigger_of("notify_hasura_a_INSERT_UPDATE"),
+            Some("a_INSERT")
+        );
+        assert_eq!(trigger_of("notify_hasura_x-y_DELETE"), Some("x-y"));
+        assert_eq!(trigger_of("notify_hasura_items_MANUAL"), None);
+        assert_eq!(trigger_of("other_items_INSERT"), None);
+    }
 }

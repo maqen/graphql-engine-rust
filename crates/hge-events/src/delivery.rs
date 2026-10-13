@@ -41,7 +41,9 @@ impl AttemptResult {
         match self {
             AttemptResult::Status(r) => r
                 .header("retry-after")
-                .and_then(|v| v.trim().parse::<i64>().ok())
+                .map(str::trim)
+                .filter(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()))
+                .and_then(|v| v.parse::<i64>().ok())
                 .filter(|s| *s > 0),
             _ => None,
         }
@@ -338,7 +340,7 @@ mod tests {
         assert_eq!(after_failure(2, 2, 10, &fail), AfterFailure::SetError);
         let ra = AttemptResult::Status(resp(503, &[("Retry-After", "7")], ""));
         assert_eq!(after_failure(5, 0, 10, &ra), AfterFailure::Retry(7));
-        for bad in ["0", "-1", "1.5", "Wed, 21 Oct 2015 07:28:00 GMT"] {
+        for bad in ["0", "-1", "+7", "1.5", "Wed, 21 Oct 2015 07:28:00 GMT"] {
             let r = AttemptResult::Status(resp(503, &[("retry-after", bad)], ""));
             assert_eq!(after_failure(0, 0, 10, &r), AfterFailure::SetError, "{bad}");
         }

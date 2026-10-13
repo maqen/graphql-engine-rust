@@ -73,29 +73,51 @@ impl EventingConfig {
 /// Supplies the current triggers (re-read every iteration, so metadata reloads apply).
 pub type TriggersProvider = Arc<dyn Fn() -> Arc<EventTriggers> + Send + Sync>;
 
-/// Event ids this instance holds locks for, per source, and whether a delivery is running.
+/// One lock this instance holds: a generation (the same id can be fetched again once its
+/// lock is released, before the previous task has cleaned up) and whether delivery started.
+#[derive(Clone, Copy)]
+struct Lock {
+    generation: u64,
+    in_flight: bool,
+}
+
+/// Event ids this instance holds locks for, per source.
 #[derive(Default)]
 struct Locked {
-    sources: HashMap<String, (Pool, HashMap<String, bool>)>,
+    next_generation: u64,
+    sources: HashMap<String, (Pool, HashMap<String, Lock>)>,
 }
 
 impl Locked {
-    fn add(&mut self, source: &SourceTriggers, ids: impl Iterator<Item = String>) {
+    /// Record a fetched event; returns its generation.
+    fn add(&mut self, source: &SourceTriggers, id: String) -> u64 {
+        self.next_generation += 1;
+        let generation = self.next_generation;
         let entry = self
             .sources
             .entry(source.source.clone())
             .or_insert_with(|| (source.pool.clone(), HashMap::new()));
-        entry.1.extend(ids.map(|id| (id, false)));
+        entry.1.insert(
+            id,
+            Lock {
+                generation,
+                in_flight: false,
+            },
+        );
+        generation
     }
 
     fn start(&mut self, source: &str, id: &str) {
         if let Some(e) = self.sources.get_mut(source).and_then(|s| s.1.get_mut(id)) {
-            *e = true;
+            e.in_flight = true;
         }
     }
 
-    fn remove(&mut self, source: &str, id: &str) {
-        if let Some((_, ids)) = self.sources.get_mut(source) {
+    /// Forget a lock, unless the event was fetched again since (a newer generation).
+    fn remove(&mut self, source: &str, id: &str, generation: u64) {
+        if let Some((_, ids)) = self.sources.get_mut(source)
+            && ids.get(id).is_some_and(|l| l.generation == generation)
+        {
             ids.remove(id);
         }
     }
@@ -106,7 +128,7 @@ impl Locked {
         for (name, (pool, ids)) in &mut self.sources {
             let taken: Vec<String> = ids
                 .iter()
-                .filter(|(_, f)| pred(**f))
+                .filter(|(_, l)| pred(l.in_flight))
                 .map(|(id, _)| id.clone())
                 .collect();
             for id in &taken {
@@ -127,7 +149,11 @@ struct Ctx {
     locked: Mutex<Locked>,
 }
 
-type Batch = Vec<(Arc<SourceTriggers>, Event)>;
+/// Fetched events with their lock generation, and whether any source returned a full batch.
+struct Batch {
+    events: Vec<(Arc<SourceTriggers>, Event, u64)>,
+    any_full: bool,
+}
 
 /// Start the delivery loop. Resolves when `shutdown` is cancelled and locks are released.
 pub fn spawn(
@@ -157,23 +183,30 @@ async fn fetch_batch(ctx: Arc<Ctx>) -> Batch {
             async move {
                 let names = s.trigger_names();
                 match store::fetch_events(&s.pool, limit, &names).await {
-                    Ok(events) => events.into_iter().map(|e| (s.clone(), e)).collect(),
+                    Ok(events) => (s, events),
                     Err(e) => {
                         error!(
                             target: "event-trigger",
                             source = %s.source,
                             "something went wrong while fetching events: {e}"
                         );
-                        vec![]
+                        (s, vec![])
                     }
                 }
             }
         });
-    let batches: Vec<Batch> = join_all(fetches).await;
-    let batch: Batch = batches.into_iter().flatten().collect();
+    let fetched = join_all(fetches).await;
     let mut locked = ctx.locked.lock().expect("lock");
-    for (s, e) in &batch {
-        locked.add(s, std::iter::once(e.id.clone()));
+    let mut batch = Batch {
+        events: vec![],
+        any_full: false,
+    };
+    for (s, events) in fetched {
+        batch.any_full |= events.len() as i64 >= ctx.config.fetch_batch_size;
+        for e in events {
+            let generation = locked.add(&s, e.id.clone());
+            batch.events.push((s.clone(), e, generation));
+        }
     }
     batch
 }
@@ -181,22 +214,22 @@ async fn fetch_batch(ctx: Arc<Ctx>) -> Batch {
 async fn run(ctx: Arc<Ctx>, shutdown: CancellationToken) {
     let pool_size = ctx.config.http_pool_size.max(1);
     let sem = Arc::new(Semaphore::new(pool_size));
-    let mut events = fetch_batch(ctx.clone()).await;
+    let mut batch = fetch_batch(ctx.clone()).await;
     let mut full_fetches = 0u32;
     let mut warned = false;
     'outer: loop {
         if shutdown.is_cancelled() {
             break;
         }
-        if events.is_empty() {
+        if batch.events.is_empty() {
             tokio::select! {
                 _ = tokio::time::sleep(ctx.config.fetch_interval) => {}
                 _ = shutdown.cancelled() => break,
             }
         }
         let prefetch = tokio::spawn(fetch_batch(ctx.clone()));
-        let batch_len = events.len();
-        for (source, event) in events.drain(..) {
+        let was_full = batch.any_full;
+        for (source, event, generation) in batch.events.drain(..) {
             let permit = tokio::select! {
                 p = sem.clone().acquire_owned() => p.expect("semaphore is never closed"),
                 _ = shutdown.cancelled() => {
@@ -216,18 +249,21 @@ async fn run(ctx: Arc<Ctx>, shutdown: CancellationToken) {
                 ctx.locked
                     .lock()
                     .expect("lock")
-                    .remove(&source.source, &event.id);
+                    .remove(&source.source, &event.id, generation);
                 drop(permit);
             });
         }
-        events = match prefetch.await {
+        batch = match prefetch.await {
             Ok(b) => b,
             Err(e) => {
                 error!(target: "event-trigger", "event fetch task failed: {e}");
-                vec![]
+                Batch {
+                    events: vec![],
+                    any_full: false,
+                }
             }
         };
-        if batch_len as i64 == ctx.config.fetch_batch_size {
+        if was_full {
             if full_fetches >= 3 && !warned {
                 warn!(
                     target: "event-trigger",
@@ -342,7 +378,14 @@ async fn deliver(
     info: &EventTriggerInfo,
     event: &Event,
 ) -> Result<(), String> {
-    let stored = Json::parse(&event.payload).map_err(|e| format!("invalid event payload: {e}"))?;
+    let stored = match Json::parse(&event.payload) {
+        Ok(v) => v,
+        Err(e) => {
+            // Unreadable payload: never deliverable, so fail it rather than leaving it locked.
+            store::set_error(pool, &event.id).await?;
+            return Err(format!("invalid event payload, marked as error: {e}"));
+        }
+    };
     let trace = TraceIds::for_event(stored.get("trace_context"));
     let body = event_body(info, event, stored);
     let body_text = body.encode();
@@ -359,7 +402,7 @@ async fn deliver(
             headers,
             body: body_text,
             http_timeout,
-            processing_timeout: http_timeout.min(delivery::MAX_PROCESSING_TIMEOUT),
+            processing_timeout: info.processing_timeout(),
             timeout_message,
             trace,
         },
