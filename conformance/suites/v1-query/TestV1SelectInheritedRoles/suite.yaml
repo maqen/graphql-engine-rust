@@ -1,0 +1,5 @@
+description: Legacy /v1/query select with inherited-role column redaction (written for hasura-rs, responses recorded from Hasura)
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none

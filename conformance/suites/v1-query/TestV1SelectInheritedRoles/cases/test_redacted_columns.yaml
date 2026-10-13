@@ -1,0 +1,44 @@
+steps:
+- url: /v1/query
+  status: 200
+  headers:
+    X-Hasura-Manager-Id: '1'
+    X-Hasura-Role: manager_employee
+    X-Hasura-User-Id: '1'
+  query:
+    type: select
+    args:
+      table: employee
+      columns:
+      - name
+      - salary
+      - manager_remarks
+      order_by:
+      - salary
+      - name
+  response:
+  - name: employee 1
+    salary: 10000
+    manager_remarks: good
+  - name: employee 2
+    salary: null
+    manager_remarks: good
+- url: /v1/query
+  status: 200
+  headers:
+    X-Hasura-Manager-Id: '1'
+    X-Hasura-Role: manager_employee
+    X-Hasura-User-Id: '1'
+  query:
+    type: select
+    args:
+      table: employee
+      columns:
+      - name
+      where:
+        manager_remarks:
+          $is_null: false
+      order_by: name
+  response:
+  - name: employee 1
+  - name: employee 2

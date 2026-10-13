@@ -1,0 +1,281 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "articles",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "author",
+              "permission": {
+                "columns": "*",
+                "filter": {
+                  "author_id": "X-Hasura-Author-Id"
+                },
+                "allow_aggregations": true
+              }
+            },
+            {
+              "role": "editor",
+              "permission": {
+                "columns": "*",
+                "filter": {}
+              }
+            },
+            {
+              "role": "free_user",
+              "permission": {
+                "columns": [
+                  "title",
+                  "content"
+                ],
+                "filter": {
+                  "is_published": {
+                    "_eq": true
+                  }
+                },
+                "limit": 2
+              }
+            },
+            {
+              "role": "guest",
+              "permission": {
+                "columns": [
+                  "title",
+                  "content",
+                  "author_id"
+                ],
+                "filter": {
+                  "is_published": true
+                },
+                "allow_aggregations": true
+              }
+            },
+            {
+              "role": "premium_user_free_trial",
+              "permission": {
+                "columns": [
+                  "title",
+                  "content"
+                ],
+                "filter": {
+                  "is_published": {
+                    "_eq": true
+                  }
+                },
+                "limit": 4
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "authors",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "author",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name",
+                  "followers"
+                ],
+                "filter": {
+                  "id": "X-Hasura-Author-Id"
+                }
+              }
+            },
+            {
+              "role": "editor",
+              "permission": {
+                "columns": [
+                  "name",
+                  "followers"
+                ],
+                "filter": {},
+                "allow_aggregations": true
+              }
+            },
+            {
+              "role": "non_paying_user",
+              "permission": {
+                "columns": [
+                  "name",
+                  "followers"
+                ],
+                "filter": {}
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "employee",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "manager",
+              "using": {
+                "foreign_key_constraint_on": "manager_id"
+              }
+            }
+          ],
+          "computed_fields": [
+            {
+              "name": "yearly_salary",
+              "definition": {
+                "function": {
+                  "name": "employee_yearly_salary",
+                  "schema": "public"
+                },
+                "table_argument": "employee_row"
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "employee",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name",
+                  "salary",
+                  "title",
+                  "team_id"
+                ],
+                "computed_fields": [
+                  "yearly_salary"
+                ],
+                "filter": {
+                  "id": {
+                    "_eq": "X-Hasura-User-Id"
+                  }
+                }
+              }
+            },
+            {
+              "role": "manager",
+              "permission": {
+                "columns": [
+                  "name",
+                  "title",
+                  "manager_remarks"
+                ],
+                "filter": {
+                  "manager_id": {
+                    "_eq": "X-Hasura-Manager-Id"
+                  }
+                },
+                "allow_aggregations": true
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "manager",
+            "schema": "public"
+          },
+          "array_relationships": [
+            {
+              "name": "employees",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "manager_id",
+                  "table": {
+                    "name": "employee",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "employee",
+              "permission": {
+                "columns": [
+                  "name",
+                  "phone"
+                ],
+                "filter": {
+                  "employees": {
+                    "manager_id": {
+                      "_eq": "X-Hasura-Manager-Id"
+                    }
+                  }
+                },
+                "allow_aggregations": true
+              }
+            },
+            {
+              "role": "manager",
+              "permission": {
+                "columns": "*",
+                "filter": {
+                  "id": "X-Hasura-Manager-Id"
+                },
+                "allow_aggregations": true
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "team",
+            "schema": "public"
+          }
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ],
+  "inherited_roles": [
+    {
+      "role_name": "author_editor_guest_inherited_role",
+      "role_set": [
+        "editor",
+        "guest",
+        "author"
+      ]
+    },
+    {
+      "role_name": "manager_employee",
+      "role_set": [
+        "employee",
+        "manager"
+      ]
+    },
+    {
+      "role_name": "non_paying_user",
+      "role_set": [
+        "premium_user_free_trial",
+        "free_user"
+      ]
+    },
+    {
+      "role_name": "non_paying_user_and_guest",
+      "role_set": [
+        "non_paying_user",
+        "guest"
+      ]
+    }
+  ]
+}

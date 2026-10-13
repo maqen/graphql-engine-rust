@@ -48,6 +48,18 @@ impl Lowerer<'_> {
         for (i, col) in distinct.iter().enumerate() {
             let col_path = distinct_path.index(i);
             self.check_select_column(perm, col, &col_path)?;
+            // `COUNT(DISTINCT col)` reads the raw value; a column an inherited role sees only
+            // on some rows would leak through it.
+            if perm.redaction(col).is_some() {
+                return Err(err400(
+                    Code::PermissionDenied,
+                    format!(
+                        "column \"{col}\" is only partially visible to role \"{}\" and cannot be used in \"distinct\"",
+                        self.role
+                    ),
+                    &col_path,
+                ));
+            }
             // Unreachable while permissions name only real columns, as in V2.
             if !table.columns.contains_key(col.as_str()) {
                 let msg = if table.relationship_by_name(col).is_some() {
