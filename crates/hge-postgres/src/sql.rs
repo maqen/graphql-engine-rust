@@ -57,6 +57,19 @@ impl SqlBuilder {
         push_type(&mut self.sql, ty);
         self
     }
+
+    /// Bind a GraphQL input value: like [`Self::param`], except that `geometry` /
+    /// `geography` inputs are GeoJSON (`ST_GeomFromGeoJSON($n)::"type"`).
+    pub fn input_param(&mut self, value: Option<String>, ty: &ColumnType) -> &mut Self {
+        if ty.dimensions == 0 && matches!(ty.name.as_str(), "geometry" | "geography") {
+            self.params.push(value);
+            let n = self.params.len();
+            write!(self.sql, "ST_GeomFromGeoJSON((${n})::text)::").expect("write to string");
+            push_type(&mut self.sql, ty);
+            return self;
+        }
+        self.param(value, ty)
+    }
 }
 
 pub fn push_ident(out: &mut String, name: &str) {

@@ -194,3 +194,12 @@ cases:
       errors:
         - extensions: { path: "$", code: not-supported }
           message: mutations are not supported over GET requests
+
+  - description: numeric inputs keep V2's scale (sent as Haskell shows them)
+    query:
+      query: "mutation ($a: numeric, $b: numeric) { a: update_author_by_pk(pk_columns: {id: 1}, _set: {rating: $a}) { rating } b: update_author_by_pk(pk_columns: {id: 1}, _inc: {rating: $b}) { rating } }"
+      variables: { a: 0.05, b: -1e-30 }
+    response:
+      data:
+        a: { rating: 0.050 }
+        b: { rating: 0.0499999999999999999999999999990 }

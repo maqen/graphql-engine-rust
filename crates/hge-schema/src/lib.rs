@@ -5,6 +5,7 @@
 //! (validate, normalise, lower to IR).
 
 pub mod build;
+pub mod geojson;
 pub mod introspection;
 pub mod lower;
 pub mod model;

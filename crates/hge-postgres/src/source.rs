@@ -225,6 +225,10 @@ pub fn pg_error_with(e: tokio_postgres::Error, sql: &str, prepared: bool) -> Err
         Some(db) => {
             let state = db.code().code();
             let (code, message) = classify(state, db.message());
+            // Errors shown to clients carry no `internal` details (as in V2).
+            if code != Code::Unexpected {
+                return Error::new(code, message);
+            }
             Error::new(code, message).with_internal(json!({
                 "statement": sql,
                 "prepared": prepared,

@@ -312,7 +312,8 @@ impl<'s> Translator<'s> {
     pub(crate) fn value(&mut self, v: &Value) -> Result<(), Error> {
         match v {
             Value::Literal { text, ty } => {
-                self.b.param(text.clone(), ty);
+                // Session variables (below) keep Postgres' own text input for geometries.
+                self.b.input_param(text.clone(), ty);
             }
             Value::Session { name, ty } => {
                 let text = self.session.variables.get(name).ok_or_else(|| {

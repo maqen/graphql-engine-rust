@@ -359,7 +359,8 @@ impl Builder<'_> {
             let Some(target_ia) = access
                 .get(&(target.source.clone(), target.name.clone()))
                 .and_then(|a| a.insert.as_ref())
-                .filter(|_| target.mutability.insertable)
+            // V2 offers nested inserts into views whether or not Postgres can insert into
+            // them (the statement then fails).
             else {
                 continue;
             };
