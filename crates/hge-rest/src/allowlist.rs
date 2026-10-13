@@ -75,6 +75,28 @@ pub fn not_allowed() -> Error {
 /// are (up to definition order, see the module docs). `text` is the source of `doc`, used
 /// to tell the shorthand `{ … }` form from `query { … }`.
 pub fn canonical(doc: &ExecutableDocument, text: &str) -> String {
+    // The parser treats a lone `\r` as a line break but does not count it as a new line in
+    // positions, which would make `starts_with_brace` look at the wrong character. Such
+    // documents are canonicalized from a copy with `\n` line breaks instead (a raw `\r`
+    // cannot occur inside a string literal, and block strings normalize line breaks).
+    if has_lone_cr(text) {
+        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        if let Ok(doc) = async_graphql_parser::parse_query(&normalized) {
+            return canonical_lf(&doc, &normalized);
+        }
+    }
+    canonical_lf(doc, text)
+}
+
+fn has_lone_cr(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    bytes
+        .iter()
+        .enumerate()
+        .any(|(i, &b)| b == b'\r' && bytes.get(i + 1) != Some(&b'\n'))
+}
+
+fn canonical_lf(doc: &ExecutableDocument, text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut ops: Vec<(Option<&str>, &Positioned<OperationDefinition>)> = match &doc.operations {
         DocumentOperations::Single(op) => vec![(None, op)],
@@ -148,7 +170,11 @@ fn write_selection_set(out: &mut String, set: &SelectionSet) {
                     f.arguments.iter().map(|(n, v)| (n.node.as_str(), &v.node)),
                 );
                 write_directives(out, &f.directives);
-                if !f.selection_set.node.items.is_empty() {
+                // V2 drops `__typename` first, so `a { __typename }` is `a`.
+                let has_selection = f.selection_set.node.items.iter().any(
+                    |s| !matches!(&s.node, Selection::Field(f) if f.node.name.node == "__typename"),
+                );
+                if has_selection {
                     out.push('{');
                     write_selection_set(out, &f.selection_set.node);
                     out.push('}');
@@ -188,11 +214,15 @@ fn write_directives(out: &mut String, directives: &[Positioned<Directive>]) {
 
 /// Arguments sorted by name (V2 keeps them in a hash map).
 fn write_arguments<'a>(out: &mut String, args: impl Iterator<Item = (&'a str, &'a Value)>) {
-    let mut args: Vec<_> = args.collect();
-    if args.is_empty() {
+    // A repeated argument keeps its last value, like V2's hash map.
+    let mut by_name: std::collections::BTreeMap<&str, &Value> = Default::default();
+    for (name, value) in args {
+        by_name.insert(name, value);
+    }
+    if by_name.is_empty() {
         return;
     }
-    args.sort_by_key(|(name, _)| *name);
+    let args = by_name;
     out.push('(');
     for (name, value) in args {
         let _ = write!(out, "{name}:");
@@ -307,5 +337,15 @@ mod tests {
             "query { u { ...F } } fragment F on u { id }",
             "query { u { id } }"
         ));
+        assert!(same("{ a { __typename } }", "{ a }"));
+        assert!(same("{ a(x: 1, x: 2) }", "{ a(x: 2) }"));
+        // A lone CR must not confuse the shorthand check (it moves no line in `Pos`).
+        assert!(!same(
+            "#{\r subscription { users { id } }",
+            "{ users { id } }"
+        ));
+        assert!(!same("#c\r{ a }", "query { a }"));
+        assert!(same("#c\r{ a }", "{ a }"));
+        assert!(same("\u{feff}\r\n{ a }", "{ a }"));
     }
 }
