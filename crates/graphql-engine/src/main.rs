@@ -169,7 +169,7 @@ struct ServeArgs {
     #[arg(
         long,
         env = "HASURA_GRAPHQL_ENABLED_APIS",
-        default_value = "graphql,metadata"
+        default_value = "metadata,graphql,pgdump,config"
     )]
     enabled_apis: String,
 
@@ -436,7 +436,7 @@ fn server_configuration(
         "remote_schema_permissions": false,
         "websocket_compression_options": "NoCompression",
         "websocket_keep_alive": format!("KeepAliveDelay {{unKeepAliveDelay = Seconds {{seconds = {}s}}}}", config.websocket.keep_alive.as_secs()),
-        "infer_function_permissions": true,
+        "infer_function_permissions": config.infer_function_permissions,
         "enable_maintenance_mode": false,
         "experimental_features": [],
         "events_fetch_batch_size": config.events.fetch_batch_size,
@@ -553,12 +553,7 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
         infer_function_permissions: args.infer_function_permissions,
         cors_domain: args.cors_domain.clone(),
         disable_cors: args.disable_cors,
-        enabled_apis: args
-            .enabled_apis
-            .split(',')
-            .map(|s| s.trim().to_owned())
-            .filter(|s| !s.is_empty())
-            .collect(),
+        enabled_apis: enabled_apis(&args.enabled_apis)?,
         pg_connections: args.pg_connections,
         use_prepared_statements: args.use_prepared_statements,
         preserve_401_errors: args.preserve_401_errors,
@@ -581,6 +576,31 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
         http_log_query_only_on_error: args.http_log_query_only_on_error,
         ..ServerConfig::default()
     })
+}
+
+/// `HASURA_GRAPHQL_ENABLED_APIS`: comma-separated, case-insensitive (spec 10 §11).
+fn enabled_apis(s: &str) -> anyhow::Result<Vec<String>> {
+    const APIS: [&str; 6] = [
+        "metadata",
+        "graphql",
+        "pgdump",
+        "developer",
+        "config",
+        "metrics",
+    ];
+    let mut out: Vec<String> = vec![];
+    for item in s.split(',') {
+        let api = item.trim().to_ascii_lowercase();
+        if !APIS.contains(&api.as_str()) {
+            anyhow::bail!(
+                "Environment variable HASURA_GRAPHQL_ENABLED_APIS: Only expecting list of comma separated API types metadata,graphql,pgdump,developer,config,metrics"
+            );
+        }
+        if !out.contains(&api) {
+            out.push(api);
+        }
+    }
+    Ok(out)
 }
 
 fn websocket_config(args: &ServeArgs) -> hge_server::config::WebSocketConfig {
@@ -777,6 +797,15 @@ mod tests {
             serde_json::json!([{"type": "<TYPE REDACTED>", "key": "<JWK REDACTED>"}])
         );
         assert_eq!(info["admin_secret_set"], true);
+        assert_eq!(
+            info["enabled_apis"],
+            serde_json::json!(["metadata", "graphql", "pgdump", "config"])
+        );
+        assert_eq!(
+            enabled_apis(" GraphQL ,developer").unwrap(),
+            ["graphql", "developer"]
+        );
+        assert!(enabled_apis("graphql,console").is_err());
         assert_eq!(info["live_query_options"]["refetch_delay"], 1.0);
     }
 }

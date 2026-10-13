@@ -17,7 +17,7 @@ cases:
           headers:
             - [authorization, Bearer t]
             - [content-type, application/json]
-            - [user-agent, hasura-graphql-engine/v2.48.0-rs.0.1.0]
+            - [user-agent, hasura-graphql-engine/v2.51.0-rs.0.1.0]
             - [x-forwarded-user-agent, test-client]
             - [x-from-env, s3cret]
             - [x-static, static-part]
@@ -36,7 +36,7 @@ cases:
             session_variables: { x-hasura-role: admin }
           headers:
             - [content-type, application/json]
-            - [user-agent, hasura-graphql-engine/v2.48.0-rs.0.1.0]
+            - [user-agent, hasura-graphql-engine/v2.51.0-rs.0.1.0]
             - [x-from-env, s3cret]
             - [x-static, static-part]
 
