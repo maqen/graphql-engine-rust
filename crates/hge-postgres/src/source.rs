@@ -110,25 +110,9 @@ impl PgSource {
         key: &str,
         comment: Option<&str>,
     ) -> Result<Vec<EnumTableRow>, Error> {
-        let mut sql = "SELECT ".to_owned();
-        crate::sql::push_ident(&mut sql, key);
-        sql.push_str("::text, ");
-        match comment {
-            Some(c) => crate::sql::push_ident(&mut sql, c),
-            None => sql.push_str("NULL"),
-        }
-        sql.push_str("::text FROM ");
-        crate::sql::push_ident(&mut sql, &table.schema);
-        sql.push('.');
-        crate::sql::push_ident(&mut sql, &table.name);
+        let sql = introspect::enum_rows_sql(table, key, comment);
         let rows = self.query_rows(&sql, &[]).await?;
-        Ok(rows
-            .into_iter()
-            .map(|mut r| EnumTableRow {
-                comment: r.pop().flatten(),
-                value: r.pop().flatten().unwrap_or_default(),
-            })
-            .collect())
+        Ok(introspect::enum_rows(rows))
     }
 
     /// Run a statement returning (at most) one row with one text column.

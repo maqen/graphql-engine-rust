@@ -3,9 +3,9 @@
 use std::collections::HashMap;
 
 use hge_core::{
-    ColumnInfo, ColumnType, Error, ForeignKey, FunctionArg, FunctionCatalog, QualifiedFunction,
-    QualifiedTable, SourceCatalog, TableCatalog, TableKind, TableMutability, TypeKind,
-    UniqueConstraint, Volatility,
+    ColumnInfo, ColumnType, EnumTableRow, Error, ForeignKey, FunctionArg, FunctionCatalog,
+    QualifiedFunction, QualifiedTable, SourceCatalog, TableCatalog, TableKind, TableMutability,
+    TypeKind, UniqueConstraint, Volatility,
 };
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -377,4 +377,31 @@ pub fn parse_catalog(tables_json: &str, enums_json: &str) -> Result<SourceCatalo
         functions: HashMap::new(),
         ..Default::default()
     })
+}
+
+/// The query reading an enum table's rows (V2's `fetchEnumValuesFromDb`): the key and the
+/// comment column (or `NULL`), both as text.
+pub fn enum_rows_sql(table: &QualifiedTable, key: &str, comment: Option<&str>) -> String {
+    let mut sql = "SELECT ".to_owned();
+    crate::sql::push_ident(&mut sql, key);
+    sql.push_str("::text, ");
+    match comment {
+        Some(c) => crate::sql::push_ident(&mut sql, c),
+        None => sql.push_str("NULL"),
+    }
+    sql.push_str("::text FROM ");
+    crate::sql::push_ident(&mut sql, &table.schema);
+    sql.push('.');
+    crate::sql::push_ident(&mut sql, &table.name);
+    sql
+}
+
+/// The rows returned by [`enum_rows_sql`].
+pub fn enum_rows(rows: Vec<Vec<Option<String>>>) -> Vec<EnumTableRow> {
+    rows.into_iter()
+        .map(|mut r| EnumTableRow {
+            comment: r.pop().flatten(),
+            value: r.pop().flatten().unwrap_or_default(),
+        })
+        .collect()
 }

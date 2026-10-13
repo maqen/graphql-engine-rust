@@ -112,7 +112,7 @@ pub enum TableKind {
     PartitionedTable,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TableCatalog {
     pub name: QualifiedTable,
     pub kind: TableKind,
@@ -128,7 +128,7 @@ pub struct TableCatalog {
     pub mutability: TableMutability,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UniqueConstraint {
     pub name: String,
     /// Indexed columns in index order (empty for expression indexes).
@@ -154,9 +154,32 @@ impl TableCatalog {
     pub fn column(&self, name: &str) -> Option<&ColumnInfo> {
         self.columns.get(name)
     }
+
+    /// The columns an enum table's rows are read from: its primary key when that is a single
+    /// `text` column, and the comment column when there is exactly one other column and it
+    /// is `text` too. `None` when the table cannot be an enum table at all (schema
+    /// resolution reports why).
+    pub fn enum_columns(&self) -> Option<(&str, Option<&str>)> {
+        let is_text =
+            |c: &ColumnInfo| c.ty.kind == TypeKind::Base && !c.ty.is_array() && c.ty.name == "text";
+        let [key] = self.primary_key.as_deref()? else {
+            return None;
+        };
+        let key = self.column(key).filter(|c| is_text(c))?;
+        let others: Vec<&ColumnInfo> = self
+            .columns
+            .values()
+            .filter(|c| c.name != key.name)
+            .collect();
+        let comment = match others.as_slice() {
+            [c] if is_text(c) => Some(c.name.as_str()),
+            _ => None,
+        };
+        Some((key.name.as_str(), comment))
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ColumnInfo {
     pub name: String,
     pub ty: ColumnType,
@@ -230,7 +253,7 @@ impl ColumnType {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ForeignKey {
     pub constraint: String,
     pub ref_table: QualifiedTable,

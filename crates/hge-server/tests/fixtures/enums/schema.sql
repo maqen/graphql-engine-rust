@@ -27,3 +27,8 @@ INSERT INTO post (title, color, shade, size) VALUES
   ('first', 'red', 'dark', 'small'),
   ('second', 'blue', NULL, 'large'),
   ('third', 'red', 'light', NULL);
+
+-- Not tracked at first; becomes a valid enum table only once `run_sql` adds its key.
+CREATE TABLE weekday (name text NOT NULL);
+INSERT INTO weekday VALUES ('monday'), ('friday');
+CREATE TABLE shift (id integer PRIMARY KEY, day text NOT NULL);

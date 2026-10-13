@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use hge_actions::{ActionRegistry, HandlerConfig, ProcessEnv};
 use hge_core::{
-    Code, EnumTableRow, Error, InconsistentObject, NativeQueryCheck, QualifiedFunction,
-    QualifiedTable, SourceCatalog,
+    Code, Error, InconsistentObject, NativeQueryCheck, QualifiedFunction, QualifiedTable,
+    SourceCatalog,
 };
 use hge_metadata::store::MetadataStore;
 use hge_metadata::{Metadata, PgConnectionInfo, Source, SourceConfiguration, UrlConfig, load_dir};
@@ -286,7 +286,11 @@ pub async fn prepare(
             types: types.into_iter().collect(),
             native_queries: native_queries.into_iter().collect(),
         };
-        let (catalog, introspected) = if let Some(c) = catalogs.remove(&source.name) {
+        // A supplied catalog (read inside a `run_sql` transaction) brings its own enum rows;
+        // the pool must not be queried then, as that transaction may hold locks it waits on.
+        let supplied = catalogs.remove(&source.name);
+        let enum_reader = supplied.is_none().then_some(&*pg);
+        let (catalog, introspected) = if let Some(c) = supplied {
             (Arc::new(c), tracked)
         } else if let Some(p) = previous
             .filter(|p| !reload.introspects(&source.name) && p.introspected.covers(&tracked))
@@ -311,10 +315,10 @@ pub async fn prepare(
                 }
             }
         };
-        let kept_rows = previous
+        let kept = previous
             .filter(|_| !reload.introspects(&source.name))
-            .map(|p| &p.catalog.enum_tables);
-        let catalog = with_enum_rows(source, catalog, kept_rows, &pg).await;
+            .map(|p| &*p.catalog);
+        let catalog = with_enum_rows(source, catalog, kept, enum_reader).await;
         sources.insert(
             source.name.clone(),
             PreparedSource {
@@ -361,31 +365,34 @@ pub async fn prepare(
     }
 }
 
-/// Attach the rows of the source's enum tables to its catalog. Rows in `kept` are reused:
-/// like V2, enum values are read again only on a metadata reload (or when a table becomes
-/// an enum table), not after every schema change.
+/// Attach the rows of the source's enum tables to its catalog. Like V2, rows are not read
+/// again after every schema change: those of `kept` (the previous catalog) are reused while
+/// the table itself is unchanged. Otherwise they come from `catalog` when it brought them,
+/// or are read through `reader`.
 async fn with_enum_rows(
     source: &Source,
     mut catalog: Arc<SourceCatalog>,
-    kept: Option<&HashMap<QualifiedTable, Result<Vec<EnumTableRow>, String>>>,
-    pg: &PgSource,
+    kept: Option<&SourceCatalog>,
+    reader: Option<&PgSource>,
 ) -> Arc<SourceCatalog> {
     let mut rows = HashMap::new();
     for entry in source.tables.iter().filter(|t| t.is_enum) {
-        if let Some(r) = kept.and_then(|k| k.get(&entry.table)) {
-            rows.insert(entry.table.clone(), r.clone());
-            continue;
-        }
         let Some(cat) = catalog.table(&entry.table) else {
             continue;
         };
+        let cached = kept
+            .filter(|k| k.table(&entry.table) == Some(cat))
+            .and_then(|k| k.enum_tables.get(&entry.table));
+        if let Some(r) = cached.or_else(|| catalog.enum_tables.get(&entry.table)) {
+            rows.insert(entry.table.clone(), r.clone());
+            continue;
+        }
         // A table of the wrong shape is reported inconsistent without reading it.
-        let shape = hge_schema::enums::enum_table_columns(cat);
-        let Some(key) = &shape.key else {
+        let (Some(reader), Some((key, comment))) = (reader, cat.enum_columns()) else {
             continue;
         };
-        let read = pg
-            .enum_table_rows(&entry.table, key, shape.comment.as_deref())
+        let read = reader
+            .enum_table_rows(&entry.table, key, comment)
             .await
             .map_err(|e| e.message);
         rows.insert(entry.table.clone(), read);

@@ -198,7 +198,6 @@ pub fn resolve_source(
         .filter(|t| catalog.table(&t.table).is_some())
         .map(|t| t.table.clone())
         .collect();
-    let mut resolved = Vec::with_capacity(source.tables.len());
     for entry in &source.tables {
         let table_def = || serde_json::to_value(&entry.table).unwrap_or_default();
         let Some(cat) = catalog.table(&entry.table) else {
@@ -214,7 +213,13 @@ pub fn resolve_source(
             continue;
         };
         match resolve_table(&source_name, entry, cat, catalog, &tracked, inconsistencies) {
-            Ok(info) => resolved.push(info),
+            Ok(info) => {
+                let info = Arc::new(info);
+                tables
+                    .by_name
+                    .insert((source_name.clone(), entry.table.clone()), info.clone());
+                tables.ordered.push(info);
+            }
             Err(e) => inconsistencies.push(InconsistentObject::table(
                 &source.name,
                 &entry.table,
@@ -222,14 +227,6 @@ pub fn resolve_source(
                 table_def(),
             )),
         }
-    }
-    crate::enums::attach_enum_references(&source.name, &mut resolved, catalog, inconsistencies);
-    for info in resolved {
-        let info = Arc::new(info);
-        tables
-            .by_name
-            .insert((source_name.clone(), info.name.clone()), info.clone());
-        tables.ordered.push(info);
     }
 }
 
@@ -598,16 +595,6 @@ pub fn drop_conflicting(tables: &mut Tables, inconsistencies: &mut Vec<Inconsist
                 types.insert(format!("{scalar}{suffix}"), format!("scalar \"{scalar}\""));
             }
         }
-        // So do the enum types of enum tables.
-        if table.enum_values.is_some() {
-            let owner = format!(
-                "enum table \"{}\" in source \"{}\"",
-                table.name, table.source
-            );
-            for suffix in ["_enum", "_enum_comparison_exp"] {
-                types.insert(format!("{}{suffix}", table.gql_name), owner.clone());
-            }
-        }
     }
     let mut roots: HashMap<String, String> = HashMap::new();
     let mut kept = Vec::with_capacity(tables.ordered.len());
@@ -626,6 +613,12 @@ pub fn drop_conflicting(tables: &mut Tables, inconsistencies: &mut Vec<Inconsist
             ));
             type_names.push(format!("{pred}_arguments"));
             type_names.push(pred);
+        }
+        // An enum table also generates its enum type.
+        if table.enum_values.is_some() {
+            for suffix in ["_enum", "_enum_comparison_exp"] {
+                type_names.push(format!("{}{suffix}", table.gql_name));
+            }
         }
         let rf = &table.root_fields;
         let root_names = [&rf.select, &rf.select_by_pk, &rf.select_aggregate];

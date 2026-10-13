@@ -295,7 +295,16 @@ pub async fn run_checked<R: Runtime>(ctx: &mut Ctx<'_, R>, args: &RunSql) -> Api
         .source(&args.source)
         .map(|s| s.tables.iter().map(|t| t.table.clone()).collect())
         .unwrap_or_default();
-    let catalog = introspect_in(&tx, &tables).await?;
+    let mut catalog = introspect_in(&tx, &tables).await?;
+    if let Some(source) = metadata.source(&args.source) {
+        let enum_tables: Vec<QualifiedTable> = source
+            .tables
+            .iter()
+            .filter(|t| t.is_enum)
+            .map(|t| t.table.clone())
+            .collect();
+        catalog.enum_tables = enum_rows_in(&tx, &catalog, &enum_tables).await;
+    }
     let previous = std::mem::replace(&mut ctx.metadata, metadata);
     let snapshot_ctx = (previous, ctx.prepared.clone(), ctx.inconsistencies.clone());
     let checked = ctx
@@ -406,6 +415,44 @@ async fn introspect_in(
         tables_json.as_deref().unwrap_or("[]"),
         enums_json.as_deref().unwrap_or("[]"),
     )?)
+}
+
+/// Read the rows of the enum tables through `tx`: the pool would not see uncommitted DDL
+/// and could wait on this transaction's locks. Whether they replace the cached rows is up to
+/// the runtime.
+async fn enum_rows_in(
+    tx: &tokio_postgres::Transaction<'_>,
+    catalog: &hge_core::SourceCatalog,
+    tables: &[QualifiedTable],
+) -> HashMap<QualifiedTable, Result<Vec<hge_core::EnumTableRow>, String>> {
+    let mut out = HashMap::new();
+    for table in tables {
+        let Some((key, comment)) = catalog.table(table).and_then(|c| c.enum_columns()) else {
+            continue;
+        };
+        let sql = introspect::enum_rows_sql(table, key, comment);
+        // A failed read must not abort the user's transaction.
+        let _ = tx.batch_execute("SAVEPOINT hge_enum_rows").await;
+        let read = match tx.query_typed(&sql, &[]).await {
+            Ok(rows) => Ok(introspect::enum_rows(
+                rows.iter()
+                    .map(|r| vec![r.get::<_, Option<String>>(0), r.get(1)])
+                    .collect(),
+            )),
+            Err(e) => {
+                let _ = tx
+                    .batch_execute("ROLLBACK TO SAVEPOINT hge_enum_rows")
+                    .await;
+                Err(e
+                    .as_db_error()
+                    .map(|d| d.message().to_owned())
+                    .unwrap_or_else(|| e.to_string()))
+            }
+        };
+        let _ = tx.batch_execute("RELEASE SAVEPOINT hge_enum_rows").await;
+        out.insert(table.clone(), read);
+    }
+    out
 }
 
 #[cfg(test)]
