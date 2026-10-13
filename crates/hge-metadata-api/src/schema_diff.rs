@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use hge_core::{Code, QualifiedTable};
+use hge_core::{Code, QualifiedTable, SourceCatalog};
 use hge_metadata::{
     ArrayRelUsing, Columns, Metadata, ObjectFkOn, ObjectRelUsing, RemoteFk, TableEntry,
 };
@@ -256,11 +256,10 @@ fn table_dependents(tables: &[TableEntry], dropped: &QualifiedTable) -> Vec<Depe
 /// Does a boolean expression mention `column` at this table's level?
 /// Relationship targets, `(table, relationship) → remote table`, resolved before anything is
 /// renamed (forward foreign keys through the snapshot, the other forms from metadata).
-struct Rels(HashMap<(QualifiedTable, String), QualifiedTable>);
+pub(crate) struct Rels(HashMap<(QualifiedTable, String), QualifiedTable>);
 
 impl Rels {
     fn new(tables: &[TableEntry], before: &[TableSnapshot]) -> Self {
-        let mut map = HashMap::new();
         let forward = |table: &QualifiedTable, columns: &[String]| -> Option<QualifiedTable> {
             let snap = before.iter().find(|s| s.table == *table)?;
             let (ref_oid, _) = snap.foreign_keys.iter().find(|(_, attnums)| {
@@ -274,6 +273,27 @@ impl Rels {
                 .find(|s| s.oid == *ref_oid)
                 .map(|s| s.table.clone())
         };
+        Self::with(tables, forward)
+    }
+
+    /// Forward foreign keys resolved through an introspected catalog.
+    pub(crate) fn from_catalog(tables: &[TableEntry], catalog: Option<&SourceCatalog>) -> Self {
+        Self::with(tables, |table, columns| {
+            let fks = &catalog?.table(table)?.foreign_keys;
+            fks.iter()
+                .find(|fk| {
+                    fk.columns.len() == columns.len()
+                        && fk.columns.iter().all(|(c, _)| columns.contains(c))
+                })
+                .map(|fk| fk.ref_table.clone())
+        })
+    }
+
+    fn with(
+        tables: &[TableEntry],
+        forward: impl Fn(&QualifiedTable, &[String]) -> Option<QualifiedTable>,
+    ) -> Self {
+        let mut map = HashMap::new();
         for t in tables {
             for r in &t.object_relationships {
                 let target = match &r.using {
@@ -354,7 +374,7 @@ fn visit_bool_exp(
 }
 
 /// Does a boolean expression on `context` use `column` of `table`?
-fn bool_exp_mentions(
+pub(crate) fn bool_exp_mentions(
     exp: &Value,
     context: &QualifiedTable,
     rels: &Rels,

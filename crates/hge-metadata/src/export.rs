@@ -150,6 +150,12 @@ const OBJECT_TYPE: &[&str] = &["name", "fields", "description", "relationships"]
 const TYPE_FIELD: &[&str] = &["name", "type", "arguments", "description"];
 const SCALAR_TYPE: &[&str] = &["name", "description"];
 const ENUM_TYPE: &[&str] = &["name", "values", "description"];
+const OPENTELEMETRY: &[&str] = &[
+    "status",
+    "data_types",
+    "exporter_otlp",
+    "batch_span_processor",
+];
 
 /// The `export_metadata` document for `metadata`.
 pub fn export_json(metadata: &Metadata) -> Value {
@@ -184,6 +190,7 @@ pub fn export_json(metadata: &Metadata) -> Value {
         "custom_types" => export_custom_types(v),
         "cron_triggers" => map_array(v, |c| fixed(c, CRON_TRIGGER)),
         "inherited_roles" => map_array(v, |r| fixed(r, INHERITED_ROLE)),
+        "opentelemetry" => fixed(v, OPENTELEMETRY),
         _ => sorted(v),
     });
     // `customTypesToOrdJSON` writes nothing when every type list is empty.
@@ -430,6 +437,14 @@ fn export_source(source: Value) -> Value {
     }
     if let Some(Value::Array(functions)) = obj.get_mut("functions") {
         functions.sort_by_key(|a| table_key_of(a, "function"));
+    }
+    for (key, sort_key) in [
+        ("native_queries", "root_field_name"),
+        ("logical_models", "name"),
+    ] {
+        if let Some(Value::Array(items)) = obj.get_mut(key) {
+            sort_by_key(items, sort_key);
+        }
     }
     let mut out = ordered(&mut obj, SOURCE, |key, v| match key {
         "tables" => map_array(v, export_table),

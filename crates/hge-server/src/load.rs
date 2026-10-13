@@ -289,9 +289,7 @@ pub async fn prepare(
         let (types, native_queries) = hge_schema::native::requests(source);
         let tracked = Introspected {
             tables: source.tables.iter().map(|t| t.table.clone()).collect(),
-            functions: hge_schema::functions::referenced_functions(source)
-                .into_iter()
-                .collect(),
+            functions: source.referenced_functions().into_iter().collect(),
             types: types.into_iter().collect(),
             native_queries: native_queries.into_iter().collect(),
         };
@@ -389,6 +387,7 @@ pub async fn prepare(
     if let Some(admin) = &admin_schema {
         inconsistencies.extend(hge_rest::collection_issues(metadata, &admin.schema, &rest));
     }
+    inconsistencies.extend(hge_metadata::consistency::check(metadata));
     Prepared {
         admin_schema,
         rest: Arc::new(rest),

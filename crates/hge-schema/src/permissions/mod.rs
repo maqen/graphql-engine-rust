@@ -201,7 +201,7 @@ fn defined_roles(metadata: &Metadata) -> HashSet<&str> {
             roles.extend(t.update_permissions.iter().map(|p| p.role.as_str()));
             roles.extend(t.delete_permissions.iter().map(|p| p.role.as_str()));
         }
-        roles.extend(json_roles(&source.functions));
+        // Function permissions do not count (V2's `allRoleNames`); logical models' do.
         roles.extend(crate::native::permission_roles(source));
     }
     roles.extend(json_roles(&metadata.actions));

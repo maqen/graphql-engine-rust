@@ -6,9 +6,10 @@
 pub mod actions;
 mod args;
 pub mod event_triggers;
-pub mod functions_events;
+pub mod functions;
 pub mod metadata;
 pub mod objects;
+pub(crate) mod parse;
 pub mod relationships_permissions;
 pub mod remote_schemas;
 pub mod scheduled;
@@ -261,7 +262,7 @@ pub async fn run_backend<R: Runtime>(
         c if relationships_permissions::COMMANDS.contains(&c) => {
             relationships_permissions::run(ctx, c, args).await
         }
-        c if functions_events::COMMANDS.contains(&c) => functions_events::run(ctx, c, args).await,
+        c if functions::COMMANDS.contains(&c) => functions::run(ctx, c, args).await,
         _ => Err(not_implemented(&format!("{backend}_{command}"))),
     }
 }

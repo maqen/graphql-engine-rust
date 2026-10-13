@@ -181,6 +181,15 @@ pub trait Runtime: Send + Sync {
         None
     }
 
+    /// Roles with a permission on a resolved table (inherited roles included, `admin` not)
+    /// of a prepared (or else the installed) state; `None` when the table is not resolved.
+    fn table_roles(
+        &self,
+        prepared: Option<&Self::Prepared>,
+        source: &str,
+        table: &hge_core::QualifiedTable,
+    ) -> Option<Vec<String>>;
+
     /// Atomically swap in a prepared state. In-flight requests finish on the old one.
     fn install(&self, prepared: Self::Prepared, metadata: Metadata, resource_version: i64);
 

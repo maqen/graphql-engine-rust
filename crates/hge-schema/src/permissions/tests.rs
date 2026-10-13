@@ -523,16 +523,24 @@ fn invalid_inherited_roles() {
             {"role_name": "z", "role_set": ["x", "a"]},
         ]),
     );
-    // One inconsistency per invalid role; both roles of the cycle report it.
-    assert_eq!(errs.len(), 5, "{errs:?}");
-    assert!(errs[0].contains("an inherited role name cannot be in the role combination"));
-    assert!(errs[1].contains(
-        "the following parent role(s) are not found: ghost, spook which are required to construct the inherited role: \"orphan\""
-    ));
-    assert_eq!(errs[2], r#"found cycle(s) in roles: ["x","y","x"]"#);
-    assert_eq!(errs[3], errs[2]);
-    assert!(
-        errs[4].contains("not found: x which are required to construct the inherited role: \"z\"")
+    // One inconsistency per invalid role; both roles of the cycle report it. A role built
+    // on an invalid one ("z") is left out without being reported, as in V2.
+    assert_eq!(errs.len(), 4, "{errs:?}");
+    assert_eq!(
+        errs[0],
+        "in inherited role self: an inherited role name cannot be in the role combination"
+    );
+    assert_eq!(
+        errs[1],
+        "in inherited role orphan: the following parent role(s) are not found: ghost, spook which are required to construct the inherited role: \"orphan\""
+    );
+    assert_eq!(
+        errs[2],
+        r#"in inherited role x: found cycle(s) in roles: ["x","y","x"]"#
+    );
+    assert_eq!(
+        errs[3],
+        r#"in inherited role y: found cycle(s) in roles: ["x","y","x"]"#
     );
     for role in ["self", "orphan", "x", "y", "z"] {
         assert!(select_of(&tables, role).is_none(), "{role}");

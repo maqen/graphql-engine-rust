@@ -7,11 +7,8 @@
 pub mod computed;
 pub mod tracked;
 
-use std::collections::BTreeSet;
-
 use hge_core::{ColumnType, FunctionArg, FunctionCatalog, QualifiedFunction, SourceCatalog};
 use hge_ir::{FunctionArgValue, FunctionArgument, FunctionCall, Value};
-use hge_metadata::Source;
 use serde::Deserialize;
 
 pub use computed::{ComputedFieldInfo, ComputedReturn};
@@ -33,31 +30,6 @@ pub struct ComputedFieldDefinition {
     pub table_argument: Option<String>,
     #[serde(default)]
     pub session_argument: Option<String>,
-}
-
-/// `functions[]` of a source (only the function name is needed to introspect it).
-#[derive(Debug, Clone, Deserialize)]
-struct TrackedFunctionName {
-    function: QualifiedFunction,
-}
-
-/// Every function a source's metadata refers to (tracked functions and computed fields),
-/// sorted; these are introspected along with the tables.
-pub fn referenced_functions(source: &Source) -> Vec<QualifiedFunction> {
-    let mut out = BTreeSet::new();
-    for f in &source.functions {
-        if let Ok(f) = TrackedFunctionName::deserialize(f) {
-            out.insert(f.function);
-        }
-    }
-    for t in &source.tables {
-        for cf in &t.computed_fields {
-            if let Ok(cf) = ComputedFieldMeta::deserialize(cf) {
-                out.insert(cf.definition.function);
-            }
-        }
-    }
-    out.into_iter().collect()
 }
 
 /// The single overload of `name`, or V2's error.

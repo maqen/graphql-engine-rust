@@ -357,6 +357,27 @@ impl Runtime for Engine {
         }
     }
 
+    fn table_roles(
+        &self,
+        prepared: Option<&Prepared>,
+        source: &str,
+        table: &hge_core::QualifiedTable,
+    ) -> Option<Vec<String>> {
+        let roles = |tables: &Tables| {
+            tables.get(source, table).map(|t| {
+                t.permissions
+                    .keys()
+                    .filter(|r| **r != RoleName::admin())
+                    .map(|r| r.as_str().to_owned())
+                    .collect()
+            })
+        };
+        match prepared {
+            Some(p) => roles(&p.tables),
+            None => roles(&self.state.load().tables),
+        }
+    }
+
     fn install(&self, prepared: Prepared, metadata: Metadata, resource_version: i64) {
         load::log_prepared(&prepared);
         let state = AppState::new(

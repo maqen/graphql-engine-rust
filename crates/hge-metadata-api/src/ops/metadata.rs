@@ -346,6 +346,36 @@ fn drop_object(md: &mut Metadata, obj: &InconsistentObject) -> bool {
             }
             true
         }
+        "inherited_role" => match obj.name.strip_prefix("inherited_role inherited role ") {
+            Some(name) => {
+                md.inherited_roles.retain(|r| r.role_name != name);
+                true
+            }
+            None => false,
+        },
+        "rest_endpoint" => match obj.name.strip_prefix("rest_endpoint ") {
+            Some(name) => {
+                md.rest_endpoints.retain(|e| e.name != name);
+                true
+            }
+            None => false,
+        },
+        // V2 attributes an ambiguity to its first endpoint and drops that one.
+        "ambiguous_rest_endpoints" => {
+            for (_, name) in &obj.involves {
+                if let Some(name) = name.strip_prefix("rest_endpoint ") {
+                    md.rest_endpoints.retain(|e| e.name != name);
+                }
+            }
+            !obj.involves.is_empty()
+        }
+        "open_telemetry" => match obj.name.strip_prefix("open_telemetry ") {
+            Some(part) => {
+                super::objects::reset_otel_part(md, part);
+                true
+            }
+            None => false,
+        },
         // V2's definition is `{configuration, table}`; the source is in the object's name.
         "event_trigger" => {
             let (Some(source), Some(table), Some(name)) = (

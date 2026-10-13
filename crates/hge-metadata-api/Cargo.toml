@@ -13,9 +13,11 @@ hge-events.workspace = true
 hge-metadata.workspace = true
 hge-transforms.workspace = true
 hge-postgres.workspace = true
+async-graphql-parser.workspace = true
 deadpool-postgres.workspace = true
 futures.workspace = true
 indexmap.workspace = true
+reqwest = { workspace = true, features = ["rustls-tls", "http2"] }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

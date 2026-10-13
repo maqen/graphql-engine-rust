@@ -219,7 +219,7 @@ pub(crate) fn drop_conflicting(tables: &mut Tables, issues: &mut Vec<Inconsisten
     tables.native_queries = kept;
 }
 
-/// Split code at `{{name}}` references (names are trimmed).
+/// Split code at `{{name}}` references (names are trimmed), without trailing semicolons.
 pub fn parse_code(code: &str) -> Vec<CodePart> {
     let mut parts = vec![];
     let mut rest = code;
@@ -240,6 +240,16 @@ pub fn parse_code(code: &str) -> Vec<CodePart> {
     sql.push_str(rest);
     if !sql.is_empty() {
         parts.push(CodePart::Sql(sql));
+    }
+    // V2's `trimQueryEnd`: trailing whitespace and semicolons would end the wrapping query.
+    if let Some(CodePart::Sql(last)) = parts.last_mut() {
+        let len = last
+            .trim_end_matches(|c: char| c.is_whitespace() || c == ';')
+            .len();
+        last.truncate(len);
+        if last.is_empty() {
+            parts.pop();
+        }
     }
     parts
 }

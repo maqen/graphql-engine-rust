@@ -27,8 +27,11 @@ pub enum Check {
     None,
     /// Reject inconsistencies that were not there before.
     NoNew,
-    /// Like [`Check::NoNew`], but if the object being created is itself inconsistent (new or
-    /// not), report it as `invalid-configuration` (V2's `buildSchemaCacheFor`).
+    /// Like [`Check::NoNew`], but as V2's `withNewInconsistentObjsCheck`: `500 unexpected`
+    /// "cannot continue due to newly found inconsistent metadata".
+    Newly,
+    /// Like [`Check::NoNew`], but if the object being created is itself inconsistent, report
+    /// it as `invalid-configuration` (V2's `buildSchemaCacheFor`).
     Object { kind: String, name: String },
 }
 
@@ -224,6 +227,15 @@ impl<'a, R: Runtime> Ctx<'a, R> {
                 ));
             }
             Check::NoNew => {}
+            Check::Newly if !new.is_empty() => {
+                return Err(ApiError::new(
+                    500,
+                    Code::Unexpected,
+                    "cannot continue due to newly found inconsistent metadata",
+                )
+                .with_internal(objects_json(&new)));
+            }
+            Check::Newly => {}
         }
         self.prepared = Some(prepared);
         self.inconsistencies = found;
