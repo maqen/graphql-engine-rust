@@ -300,11 +300,11 @@ pub enum CompareOp {
     IRegex(Value),
     NIRegex(Value),
     IsNull(bool),
-    /// jsonb `@>`
+    /// `@>` (jsonb; ltree)
     Contains(Value),
-    /// jsonb `<@`
+    /// `<@` (jsonb; ltree)
     ContainedIn(Value),
-    /// jsonb `?`
+    /// `?` (jsonb; ltree with an `lquery[]`)
     HasKey(Value),
     /// jsonb `?|` (value is `text[]`)
     HasKeysAny(Value),
@@ -314,6 +314,9 @@ pub enum CompareOp {
     JsonbPathExists(Value),
     /// jsonb `@@` (value is `jsonpath`)
     JsonbPathMatch(Value),
+    /// ltree `@` (the value is an `ltxtquery`). The other ltree operators reuse `Contains`
+    /// (`@>`), `ContainedIn` (`<@`), `Regex` (`~`) and `HasKey` (`?`).
+    MatchesFulltext(Value),
     /// `_cast`: compare the column cast to `to` (jsonb to text, geometry to geography and
     /// back) with `op`, whose values have type `to`.
     Cast {
@@ -366,6 +369,7 @@ impl CompareOp {
             | HasKeysAll(v)
             | JsonbPathExists(v)
             | JsonbPathMatch(v)
+            | MatchesFulltext(v)
             | Spatial(_, v) => f(v),
             IsNull(_) => {}
             Cast { op, .. } => op.for_each_value_mut(f),

@@ -215,6 +215,7 @@ impl Translator<'_> {
             // non-boolean paths, and can use a `jsonb_path_ops` index.
             JsonbPathExists(v) => (" @? ", v, ""),
             JsonbPathMatch(v) => (" @@ ", v, ""),
+            MatchesFulltext(v) => (" @ ", v, ""),
             IsNull(_) | Cast { .. } | Spatial(..) | DWithin(_) => {
                 unreachable!("handled above")
             }

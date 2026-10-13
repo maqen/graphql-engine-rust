@@ -1,6 +1,7 @@
-//! Comparison operators beyond the generic ones: `_cast` targets and the PostGIS predicates
-//! (`_st_contains`, `_st_d_within`, …) of `geometry` and `geography` columns, for both the
-//! `<scalar>_comparison_exp` schema types and lowering.
+//! Comparison operators beyond the generic ones: `_cast` targets, the PostGIS predicates
+//! (`_st_contains`, `_st_d_within`, …) of `geometry` and `geography` columns and the
+//! `ltree` operators (`_ancestor`, `_matches`, …), for both the `<scalar>_comparison_exp`
+//! schema types and lowering.
 
 use hge_core::{ColumnType, Error};
 use hge_ir::{CompareOp, DWithin, SpatialOp, Value};
@@ -224,6 +225,88 @@ pub fn graphql_spatial_op(
     spatial_op(op.strip_prefix('_')?, v, ty, path, &to_value)
 }
 
+fn is_ltree(ty: &ColumnType) -> bool {
+    !ty.is_array() && ty.name == "ltree"
+}
+
+/// A type from the same schema as `ty` (the ltree extension's `lquery` and `ltxtquery`).
+fn sibling(ty: &ColumnType, name: &str) -> ColumnType {
+    ColumnType {
+        name: name.to_owned(),
+        dimensions: 0,
+        ..ty.clone()
+    }
+}
+
+/// Scalars the ltree operators of `ty` take besides `ty` itself.
+pub fn ltree_scalars(ty: &ColumnType) -> Vec<ColumnType> {
+    if !is_ltree(ty) {
+        return vec![];
+    }
+    vec![sibling(ty, "lquery"), sibling(ty, "ltxtquery")]
+}
+
+/// The ltree operator fields of `ltree_comparison_exp`.
+pub fn ltree_fields(ty: &ColumnType) -> Vec<InputValueDef> {
+    if !is_ltree(ty) {
+        return vec![];
+    }
+    let ltree = scalars::column_type_ref(ty, true);
+    let ltree_list = scalars::column_type_ref(ty, false).list();
+    vec![
+        InputValueDef::new("_ancestor", ltree.clone())
+            .describe("is the left argument an ancestor of right (or equal)?"),
+        InputValueDef::new("_ancestor_any", ltree_list.clone())
+            .describe("does array contain an ancestor of `ltree`?"),
+        InputValueDef::new("_descendant", ltree)
+            .describe("is the left argument a descendant of right (or equal)?"),
+        InputValueDef::new("_descendant_any", ltree_list)
+            .describe("does array contain a descendant of `ltree`?"),
+        InputValueDef::new("_matches", TypeRef::named("lquery"))
+            .describe("does `ltree` match `lquery`?"),
+        InputValueDef::new("_matches_any", TypeRef::nn("String").list())
+            .describe("does `ltree` match any `lquery` in `lquery[]`?"),
+        InputValueDef::new("_matches_fulltext", TypeRef::named("ltxtquery"))
+            .describe("does `ltree` match `ltxtquery`?"),
+    ]
+}
+
+/// Lower an ltree operator (`op` without its `_` or `$` prefix) on a column of type `ty`.
+/// `None` if `op` is not one or `ty` is not `ltree`; `value` as for [`spatial_op`].
+pub fn ltree_op(
+    op: &str,
+    v: &Json,
+    ty: &ColumnType,
+    path: &str,
+    value: &dyn Fn(&Json, &ColumnType, &str) -> Result<Value, Error>,
+) -> Option<Result<CompareOp, Error>> {
+    if !is_ltree(ty) {
+        return None;
+    }
+    // V2 renders the ltree operators with the generic `@>`, `<@`, `~` and `?`.
+    let (f, arg_ty): (fn(Value) -> CompareOp, ColumnType) = match op {
+        "ancestor" => (CompareOp::Contains, ty.clone()),
+        "ancestor_any" => (CompareOp::Contains, ty.array_of()),
+        "descendant" => (CompareOp::ContainedIn, ty.clone()),
+        "descendant_any" => (CompareOp::ContainedIn, ty.array_of()),
+        "matches" => (CompareOp::Regex, sibling(ty, "lquery")),
+        "matches_any" => (CompareOp::HasKey, sibling(ty, "lquery").array_of()),
+        "matches_fulltext" => (CompareOp::MatchesFulltext, sibling(ty, "ltxtquery")),
+        _ => return None,
+    };
+    Some(value(v, &arg_ty, path).map(f))
+}
+
+/// [`ltree_op`] for GraphQL `where` input.
+pub fn graphql_ltree_op(
+    op: &str,
+    v: &Json,
+    ty: &ColumnType,
+    path: &str,
+) -> Option<Result<CompareOp, Error>> {
+    ltree_op(op.strip_prefix('_')?, v, ty, path, &to_value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -330,5 +413,40 @@ mod tests {
             "$",
         );
         assert!(matches!(missing, Some(Err(_))));
+    }
+
+    #[test]
+    fn ltree_operators() {
+        let ltree = geo("ltree");
+        let op = graphql_ltree_op("_ancestor_any", &json!(["A.B", "C"]), &ltree, "$.p");
+        let Some(Ok(CompareOp::Contains(v))) = op else {
+            panic!("expected Contains, got {op:?}");
+        };
+        assert_eq!(v.ty(), &ltree.array_of());
+        let Some(Ok(CompareOp::Regex(v))) =
+            graphql_ltree_op("_matches", &json!("*.A.*"), &ltree, "$")
+        else {
+            panic!("expected Regex");
+        };
+        assert_eq!(v.ty().name, "lquery");
+        assert!(matches!(
+            graphql_ltree_op("_matches_fulltext", &json!("a & b"), &ltree, "$"),
+            Some(Ok(CompareOp::MatchesFulltext(_)))
+        ));
+        // Not an ltree column, or not an ltree operator.
+        assert!(
+            graphql_ltree_op("_ancestor", &json!("A"), &ColumnType::builtin("text"), "$").is_none()
+        );
+        assert!(graphql_ltree_op("_eq", &json!("A"), &ltree, "$").is_none());
+        // ltree arguments are checked as label paths (by `to_value`); lquery ones are not.
+        let Some(Err(e)) = graphql_ltree_op("_descendant_any", &json!(["A", "B."]), &ltree, "$.p")
+        else {
+            panic!("expected an error");
+        };
+        assert_eq!(e.path, "$.p[1]");
+        assert!(matches!(
+            graphql_ltree_op("_matches", &json!("A.*{1,}"), &ltree, "$"),
+            Some(Ok(_))
+        ));
     }
 }
