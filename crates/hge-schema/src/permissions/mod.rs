@@ -88,7 +88,8 @@ fn resolve_table(
             continue;
         }
         match select_permission(parser, table, &p.role, &p.permission) {
-            Ok(perm) => by_role.entry(&p.role).or_default().select = Some(perm),
+            Ok(perm) => set_once(&mut by_role.entry(&p.role).or_default().select, perm)
+                .unwrap_or_else(|e| report("select", &p.role, e)),
             Err(e) => report("select", &p.role, e),
         }
     }
@@ -102,7 +103,8 @@ fn resolve_table(
             continue;
         }
         match insert_permission(parser, table, &p.permission) {
-            Ok(perm) => by_role.entry(&p.role).or_default().insert = Some(perm),
+            Ok(perm) => set_once(&mut by_role.entry(&p.role).or_default().insert, perm)
+                .unwrap_or_else(|e| report("insert", &p.role, e)),
             Err(e) => report("insert", &p.role, e),
         }
     }
@@ -116,7 +118,8 @@ fn resolve_table(
             continue;
         }
         match update_permission(parser, table, &p.permission) {
-            Ok(perm) => by_role.entry(&p.role).or_default().update = Some(perm),
+            Ok(perm) => set_once(&mut by_role.entry(&p.role).or_default().update, perm)
+                .unwrap_or_else(|e| report("update", &p.role, e)),
             Err(e) => report("update", &p.role, e),
         }
     }
@@ -130,12 +133,14 @@ fn resolve_table(
             continue;
         }
         match parser.bool_exp(table, &p.permission.filter) {
-            Ok(filter) => {
-                by_role.entry(&p.role).or_default().delete = Some(DeletePermission {
+            Ok(filter) => set_once(
+                &mut by_role.entry(&p.role).or_default().delete,
+                DeletePermission {
                     filter,
                     backend_only: p.permission.backend_only,
-                })
-            }
+                },
+            )
+            .unwrap_or_else(|e| report("delete", &p.role, e)),
             Err(e) => report("delete", &p.role, e),
         }
     }
@@ -148,6 +153,15 @@ fn resolve_table(
     out
 }
 
+/// Keep the first permission of a kind for a role; later duplicates are inconsistent.
+fn set_once<P>(slot: &mut Option<P>, perm: P) -> Result<(), PermError> {
+    if slot.is_some() {
+        return Err("a permission of this kind is already defined for the role".to_owned());
+    }
+    *slot = Some(perm);
+    Ok(())
+}
+
 /// `admin`: every column, no filters, no limit.
 fn admin_permissions(table: &TableInfo) -> TablePermissions {
     let columns: Vec<String> = table.columns.keys().cloned().collect();
@@ -157,6 +171,7 @@ fn admin_permissions(table: &TableInfo) -> TablePermissions {
             filter: BoolExp::always_true(),
             limit: None,
             allow_aggregations: true,
+            // Filled with every scalar computed field once tables resolve computed fields.
             computed_fields: vec![],
             query_root_fields: RootFields::ALL,
             subscription_root_fields: RootFields::ALL,

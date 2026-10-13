@@ -375,3 +375,33 @@ fn mutation_permissions() {
 
     assert!(p.delete.as_ref().is_some_and(|d| !d.filter.is_true()));
 }
+
+#[test]
+fn duplicate_permissions_keep_the_first() {
+    let (tables, errs) = resolve(
+        json!({"select_permissions": [
+            {"role": "user", "permission": {"columns": ["id"], "filter": {}}},
+            {"role": "user", "permission": {"columns": "*", "filter": {}}},
+        ]}),
+        json!({}),
+    );
+    assert_eq!(errs.len(), 1, "{errs:?}");
+    let select = table_permissions(author(&tables), &RoleName::new("user"))
+        .unwrap()
+        .select
+        .clone()
+        .unwrap();
+    assert_eq!(select.columns, ["id"]);
+}
+
+#[test]
+fn non_ascii_literals() {
+    let exp = select_filter(json!({"name": {"_eq": "12345678é"}})).unwrap();
+    assert!(matches!(
+        exp,
+        BoolExp::Compare {
+            op: CompareOp::Eq(Value::Literal { .. }),
+            ..
+        }
+    ));
+}

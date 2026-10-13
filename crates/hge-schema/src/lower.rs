@@ -67,12 +67,13 @@ impl Lowerer<'_> {
             .ok_or_else(|| Error::unexpected(format!("unknown table {}", rel.target)))
     }
 
-    /// The role's select filter on `table`, unless it lets every row through.
+    /// The role's select filter on `table`, unless it lets every row through. Without select
+    /// access (the schema should never lead here) no row is visible.
     fn permission_filter(&self, table: &TableInfo) -> Option<BoolExp> {
-        self.rs
-            .select_access(table)
-            .and_then(|a| a.row_filter())
-            .cloned()
+        match self.rs.select_access(table) {
+            Some(a) => a.row_filter().cloned(),
+            None => Some(BoolExp::always_false()),
+        }
     }
 
     fn select(
