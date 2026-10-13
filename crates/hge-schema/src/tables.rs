@@ -26,6 +26,8 @@ pub struct ColumnInfo {
     pub description: Option<String>,
     /// Can be inserted / updated (not generated, not `GENERATED ALWAYS AS IDENTITY`).
     pub mutable: bool,
+    /// The enum table this column references, whose enum type it takes in GraphQL.
+    pub enum_ref: Option<Arc<crate::enums::EnumReference>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,6 +82,8 @@ pub struct TableInfo {
     /// A logical model (see [`crate::native`]): no table behind it, only the rows of the
     /// native queries returning it.
     pub logical_model: bool,
+    /// The rows of an enum table, sorted by value (`None` unless `is_enum`).
+    pub enum_values: Option<Vec<hge_core::EnumTableRow>>,
     /// The metadata entry, for permission lookups.
     pub entry: TableEntry,
     /// Resolved permissions by role (filled by [`crate::permissions::resolve_permissions`]).
@@ -194,6 +198,7 @@ pub fn resolve_source(
         .filter(|t| catalog.table(&t.table).is_some())
         .map(|t| t.table.clone())
         .collect();
+    let mut resolved = Vec::with_capacity(source.tables.len());
     for entry in &source.tables {
         let table_def = || serde_json::to_value(&entry.table).unwrap_or_default();
         let Some(cat) = catalog.table(&entry.table) else {
@@ -209,13 +214,7 @@ pub fn resolve_source(
             continue;
         };
         match resolve_table(&source_name, entry, cat, catalog, &tracked, inconsistencies) {
-            Ok(info) => {
-                let info = Arc::new(info);
-                tables
-                    .by_name
-                    .insert((source_name.clone(), entry.table.clone()), info.clone());
-                tables.ordered.push(info);
-            }
+            Ok(info) => resolved.push(info),
             Err(e) => inconsistencies.push(InconsistentObject::table(
                 &source.name,
                 &entry.table,
@@ -223,6 +222,14 @@ pub fn resolve_source(
                 table_def(),
             )),
         }
+    }
+    crate::enums::attach_enum_references(&source.name, &mut resolved, catalog, inconsistencies);
+    for info in resolved {
+        let info = Arc::new(info);
+        tables
+            .by_name
+            .insert((source_name.clone(), info.name.clone()), info.clone());
+        tables.ordered.push(info);
     }
 }
 
@@ -273,6 +280,16 @@ fn resolve_table(
         ));
     }
 
+    let enum_values = if entry.is_enum {
+        Some(crate::enums::resolve_enum_values(
+            &entry.table,
+            cat,
+            catalog,
+        )?)
+    } else {
+        None
+    };
+
     let mut columns = IndexMap::new();
     for col in cat.columns.values() {
         let gql = config.column_name(&col.name).to_owned();
@@ -293,6 +310,7 @@ fn resolve_table(
                 nullable: col.nullable,
                 description,
                 mutable: col.is_mutable(),
+                enum_ref: None,
             },
         );
     }
@@ -423,6 +441,7 @@ fn resolve_table(
         root_fields,
         is_enum: entry.is_enum,
         logical_model: false,
+        enum_values,
         entry: entry.clone(),
         permissions: HashMap::new(),
     })
@@ -577,6 +596,16 @@ pub fn drop_conflicting(tables: &mut Tables, inconsistencies: &mut Vec<Inconsist
             let scalar = crate::scalars::scalar_name(&col.ty.element());
             for suffix in ["", "_comparison_exp", "_array_comparison_exp", "_cast_exp"] {
                 types.insert(format!("{scalar}{suffix}"), format!("scalar \"{scalar}\""));
+            }
+        }
+        // So do the enum types of enum tables.
+        if table.enum_values.is_some() {
+            let owner = format!(
+                "enum table \"{}\" in source \"{}\"",
+                table.name, table.source
+            );
+            for suffix in ["_enum", "_enum_comparison_exp"] {
+                types.insert(format!("{}{suffix}", table.gql_name), owner.clone());
             }
         }
     }

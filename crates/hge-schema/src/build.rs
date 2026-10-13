@@ -330,8 +330,7 @@ impl Builder<'_> {
             );
             for col in pk {
                 let col = &table.columns[col];
-                let ty = scalars::column_type_ref(&col.ty, false);
-                self.note_scalar(&col.ty);
+                let ty = self.column_value_type(col, false);
                 by_pk = by_pk.arg(InputValueDef::new(col.gql_name.clone(), ty));
             }
             root.fields.insert(by_pk.name.clone(), by_pk);
@@ -434,14 +433,10 @@ impl Builder<'_> {
             if !access.allows_column(&col.name) {
                 continue;
             }
-            self.note_scalar(&col.ty);
             let mut field = FieldDef::new(
                 col.gql_name.clone(),
                 // Inherited-role redaction can null any column.
-                scalars::column_type_ref(
-                    &col.ty,
-                    col.nullable || access.redaction(&col.name).is_some(),
-                ),
+                self.column_value_type(col, col.nullable || access.redaction(&col.name).is_some()),
                 FieldKind::Column {
                     column: col.name.clone(),
                     ty: col.ty.clone(),
@@ -456,7 +451,7 @@ impl Builder<'_> {
             }
             obj.fields.insert(field.name.clone(), field);
 
-            let cmp = self.ensure_comparison_exp(&col.ty);
+            let cmp = self.column_comparison_exp(col);
             bool_exp.fields.insert(
                 col.gql_name.clone(),
                 InputValueDef::new(col.gql_name.clone(), TypeRef::named(cmp)),

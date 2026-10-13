@@ -1,0 +1,4 @@
+- "!include public_colors.yaml"
+- "!include public_shade.yaml"
+- "!include other_size.yaml"
+- "!include public_post.yaml"

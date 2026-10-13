@@ -66,11 +66,14 @@ fn arg_path(field: &SelectedField<'_>, arg: &str) -> String {
 /// `unexpected null value for type 'T'` unless `value` is null for a non-nullable column.
 fn check_null(value: &Json, col: &ColumnInfo, path: &str) -> Result<(), Error> {
     if value.is_null() && !col.nullable {
-        return Err(Error::validation(format!(
-            "unexpected null value for type '{}'",
-            crate::scalars::column_type_ref(&col.ty, true)
-        ))
-        .with_path(path.to_owned()));
+        let ty = match &col.enum_ref {
+            Some(r) => r.type_name.clone(),
+            None => crate::scalars::column_type_ref(&col.ty, true).to_string(),
+        };
+        return Err(
+            Error::validation(format!("unexpected null value for type '{ty}'"))
+                .with_path(path.to_owned()),
+        );
     }
     Ok(())
 }

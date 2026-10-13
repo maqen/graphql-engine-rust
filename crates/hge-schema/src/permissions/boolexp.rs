@@ -146,6 +146,7 @@ impl Parser<'_> {
                     nullable: true,
                     description: None,
                     mutable: false,
+                    enum_ref: None,
                 };
                 let exp = self.column(table, root, &as_column, value)?;
                 computed_comparison(exp, &call)

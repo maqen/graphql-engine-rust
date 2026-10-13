@@ -1,0 +1,6 @@
+table:
+  name: shade
+  schema: public
+is_enum: true
+configuration:
+  custom_name: hue

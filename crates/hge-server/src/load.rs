@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use hge_actions::{ActionRegistry, HandlerConfig, ProcessEnv};
 use hge_core::{
-    Code, Error, InconsistentObject, NativeQueryCheck, QualifiedFunction, QualifiedTable,
-    SourceCatalog,
+    Code, EnumTableRow, Error, InconsistentObject, NativeQueryCheck, QualifiedFunction,
+    QualifiedTable, SourceCatalog,
 };
 use hge_metadata::store::MetadataStore;
 use hge_metadata::{Metadata, PgConnectionInfo, Source, SourceConfiguration, UrlConfig, load_dir};
@@ -311,6 +311,10 @@ pub async fn prepare(
                 }
             }
         };
+        let kept_rows = previous
+            .filter(|_| !reload.introspects(&source.name))
+            .map(|p| &p.catalog.enum_tables);
+        let catalog = with_enum_rows(source, catalog, kept_rows, &pg).await;
         sources.insert(
             source.name.clone(),
             PreparedSource {
@@ -355,6 +359,41 @@ pub async fn prepare(
         action_registry: Arc::new(registry),
         inconsistencies,
     }
+}
+
+/// Attach the rows of the source's enum tables to its catalog. Rows in `kept` are reused:
+/// like V2, enum values are read again only on a metadata reload (or when a table becomes
+/// an enum table), not after every schema change.
+async fn with_enum_rows(
+    source: &Source,
+    mut catalog: Arc<SourceCatalog>,
+    kept: Option<&HashMap<QualifiedTable, Result<Vec<EnumTableRow>, String>>>,
+    pg: &PgSource,
+) -> Arc<SourceCatalog> {
+    let mut rows = HashMap::new();
+    for entry in source.tables.iter().filter(|t| t.is_enum) {
+        if let Some(r) = kept.and_then(|k| k.get(&entry.table)) {
+            rows.insert(entry.table.clone(), r.clone());
+            continue;
+        }
+        let Some(cat) = catalog.table(&entry.table) else {
+            continue;
+        };
+        // A table of the wrong shape is reported inconsistent without reading it.
+        let shape = hge_schema::enums::enum_table_columns(cat);
+        let Some(key) = &shape.key else {
+            continue;
+        };
+        let read = pg
+            .enum_table_rows(&entry.table, key, shape.comment.as_deref())
+            .await
+            .map_err(|e| e.message);
+        rows.insert(entry.table.clone(), read);
+    }
+    if rows != catalog.enum_tables {
+        Arc::make_mut(&mut catalog).enum_tables = rows;
+    }
+    catalog
 }
 
 /// Log a freshly prepared state.

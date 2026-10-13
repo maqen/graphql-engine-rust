@@ -1,0 +1,24 @@
+table:
+  name: post
+  schema: public
+select_permissions:
+  - role: user
+    permission:
+      columns: [id, title, color, shade, size, likes]
+      filter: {}
+      allow_aggregations: true
+  - role: guest
+    permission:
+      columns: [id, title]
+      filter: {}
+insert_permissions:
+  - role: user
+    permission:
+      columns: [title, color]
+      check: {}
+update_permissions:
+  - role: user
+    permission:
+      columns: [color]
+      filter: {}
+      check: null

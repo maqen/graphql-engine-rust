@@ -11,9 +11,9 @@ pub mod names;
 pub mod session;
 
 pub use catalog::{
-    ColumnInfo, ColumnType, ForeignKey, FunctionArg, FunctionCatalog, NamedType, NativeQueryCheck,
-    ResultColumn, SourceCatalog, TableCatalog, TableKind, TableMutability, TypeKind,
-    UniqueConstraint, Volatility,
+    ColumnInfo, ColumnType, EnumTableRow, ForeignKey, FunctionArg, FunctionCatalog, NamedType,
+    NativeQueryCheck, ResultColumn, SourceCatalog, TableCatalog, TableKind, TableMutability,
+    TypeKind, UniqueConstraint, Volatility,
 };
 pub use error::{Code, Error, Result};
 pub use inconsistency::InconsistentObject;

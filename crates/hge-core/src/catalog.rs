@@ -23,6 +23,17 @@ pub struct SourceCatalog {
     /// The outcome of preparing each native query's validation statement: the result
     /// columns, or V2's `error` object.
     pub native_queries: HashMap<NativeQueryCheck, Result<Vec<ResultColumn>, serde_json::Value>>,
+    /// Rows of the tables tracked with `is_enum`, or why they could not be read. Unlike the
+    /// rest of the catalog they are not re-read on every introspection: V2 keeps them until
+    /// the metadata is reloaded or the table first becomes an enum table.
+    pub enum_tables: HashMap<QualifiedTable, Result<Vec<EnumTableRow>, String>>,
+}
+
+/// One row of an enum table: the primary key value and the comment column, if any.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnumTableRow {
+    pub value: String,
+    pub comment: Option<String>,
 }
 
 impl SourceCatalog {

@@ -7,6 +7,7 @@
 pub mod actions;
 pub mod aggregate;
 pub mod build;
+pub mod enums;
 pub mod functions;
 pub mod geojson;
 pub mod introspection;

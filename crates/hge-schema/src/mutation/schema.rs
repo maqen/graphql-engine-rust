@@ -255,11 +255,8 @@ impl Builder<'_> {
                 .describe(names.delete_by_pk.1.clone());
                 for col in table.primary_key.iter().flatten() {
                     let col = &table.columns[col];
-                    self.note_scalar(&col.ty);
-                    f = f.arg(InputValueDef::new(
-                        col.gql_name.clone(),
-                        scalars::column_type_ref(&col.ty, false),
-                    ));
+                    let ty = self.column_value_type(col, false);
+                    f = f.arg(InputValueDef::new(col.gql_name.clone(), ty));
                 }
                 root.fields.insert(f.name.clone(), f);
             }
@@ -337,13 +334,9 @@ impl Builder<'_> {
 
         let mut fields = vec![];
         for col in ia.input_columns(table) {
-            self.note_scalar(&col.ty);
+            let ty = self.column_value_type(col, true);
             fields.push(
-                InputValueDef::new(
-                    col.gql_name.clone(),
-                    scalars::column_type_ref(&col.ty, true),
-                )
-                .describe_opt(col.description.clone()),
+                InputValueDef::new(col.gql_name.clone(), ty).describe_opt(col.description.clone()),
             );
         }
         let rels: Vec<_> = table
@@ -554,10 +547,7 @@ impl Builder<'_> {
                             "_delete_key" => TypeRef::named("String"),
                             "_delete_elem" => TypeRef::named("Int"),
                             "_delete_at_path" => TypeRef::nn("String").list(),
-                            _ => {
-                                self.note_scalar(&c.ty);
-                                scalars::column_type_ref(&c.ty, true)
-                            }
+                            _ => self.column_value_type(c, true),
                         };
                         InputValueDef::new(c.gql_name.clone(), ty)
                             .describe_opt(c.description.clone())
@@ -587,13 +577,9 @@ impl Builder<'_> {
         let mut fields = vec![];
         for col in table.primary_key.iter().flatten() {
             let col = &table.columns[col];
-            self.note_scalar(&col.ty);
+            let ty = self.column_value_type(col, false);
             fields.push(
-                InputValueDef::new(
-                    col.gql_name.clone(),
-                    scalars::column_type_ref(&col.ty, false),
-                )
-                .describe_opt(col.description.clone()),
+                InputValueDef::new(col.gql_name.clone(), ty).describe_opt(col.description.clone()),
             );
         }
         self.schema.add(input_object(

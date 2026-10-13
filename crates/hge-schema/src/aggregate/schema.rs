@@ -408,7 +408,7 @@ impl Builder<'_> {
 }
 
 /// The columns an aggregate function applies to (V2: numeric for the statistical functions
-/// and `sum`, comparable for `max` and `min`).
+/// and `sum`, comparable for `max` and `min`; never columns referencing enum tables).
 fn applicable_columns(columns: &[ColumnInfo], function: AggregateFunction) -> Vec<&ColumnInfo> {
     let applies = |ty: &ColumnType| {
         if function.is_comparison() {
@@ -417,7 +417,10 @@ fn applicable_columns(columns: &[ColumnInfo], function: AggregateFunction) -> Ve
             scalars::is_numeric(ty)
         }
     };
-    columns.iter().filter(|c| applies(&c.ty)).collect()
+    columns
+        .iter()
+        .filter(|c| c.enum_ref.is_none() && applies(&c.ty))
+        .collect()
 }
 
 fn insert_input(fields: &mut IndexMap<String, InputValueDef>, field: InputValueDef) {

@@ -383,6 +383,7 @@ fn logical_model_table(
                 nullable,
                 description: f.description.clone(),
                 mutable: false,
+                enum_ref: None,
             },
         );
     }
@@ -414,6 +415,7 @@ fn logical_model_table(
             select_aggregate_comment: None,
         },
         is_enum: false,
+        enum_values: None,
         logical_model: true,
         entry,
         permissions: Default::default(),
