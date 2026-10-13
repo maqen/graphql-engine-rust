@@ -232,9 +232,16 @@ struct ServeArgs {
     #[arg(long, env = "HASURA_GRAPHQL_LOG_LEVEL", default_value = "info")]
     log_level: String,
 
-    /// Accepted for compatibility.
     #[arg(long, env = "HASURA_GRAPHQL_ENABLED_LOG_TYPES")]
     enabled_log_types: Option<String>,
+
+    /// Log `/v1/metadata` and `/v1/query` request bodies in `http-log` (with `query-log`).
+    #[arg(long, env = "HASURA_GRAPHQL_ENABLE_METADATA_QUERY_LOGGING", value_parser = parse_bool, default_value = "false")]
+    enable_metadata_query_logging: bool,
+
+    /// Log request bodies in `http-log` only for failed requests.
+    #[arg(long, env = "HASURA_GRAPHQL_HTTP_LOG_QUERY_ONLY_ON_ERROR", value_parser = parse_bool, default_value = "false")]
+    http_log_query_only_on_error: bool,
 
     /// Maximum concurrent event trigger deliveries.
     #[arg(long, env = "HASURA_GRAPHQL_EVENTS_HTTP_POOL_SIZE", default_value = "100", value_parser = clap::value_parser!(u32).range(1..))]
@@ -436,8 +443,8 @@ fn server_configuration(
         "graceful_shutdown_timeout": config.events.graceful_shutdown_timeout.as_secs(),
         "websocket_connection_init_timeout": format!("WSConnectionInitTimeout {{unWSConnectionInitTimeout = Seconds {{seconds = {}s}}}}", config.websocket.init_timeout.as_secs()),
         "websocket_queue_size": config.websocket.queue_size,
-        "enable_metadata_query_logging": false,
-        "http_log_query_only_on_error": false,
+        "enable_metadata_query_logging": config.enable_metadata_query_logging,
+        "http_log_query_only_on_error": config.http_log_query_only_on_error,
     })
 }
 
@@ -570,6 +577,8 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
         async_actions_fetch_interval: args.async_actions_fetch_interval,
         async_actions_fetch_batch_size: args.async_actions_fetch_batch_size,
         metadata_database_extensions_schema: args.metadata_database_extensions_schema.clone(),
+        enable_metadata_query_logging: args.enable_metadata_query_logging,
+        http_log_query_only_on_error: args.http_log_query_only_on_error,
         ..ServerConfig::default()
     })
 }

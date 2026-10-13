@@ -77,6 +77,12 @@ pub struct ServerConfig {
     pub enable_allowlist: bool,
     /// WebSockets and subscriptions (`HASURA_GRAPHQL_WEBSOCKET_*`, `..._MULTIPLEXED_*`).
     pub websocket: WebSocketConfig,
+    /// `HASURA_GRAPHQL_ENABLE_METADATA_QUERY_LOGGING`: log `/v1/metadata` and `/v1/query`
+    /// bodies in `http-log` (with `query-log` enabled).
+    pub enable_metadata_query_logging: bool,
+    /// `HASURA_GRAPHQL_HTTP_LOG_QUERY_ONLY_ON_ERROR`: log request bodies in `http-log` only
+    /// for failed requests.
+    pub http_log_query_only_on_error: bool,
 }
 
 impl Default for ServerConfig {
@@ -118,6 +124,8 @@ impl Default for ServerConfig {
             env_overrides: HashMap::new(),
             enable_allowlist: false,
             websocket: WebSocketConfig::default(),
+            enable_metadata_query_logging: false,
+            http_log_query_only_on_error: false,
         }
     }
 }

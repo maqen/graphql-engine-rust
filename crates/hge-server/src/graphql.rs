@@ -40,6 +40,11 @@ pub struct GraphQLResponse {
     pub body: String,
     /// `Set-Cookie` values from mutation action handlers.
     pub set_cookies: Vec<String>,
+    /// The error of a single request (for `http-log`).
+    pub error: Option<Error>,
+    /// Per operation of a batch: its response size and time, or its error (`http-log`'s
+    /// `batched_operations`).
+    pub batch: Vec<(usize, f64, Option<Error>)>,
 }
 
 /// Execute a request body and return the response body.
@@ -52,38 +57,54 @@ pub async fn execute_body(
     let state = engine.state.load_full();
     match body {
         GraphQLBody::Single(req) => {
-            let (body, set_cookies) = execute_one(engine, &state, session, headers, req).await;
-            GraphQLResponse { body, set_cookies }
+            let (body, set_cookies, error) =
+                execute_one(engine, &state, session, headers, req).await;
+            GraphQLResponse {
+                body,
+                set_cookies,
+                error,
+                batch: vec![],
+            }
         }
         // No response headers are forwarded for batched requests.
         GraphQLBody::Batch(reqs) => {
             let mut out = String::from("[");
+            let mut batch = Vec::with_capacity(reqs.len());
             for (i, req) in reqs.into_iter().enumerate() {
                 if i > 0 {
                     out.push(',');
                 }
-                out.push_str(&execute_one(engine, &state, session, headers, req).await.0);
+                let started = std::time::Instant::now();
+                let (body, _, error) = execute_one(engine, &state, session, headers, req).await;
+                batch.push((body.len(), started.elapsed().as_secs_f64(), error));
+                out.push_str(&body);
             }
             out.push(']');
             GraphQLResponse {
                 body: out,
                 set_cookies: vec![],
+                error: None,
+                batch,
             }
         }
     }
 }
 
-/// The response body, plus `Set-Cookie` values (only for a successful response).
+/// The response body, plus `Set-Cookie` values (only for a successful response) and the
+/// error.
 async fn execute_one(
     engine: &Engine,
     state: &Arc<AppState>,
     session: &Session,
     headers: &HeaderMap,
     req: GraphQLRequest,
-) -> (String, Vec<String>) {
+) -> (String, Vec<String>, Option<Error>) {
     match run(engine, state, session, headers, req).await {
-        Ok(out) => out,
-        Err(e) => (error_body(&e, include_internal(engine, session)), vec![]),
+        Ok((body, cookies)) => (body, cookies, None),
+        Err(e) => {
+            let body = error_body(&e, include_internal(engine, session));
+            (body, vec![], Some(e))
+        }
     }
 }
 

@@ -18,6 +18,7 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use crate::graphql::{self, GraphQLBody, GraphQLRequest};
 use crate::state::Engine;
+use crate::telemetry::http::{self as http_log, HttpLogInfo, RequestMode};
 use crate::ws::{self, MaybeUpgrade};
 
 pub const VERSION: &str = concat!("v2.48.0-rs.", env!("CARGO_PKG_VERSION"));
@@ -48,10 +49,23 @@ pub fn router(engine: Arc<Engine>) -> Router {
     }
     let mut router = router
         .layer(axum::middleware::from_fn(ws::reject_other_paths))
-        .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
-        .layer(compression());
+        .layer(DefaultBodyLimit::max(64 * 1024 * 1024));
+    // The http-log layers are left out entirely when the log is off at startup.
+    let http_log = http_log::wanted();
+    if http_log {
+        router = router.layer(axum::middleware::from_fn(
+            http_log::record_uncompressed_size,
+        ));
+    }
+    router = router.layer(compression());
     if !engine.config.disable_cors {
         router = router.layer(cors(&engine.config.cors_domain));
+    }
+    if http_log {
+        router = router.layer(axum::middleware::from_fn_with_state(
+            engine.clone(),
+            http_log::http_log,
+        ));
     }
     router.with_state(engine)
 }
@@ -142,7 +156,7 @@ async fn graphql_post(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    post(&engine, &headers, &body, Endpoint::V1).await
+    post(&engine, &headers, body, Endpoint::V1).await
 }
 
 async fn graphql_post_v1alpha1(
@@ -150,28 +164,34 @@ async fn graphql_post_v1alpha1(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    post(&engine, &headers, &body, Endpoint::V1Alpha1).await
+    post(&engine, &headers, body, Endpoint::V1Alpha1).await
 }
 
-async fn post(engine: &Engine, headers: &HeaderMap, body: &[u8], endpoint: Endpoint) -> Response {
+async fn post(engine: &Engine, headers: &HeaderMap, body: Bytes, endpoint: Endpoint) -> Response {
     let rid = request_id(headers);
+    let log = http_log::wanted().then(|| HttpLogInfo::start(&rid).body(body.clone()));
     // The POST auth webhook gets the request as JSON; parse it only in that mode.
     let raw_request = if engine.auth.needs_request_body() {
-        serde_json::from_slice::<serde_json::Value>(body).ok()
+        serde_json::from_slice::<serde_json::Value>(&body).ok()
     } else {
         None
     };
     // Authenticate before reporting a malformed body, as V2 does.
-    let auth = match authenticate(engine, headers, raw_request.as_ref(), endpoint, &rid).await {
-        Ok(auth) => auth,
-        Err(resp) => return resp,
-    };
-    let parsed: Result<GraphQLBody, _> = serde_json::from_slice(body);
+    let (auth, log) =
+        match authenticate(engine, headers, raw_request.as_ref(), endpoint, &rid, log).await {
+            Ok(auth) => auth,
+            Err(resp) => return resp,
+        };
+    let log = log.map(|l| l.session(&auth.session));
+    let parsed: Result<GraphQLBody, _> = serde_json::from_slice(&body);
     let resp = match parsed {
-        Ok(body) => run(engine, &auth.session, headers, body, rid).await,
+        Ok(body) => run(engine, &auth.session, headers, body, rid, log).await,
         Err(e) => {
             let err = Error::new(Code::InvalidJson, format!("Error in $: {e}"));
-            json_response(StatusCode::OK, graphql::error_body(&err, false), Some(rid))
+            let mut resp =
+                json_response(StatusCode::OK, graphql::error_body(&err, false), Some(rid));
+            http_log::attach(&mut resp, log.map(|l| l.failed(&err, RequestMode::Error)));
+            resp
         }
     };
     with_cookies(resp, auth.set_cookies)
@@ -206,17 +226,41 @@ async fn graphql_get(
             "operationName": params.operation_name,
         })
     });
-    let auth = match authenticate(&engine, &headers, raw_request.as_ref(), Endpoint::V1, &rid).await
+    let log = http_log::wanted().then(|| {
+        let variables = match &variables {
+            Some(Ok(v)) => v.clone(),
+            _ => params.variables.clone().into(),
+        };
+        let params = serde_json::json!({
+            "query": params.query,
+            "variables": variables,
+            "operationName": params.operation_name,
+        });
+        HttpLogInfo::start(&rid).body(Bytes::from(params.to_string()))
+    });
+    let (auth, log) = match authenticate(
+        &engine,
+        &headers,
+        raw_request.as_ref(),
+        Endpoint::V1,
+        &rid,
+        log,
+    )
+    .await
     {
         Ok(auth) => auth,
         Err(resp) => return resp,
     };
+    let log = log.map(|l| l.session(&auth.session));
     let variables = match variables {
         None => None,
         Some(Ok(v)) => Some(v),
         Some(Err(e)) => {
             let err = Error::new(Code::InvalidJson, format!("invalid variables: {e}"));
-            return json_response(StatusCode::OK, graphql::error_body(&err, false), Some(rid));
+            let mut resp =
+                json_response(StatusCode::OK, graphql::error_body(&err, false), Some(rid));
+            http_log::attach(&mut resp, log.map(|l| l.failed(&err, RequestMode::Error)));
+            return resp;
         }
     };
     let req = GraphQLRequest {
@@ -231,6 +275,7 @@ async fn graphql_get(
         &headers,
         GraphQLBody::Single(req),
         rid,
+        log,
     )
     .await;
     with_cookies(resp, auth.set_cookies)
@@ -248,20 +293,19 @@ async fn graphql_ws_v1alpha1(
     }
 }
 
-/// Authenticate a GraphQL request, or build the error response (spec 05 §9.2).
+/// Authenticate a GraphQL request, or build the error response (spec 05 §9.2). The log
+/// info is handed back, or attached to the error response.
 async fn authenticate(
     engine: &Engine,
     headers: &HeaderMap,
     request: Option<&serde_json::Value>,
     endpoint: Endpoint,
     rid: &str,
-) -> Result<hge_auth::Authenticated, Response> {
-    engine
-        .auth
-        .authenticate(headers, request)
-        .await
-        .map_err(|e| {
-            tracing::info!(target: "http-log", request_id = rid, error = %e, "authentication failed");
+    log: Option<HttpLogInfo>,
+) -> Result<(hge_auth::Authenticated, Option<HttpLogInfo>), Response> {
+    match engine.auth.authenticate(headers, request).await {
+        Ok(auth) => Ok((auth, log)),
+        Err(e) => {
             let status = match endpoint {
                 Endpoint::V1Alpha1 => e.status,
                 Endpoint::V1
@@ -272,12 +316,18 @@ async fn authenticate(
                 }
                 Endpoint::V1 => StatusCode::OK,
             };
-            json_response(
+            let mut resp = json_response(
                 status,
                 graphql::error_body(&e.error, false),
                 Some(rid.to_owned()),
-            )
-        })
+            );
+            http_log::attach(
+                &mut resp,
+                log.map(|l| l.failed(&e.error, RequestMode::Error)),
+            );
+            Err(resp)
+        }
+    }
 }
 
 /// Add the auth webhook's `Set-Cookie` headers.
@@ -294,9 +344,33 @@ async fn run(
     headers: &HeaderMap,
     body: GraphQLBody,
     rid: String,
+    log: Option<HttpLogInfo>,
 ) -> Response {
+    let batched = matches!(body, GraphQLBody::Batch(_));
     let out = graphql::execute_body(engine, session, headers, body).await;
+    let log = log.map(|mut l| {
+        if batched {
+            l.request_mode = RequestMode::Batched;
+            l.batched_operations = Some(
+                out.batch
+                    .iter()
+                    .map(|(size, time, error)| match error {
+                        None => serde_json::json!({
+                            "response_size": size,
+                            "query_execution_time": time,
+                        }),
+                        Some(e) => serde_json::json!({"error": e.to_api_json(true)}),
+                    })
+                    .collect(),
+            );
+        } else {
+            l.request_mode = RequestMode::Single;
+            l.error = out.error.as_ref().map(|e| e.to_api_json(true));
+        }
+        l
+    });
     let mut resp = json_response(StatusCode::OK, out.body, Some(rid));
+    http_log::attach(&mut resp, log);
     // Action handlers' `Set-Cookie` headers (mutations only, spec 06 §8.6).
     for cookie in out.set_cookies {
         if let Ok(v) = HeaderValue::from_str(&cookie) {
@@ -307,14 +381,19 @@ async fn run(
 }
 
 /// Admin-only APIs (`/v1/metadata`, `/v2/query`): resolve the session and insist on `admin`.
-async fn require_admin(engine: &Engine, headers: &HeaderMap) -> Result<Session, Box<Response>> {
-    let api_error = |status: u16, err: &Error| {
+async fn require_admin(
+    engine: &Engine,
+    headers: &HeaderMap,
+    log: &mut Option<HttpLogInfo>,
+) -> Result<Session, Box<Response>> {
+    let mut api_error = |status: u16, err: &Error| {
         let status = StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST);
-        Box::new(json_response(
-            status,
-            err.to_api_json(false).to_string(),
-            None,
-        ))
+        let mut resp = json_response(status, err.to_api_json(false).to_string(), None);
+        http_log::attach(
+            &mut resp,
+            log.take().map(|l| l.failed(err, RequestMode::NonGraphql)),
+        );
+        Box::new(resp)
     };
     match engine.auth.authenticate(headers, None).await {
         Ok(auth) if auth.session.role.is_admin() => Ok(auth.session),
@@ -326,9 +405,21 @@ async fn require_admin(engine: &Engine, headers: &HeaderMap) -> Result<Session, 
     }
 }
 
-fn api_response(resp: hge_metadata_api::ApiResponse, rid: String) -> Response {
+fn api_response(
+    resp: hge_metadata_api::ApiResponse,
+    rid: String,
+    log: Option<HttpLogInfo>,
+) -> Response {
     let status = StatusCode::from_u16(resp.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    json_response(status, resp.body.to_string(), Some(rid))
+    let log = log.map(|mut l| {
+        if status.as_u16() >= 400 {
+            l.error = Some(resp.body.clone());
+        }
+        l
+    });
+    let mut out = json_response(status, resp.body.to_string(), Some(rid));
+    http_log::attach(&mut out, log);
+    out
 }
 
 async fn metadata_post(
@@ -337,10 +428,12 @@ async fn metadata_post(
     body: Bytes,
 ) -> Response {
     let rid = request_id(&headers);
-    let session = match require_admin(&engine, &headers).await {
+    let mut log = http_log::wanted().then(|| HttpLogInfo::start(&rid).body(body.clone()));
+    let session = match require_admin(&engine, &headers, &mut log).await {
         Ok(s) => s,
         Err(resp) => return *resp,
     };
+    let log = log.map(|l| l.session(&session));
     // Run to completion even if the client goes away: a metadata change must not stop
     // between writing the store and installing the new schema.
     let before = engine.state.load().resource_version;
@@ -358,7 +451,7 @@ async fn metadata_post(
             .ws
             .close_all("Server state changed, restarting the server");
     }
-    api_response(resp, rid)
+    api_response(resp, rid, log)
 }
 
 /// A handler that panicked inside its own task.
@@ -373,10 +466,12 @@ async fn query_post(
     body: Bytes,
 ) -> Response {
     let rid = request_id(&headers);
-    let session = match require_admin(&engine, &headers).await {
+    let mut log = http_log::wanted().then(|| HttpLogInfo::start(&rid).body(body.clone()));
+    let session = match require_admin(&engine, &headers, &mut log).await {
         Ok(s) => s,
         Err(resp) => return *resp,
     };
+    let log = log.map(|l| l.session(&session));
     // See `metadata_post`: run_sql commits DDL before the metadata catches up.
     let resp =
         tokio::spawn(
@@ -384,5 +479,5 @@ async fn query_post(
         )
         .await
         .unwrap_or_else(|e| panic_response(&e));
-    api_response(resp, rid)
+    api_response(resp, rid, log)
 }

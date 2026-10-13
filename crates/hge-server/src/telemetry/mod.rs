@@ -16,6 +16,7 @@
 //!
 //! The line is written by a dedicated thread (see `writer`), never by the request task.
 
+pub mod http;
 mod layer;
 pub mod startup;
 mod time;
@@ -146,6 +147,13 @@ pub fn enabled(ty: LogType, level: Level) -> bool {
     LOGGER.get().is_some_and(|l| l.enabled(ty, level))
 }
 
+/// Whether a public log type is switched on (whatever the level).
+pub fn type_enabled(ty: LogType) -> bool {
+    LOGGER
+        .get()
+        .is_some_and(|l| !ty.is_public() || l.config.types.contains(ty))
+}
+
 /// Log `detail` as a `ty` log at `level`, if enabled. Build costly details only after
 /// checking [`enabled`].
 pub fn emit(ty: LogType, level: Level, detail: &impl Serialize) {
@@ -180,6 +188,22 @@ pub fn init(config: LogConfig) -> FlushGuard {
         }));
     }
     FlushGuard(())
+}
+
+/// Install a process-wide logger that keeps its lines in memory, for tests that check what
+/// the server logs. Only the first call installs; later calls return the same lines.
+pub fn init_capture(config: LogConfig) -> Arc<Mutex<Vec<String>>> {
+    use tracing_subscriber::layer::SubscriberExt;
+    static LINES: OnceLock<Arc<Mutex<Vec<String>>>> = OnceLock::new();
+    LINES
+        .get_or_init(|| {
+            let (logger, lines) = Logger::capture(config);
+            let logger = LOGGER.get_or_init(|| Arc::new(logger)).clone();
+            let subscriber = tracing_subscriber::registry().with(V2Layer::new(logger));
+            let _ = tracing::subscriber::set_global_default(subscriber);
+            lines
+        })
+        .clone()
 }
 
 /// Flushes the process-wide logger on drop.
