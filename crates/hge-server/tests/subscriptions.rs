@@ -657,16 +657,18 @@ async fn restrictions(server: &Server) {
     assert_eq!(recv(&mut ws).await, json!({"type": "complete", "id": "8"}));
 
     // Upgrades are only served on the GraphQL endpoints.
-    let req = format!("ws://{}/v2/graphql", server.addr)
-        .into_client_request()
-        .unwrap();
-    match tokio_tungstenite::connect_async(req).await {
-        Err(tokio_tungstenite::tungstenite::Error::Http(resp)) => {
-            assert_eq!(resp.status(), 404);
-            let body: Value = serde_json::from_slice(resp.body().as_deref().unwrap()).unwrap();
-            assert_eq!(body["extensions"]["code"], "not-found");
+    for path in ["/v2/graphql", "/healthz", "/v1/metadata"] {
+        let req = format!("ws://{}{path}", server.addr)
+            .into_client_request()
+            .unwrap();
+        match tokio_tungstenite::connect_async(req).await {
+            Err(tokio_tungstenite::tungstenite::Error::Http(resp)) => {
+                assert_eq!(resp.status(), 404, "{path}");
+                let body: Value = serde_json::from_slice(resp.body().as_deref().unwrap()).unwrap();
+                assert_eq!(body["extensions"]["code"], "not-found");
+            }
+            other => panic!("expected a 404 on {path}, got {other:?}"),
         }
-        other => panic!("expected a 404, got {other:?}"),
     }
 }
 

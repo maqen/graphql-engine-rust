@@ -140,18 +140,31 @@ impl<S: Send + Sync> FromRequestParts<S> for MaybeUpgrade {
     }
 }
 
-/// A WebSocket upgrade on a path that does not serve websockets: V2's 404.
-pub fn reject_other_path(headers: &HeaderMap) -> Option<Response> {
-    let is_upgrade = headers
+/// Middleware: a WebSocket upgrade on a path that does not serve websockets gets V2's 404,
+/// whatever route (if any) the path has. V2 checks the path before any HTTP routing.
+pub async fn reject_other_paths(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let is_upgrade = req
+        .headers()
         .get(header::UPGRADE)
         .is_some_and(|v| v.as_bytes().eq_ignore_ascii_case(b"websocket"));
-    is_upgrade.then(|| {
+    // The relay endpoints are not implemented yet; their upgrades fall through to a 404.
+    let served = matches!(
+        req.uri().path(),
+        "/v1/graphql" | "/v1alpha1/graphql" | "/v1/relay" | "/v1beta1/relay"
+    );
+    if !is_upgrade || served {
+        return next.run(req).await;
+    }
+    {
         let body = serde_json::json!({
             "message": "only '/v1/graphql', '/v1alpha1/graphql', '/v1/relay' and '/v1beta1/relay' are supported on websockets",
             "extensions": { "path": "$", "code": "not-found" },
         });
         (StatusCode::NOT_FOUND, axum::Json(body)).into_response()
-    })
+    }
 }
 
 /// Accept (or refuse) a WebSocket upgrade.
@@ -238,7 +251,6 @@ fn origin_matches(pattern: &str, origin: &str) -> bool {
 enum Event {
     /// Close the connection (server-initiated).
     Close(u16, String),
-    /// A subscription's results could not be queued: stop it.
     /// A subscription's results overflowed the send queue: (operation id, generation, the
     /// cursor to resume a stream from).
     Overflow(String, u64, Option<Json>),

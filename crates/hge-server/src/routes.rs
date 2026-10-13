@@ -41,7 +41,7 @@ pub fn router(engine: Arc<Engine>) -> Router {
             .route("/v1/query", axum::routing::post(crate::v1_query::handler));
     }
     let mut router = router
-        .fallback(not_found)
+        .layer(axum::middleware::from_fn(ws::reject_other_paths))
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
         .layer(compression());
     if !engine.config.disable_cors {
@@ -379,9 +379,4 @@ async fn query_post(
         .await
         .unwrap_or_else(|e| panic_response(&e));
     api_response(resp, rid)
-}
-
-/// Unknown paths: an empty 404, or V2's error for a WebSocket upgrade.
-async fn not_found(headers: HeaderMap) -> Response {
-    ws::reject_other_path(&headers).unwrap_or_else(|| StatusCode::NOT_FOUND.into_response())
 }
