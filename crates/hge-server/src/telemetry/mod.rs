@@ -6,8 +6,8 @@
 //! them, so existing log pipelines keep working.
 //!
 //! Two ways to log:
-//! * [`emit`] for structured logs on hot paths (`http-log`): one atomic-free check of the
-//!   filter, then the detail is serialised straight into the line buffer.
+//! * [`emit`] for structured logs on hot paths (`http-log`): one check of the filter,
+//!   then the detail is serialised straight into the line buffer.
 //! * `tracing` events anywhere in the workspace. The event's `target` names the V2 log type
 //!   (`tracing::info!(target: "webhook-log", …)`); a `detail` field holding JSON
 //!   (`detail = %json_value`) becomes the `detail` verbatim, otherwise one is built from the
@@ -164,7 +164,21 @@ pub fn init(config: LogConfig) -> FlushGuard {
         .clone();
     let subscriber = tracing_subscriber::registry().with(V2Layer::new(logger));
     // Ignore a second initialisation (tests embedding the server).
-    let _ = tracing::subscriber::set_global_default(subscriber);
+    if tracing::subscriber::set_global_default(subscriber).is_ok() {
+        // `log` records (tokio-postgres notices, reqwest …) as tracing events; their targets
+        // are dependency paths, so only warnings and errors get through.
+        let _ = tracing_log::LogTracer::builder()
+            .with_max_level(tracing_log::log::LevelFilter::Warn)
+            .init();
+        // Release builds abort on panic, skipping the guard: flush what is queued first.
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            previous(info);
+            if let Some(logger) = LOGGER.get() {
+                logger.flush(Duration::from_millis(500));
+            }
+        }));
+    }
     FlushGuard(())
 }
 

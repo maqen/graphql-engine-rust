@@ -46,8 +46,12 @@ fn log_type(target: &str) -> LogType {
     }
 }
 
+/// Our own code: a known log type, one of our other targets, or one of our crates.
 fn is_own(target: &str) -> bool {
-    target.starts_with("hge_") || target.starts_with("graphql_engine") || !target.contains("::")
+    LogType::from_name(target).is_some()
+        || matches!(target, "shutdown" | "async-actions" | "migrations")
+        || target.starts_with("hge_")
+        || target.starts_with("graphql_engine")
 }
 
 impl<S: Subscriber> Layer<S> for V2Layer {
@@ -109,8 +113,15 @@ impl Fields {
 
     fn into_detail(mut self, ty: LogType, target: &str) -> Detail {
         if let Some(raw) = self.detail.take() {
-            if serde_json::from_str::<&serde_json::value::RawValue>(&raw).is_ok() {
-                return Detail::Raw(raw);
+            match serde_json::from_str::<&serde_json::value::RawValue>(&raw) {
+                // One log, one line: re-serialise pretty-printed JSON compactly.
+                Ok(v) if v.get().contains(['\n', '\r']) => {
+                    if let Ok(v) = serde_json::from_str::<Value>(v.get()) {
+                        return Detail::Value(v);
+                    }
+                }
+                Ok(v) => return Detail::Raw(v.get().to_owned()),
+                Err(_) => {}
             }
             self.other.insert("detail".to_owned(), Value::String(raw));
         }
@@ -272,6 +283,7 @@ mod tests {
             tracing::info!(target: "startup", "filtered: type disabled");
             tracing::debug!(target: "metadata", "filtered: level");
             tracing::info!(target: "hyper::proto", "filtered: dependency below warn");
+            tracing::info!(target: "h2", "filtered: dependency crate root");
             tracing::warn!(target: "hyper::proto", "kept");
             tracing::info!(target: "hge_server::load", count = 2, "plain");
             tracing::error!(target: "metadata", "always on");
@@ -286,6 +298,16 @@ mod tests {
             ]
         );
         assert_eq!(logs[0]["type"], "unstructured");
+    }
+
+    #[test]
+    fn pretty_detail_stays_on_one_line() {
+        let logs = capture(LogConfig::default(), || {
+            tracing::info!(target: "webhook-log", detail = " {\n \"a\": 1\n}\n");
+            tracing::info!(target: "webhook-log", detail = " {\"b\":2} ");
+        });
+        assert_eq!(logs[0]["detail"], serde_json::json!({"a": 1}));
+        assert_eq!(logs[1]["detail"], serde_json::json!({"b": 2}));
     }
 
     #[test]

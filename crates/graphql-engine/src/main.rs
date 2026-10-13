@@ -638,13 +638,18 @@ fn main() -> anyhow::Result<()> {
                 .enable_all()
                 .build()?;
             runtime.block_on(async move {
-                let engine =
-                    hge_server::build_engine(config)
-                        .await
-                        .map_err(|e| match &e.internal {
-                            Some(internal) => anyhow::anyhow!("{e} ({internal})"),
-                            None => anyhow::anyhow!("{e}"),
-                        })?;
+                let engine = hge_server::build_engine(config).await.map_err(|e| {
+                    // V2 logs a failed start as a `catalog_migrate` error with the QErr.
+                    hge_server::telemetry::emit(
+                        hge_server::telemetry::LogType::Startup,
+                        Level::Error,
+                        &serde_json::json!({"kind": "catalog_migrate", "info": e.to_api_json(true)}),
+                    );
+                    match &e.internal {
+                        Some(internal) => anyhow::anyhow!("{e} ({internal})"),
+                        None => anyhow::anyhow!("{e}"),
+                    }
+                })?;
                 hge_server::serve(engine).await?;
                 Ok(())
             })

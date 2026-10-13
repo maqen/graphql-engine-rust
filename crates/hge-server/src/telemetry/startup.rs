@@ -1,8 +1,9 @@
 //! Helpers for `startup` logs (spec 11 §5.4).
 
 /// A database URL with its password replaced by `...`, as V2 logs it in
-/// `postgres_connection` (`postgres://user:...@host:5432/db`); so is an `sslpassword` query
-/// parameter. Unparseable URLs give `None`.
+/// `postgres_connection` (`postgres://user:...@host:5432/db`); so are `sslpassword` and
+/// `password` query parameters. Unparseable URLs give `None` (also when an `@` follows the
+/// host, which means a password with `/`, `?` or `#` that could otherwise leak).
 pub fn mask_database_url(url: &str) -> Option<String> {
     let (scheme, rest) = url.split_once("://")?;
     let (authority_end, _) = rest
@@ -10,6 +11,9 @@ pub fn mask_database_url(url: &str) -> Option<String> {
         .find(|(_, c)| matches!(c, '/' | '?' | '#'))
         .unwrap_or((rest.len(), ' '));
     let (authority, tail) = rest.split_at(authority_end);
+    if tail.contains('@') {
+        return None;
+    }
     let authority = match authority.rsplit_once('@') {
         Some((userinfo, host)) => match userinfo.split_once(':') {
             Some((user, _password)) => format!("{user}:...@{host}"),
@@ -22,7 +26,7 @@ pub fn mask_database_url(url: &str) -> Option<String> {
             let query: Vec<String> = query
                 .split('&')
                 .map(|kv| match kv.split_once('=') {
-                    Some(("sslpassword", _)) => "sslpassword=...".to_owned(),
+                    Some((k @ ("sslpassword" | "password"), _)) => format!("{k}=..."),
                     _ => kv.to_owned(),
                 })
                 .collect();
@@ -51,6 +55,17 @@ mod tests {
             mask_database_url("postgres://host/db").as_deref(),
             Some("postgres://host/db")
         );
+        assert_eq!(
+            mask_database_url("postgres://u@h/db?password=x").as_deref(),
+            Some("postgres://u@h/db?password=...")
+        );
         assert_eq!(mask_database_url("not a url"), None);
+        for leaky in [
+            "postgres://u:pa/ss@host/db",
+            "postgres://u:p#w@h/db",
+            "postgres://u:p?w@h",
+        ] {
+            assert_eq!(mask_database_url(leaky), None, "{leaky}");
+        }
     }
 }

@@ -68,7 +68,8 @@ tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "compression-gzip", "trace"] }
 tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "registry"] }
+tracing-log = { version = "0.2", default-features = false, features = ["log-tracer", "std"] }
 webpki-roots = "1"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 subtle = "2"

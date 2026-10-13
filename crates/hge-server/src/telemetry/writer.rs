@@ -6,7 +6,9 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// Lines buffered before senders block (backpressure rather than dropping logs).
+/// Lines buffered before senders block. This is deliberate backpressure rather than
+/// dropping logs (V2 blocks on stdout too): a stalled stdout eventually stalls the threads
+/// that log.
 const CAPACITY: usize = 16 * 1024;
 
 pub(crate) enum Msg {
@@ -50,10 +52,22 @@ impl Sink {
     /// Wait (at most `timeout`) until everything sent so far is written.
     pub(crate) fn flush(&self, timeout: Duration) {
         if let Sink::Stdout(tx) = self {
+            let deadline = std::time::Instant::now() + timeout;
             let (ack, done) = std::sync::mpsc::sync_channel(1);
-            if tx.send(Msg::Flush(ack)).is_ok() {
-                let _ = done.recv_timeout(timeout);
+            let mut msg = Msg::Flush(ack);
+            // Never block past the deadline, even when the queue is full.
+            loop {
+                match tx.try_send(msg) {
+                    Ok(()) => break,
+                    Err(TrySendError::Full(m)) if std::time::Instant::now() < deadline => {
+                        msg = m;
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                    Err(_) => return,
+                }
             }
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            let _ = done.recv_timeout(left);
         }
     }
 }
