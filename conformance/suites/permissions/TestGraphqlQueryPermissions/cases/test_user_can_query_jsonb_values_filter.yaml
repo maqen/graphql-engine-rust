@@ -1,0 +1,27 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphqlQueryPermissions
+  method: test_user_can_query_jsonb_values_filter
+  fixtures:
+  - queries/graphql_query/permissions/user_can_query_jsonb_values_filter.yaml
+steps:
+- description: User can query geometry values which satisfies filter in select permission
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user1
+  query:
+    query: |
+      query {
+        jsonb_table{
+          id
+          jsonb_col
+        }
+      }
+  response:
+    data:
+      jsonb_table:
+      - id: 1
+        jsonb_col:
+          age: 7
+          name: Hasura

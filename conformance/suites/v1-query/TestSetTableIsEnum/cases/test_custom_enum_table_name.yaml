@@ -1,0 +1,105 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestSetTableIsEnum
+  method: test_custom_enum_table_name
+  fixtures:
+  - queries/v1/set_table_is_enum/custom_enum_table_name.yaml
+steps:
+- description: set custom name for enum table
+  url: /v1/query
+  status: 200
+  query:
+    type: set_table_customization
+    args:
+      source: default
+      table: colors
+      configuration:
+        custom_name: customized_colors_table
+  response:
+    message: success
+- description: Check that marking a table as an enum changed the schema
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      {
+        employees: __type(name: "employees") {
+          fields {
+            name
+            type {
+              ofType {
+                name
+              }
+            }
+          }
+        }
+      }
+  response:
+    data:
+      employees:
+        fields:
+        - name: favorite_color
+          type:
+            ofType:
+              name: customized_colors_table_enum
+        - name: gets_paid_on
+          type:
+            ofType:
+              name: String
+        - name: id
+          type:
+            ofType:
+              name: Int
+        - name: name
+          type:
+            ofType:
+              name: String
+- description: unset custom name for enum table
+  url: /v1/metadata
+  status: 200
+  query:
+    type: pg_set_table_customization
+    args:
+      source: default
+      table: colors
+      configuration:
+        custom_name: null
+  response:
+    message: success
+- description: Check the schema
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      {
+        employees: __type(name: "employees") {
+          fields {
+            name
+            type {
+              ofType {
+                name
+              }
+            }
+          }
+        }
+      }
+  response:
+    data:
+      employees:
+        fields:
+        - name: favorite_color
+          type:
+            ofType:
+              name: colors_enum
+        - name: gets_paid_on
+          type:
+            ofType:
+              name: String
+        - name: id
+          type:
+            ofType:
+              name: Int
+        - name: name
+          type:
+            ofType:
+              name: String

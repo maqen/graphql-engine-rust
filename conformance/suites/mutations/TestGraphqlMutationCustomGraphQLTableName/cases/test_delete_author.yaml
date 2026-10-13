@@ -1,0 +1,41 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlMutationCustomGraphQLTableName
+  method: test_delete_author
+  fixtures:
+  - queries/graphql_mutation/custom_schema/custom_table_name/delete_author_details.yaml
+steps:
+- description: deletes from table "author details" with custom name "author_details"
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        delete_author_details(
+          where: {
+            id: {_eq: 1}
+          }
+        ) {
+          affected_rows
+          returning {
+            id
+            name
+          }
+        }
+        delete_author_details_by_pk(
+            id: 2
+        ) {
+            id
+            name
+        }
+      }
+  response:
+    data:
+      delete_author_details:
+        affected_rows: 1
+        returning:
+        - id: 1
+          name: Author 1
+      delete_author_details_by_pk:
+        id: 2
+        name: Author 2

@@ -1,0 +1,63 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryCaching
+  method: test_introspection
+  fixtures:
+  - queries/graphql_query/caching/introspection.yaml
+steps:
+- description: Test that introspection queries are properly cached (#4547)
+  url: /v1/graphql
+  status: 200
+  query:
+    variables:
+      includeDeprecated: true
+    query: |
+      query IntrospectionQuery($includeDeprecated: Boolean!) {
+        __type(name:"__TypeKind") {
+          name
+          enumValues(includeDeprecated: $includeDeprecated) {
+            name
+          }
+        }
+      }
+  response:
+    data:
+      __type:
+        name: __TypeKind
+        enumValues:
+        - name: ENUM
+        - name: INPUT_OBJECT
+        - name: INTERFACE
+        - name: LIST
+        - name: NON_NULL
+        - name: OBJECT
+        - name: SCALAR
+        - name: UNION
+- description: Test that introspection queries are properly cached (#4547)
+  url: /v1/graphql
+  status: 200
+  query:
+    variables:
+      includeDeprecated: true
+    query: |
+      query IntrospectionQuery($includeDeprecated: Boolean!) {
+        __type(name:"__TypeKind") {
+          name
+          enumValues(includeDeprecated: $includeDeprecated) {
+            name
+          }
+        }
+      }
+  response:
+    data:
+      __type:
+        name: __TypeKind
+        enumValues:
+        - name: ENUM
+        - name: INPUT_OBJECT
+        - name: INTERFACE
+        - name: LIST
+        - name: NON_NULL
+        - name: OBJECT
+        - name: SCALAR
+        - name: UNION

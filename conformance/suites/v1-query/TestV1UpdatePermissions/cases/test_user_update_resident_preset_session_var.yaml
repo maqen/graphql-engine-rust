@@ -1,0 +1,31 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1UpdatePermissions
+  method: test_user_update_resident_preset_session_var
+  fixtures:
+  - queries/v1/update/permissions/user_update_resident_preset_session_var.yaml
+steps:
+- description: Update resident using preset (session variables)
+  url: /v1/query
+  status: 200
+  headers:
+    X-Hasura-Role: user2
+    X-Hasura-City: meadow
+  query:
+    type: update
+    args:
+      table: resident
+      where:
+        name: clarke
+      returning:
+      - id
+      - name
+      - age
+      - city
+  response:
+    returning:
+    - id: 3
+      name: clarke
+      age: 21
+      city: meadow
+    affected_rows: 1

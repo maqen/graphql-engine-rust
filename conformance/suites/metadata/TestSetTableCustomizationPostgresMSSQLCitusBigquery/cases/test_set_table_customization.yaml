@@ -1,0 +1,98 @@
+upstream:
+  file: test_metadata.py
+  class: TestSetTableCustomizationPostgresMSSQLCitusBigquery
+  method: test_set_table_customization
+  fixtures:
+  - queries/v1/metadata/set_table_customization.yaml
+steps:
+- description: set table custom fields
+  url: /v1/metadata
+  status: 200
+  query:
+    type: pg_set_table_customization
+    args:
+      source: default
+      table: table_to_customize
+      configuration:
+        custom_name: customized_table
+        column_config:
+          column_to_customize:
+            custom_name: customized_column
+        custom_root_fields:
+          select: gather
+  response:
+    message: success
+- description: select custom fields
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        gather {
+          customized_column
+        }
+      }
+  response:
+    data:
+      gather: []
+- description: set table custom column names using deprecated custom_column_names
+  url: /v1/metadata
+  status: 200
+  query:
+    type: pg_set_table_customization
+    args:
+      source: default
+      table: table_to_customize
+      configuration:
+        custom_name: customized_table
+        custom_column_names:
+          column_to_customize: customized_column_via_custom_column_names
+        custom_root_fields:
+          select: gather
+  response:
+    message: success
+- description: select custom fields
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        gather {
+          customized_column_via_custom_column_names
+        }
+      }
+  response:
+    data:
+      gather: []
+- description: set table custom column names using deprecated custom_column_names and current column_config
+  url: /v1/metadata
+  status: 200
+  query:
+    type: pg_set_table_customization
+    args:
+      source: default
+      table: table_to_customize
+      configuration:
+        custom_name: customized_table
+        custom_column_names:
+          column_to_customize: ignored_column_name
+        column_config:
+          column_to_customize:
+            custom_name: name_that_takes_precedence
+        custom_root_fields:
+          select: gather
+  response:
+    message: success
+- description: select custom fields
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        gather {
+          name_that_takes_precedence
+        }
+      }
+  response:
+    data:
+      gather: []

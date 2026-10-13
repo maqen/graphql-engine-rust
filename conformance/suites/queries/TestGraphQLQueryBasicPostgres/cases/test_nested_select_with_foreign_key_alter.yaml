@@ -1,0 +1,56 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBasicPostgres
+  method: test_nested_select_with_foreign_key_alter
+  fixtures:
+  - queries/graphql_query/basic/nested_select_with_foreign_key_alter.yaml
+steps:
+- description: Alter foreign key constraint on article table
+  url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        ALTER TABLE article DROP CONSTRAINT article_author_id_fkey,
+          ADD CONSTRAINT article_author_id_fkey FOREIGN KEY (author_id) REFERENCES author(id);
+  response:
+    result_type: CommandOk
+    result: null
+- description: Nested select on article
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        article {
+          id
+          title
+          content
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    data:
+      article:
+      - id: 1
+        title: Article 1
+        content: Sample article content 1
+        author:
+          id: 1
+          name: Author 1
+      - id: 2
+        title: Article 2
+        content: Sample article content 2
+        author:
+          id: 1
+          name: Author 1
+      - id: 3
+        title: Article 3
+        content: Sample article content 3
+        author:
+          id: 2
+          name: Author 2

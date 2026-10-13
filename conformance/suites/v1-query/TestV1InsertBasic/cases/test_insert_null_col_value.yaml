@@ -1,0 +1,27 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1InsertBasic
+  method: test_insert_null_col_value
+  fixtures:
+  - queries/v1/insert/basic/order_col_shipped_null.yaml
+steps:
+- description: Insert into order table with a null value
+  url: /v1/query
+  status: 200
+  query:
+    type: insert
+    args:
+      table: orders
+      objects:
+      - placed: '2017-08-19T14:22:11+00:00'
+        shipped: null
+      returning:
+      - id
+      - placed
+      - shipped
+  response:
+    returning:
+    - id: 1
+      placed: '2017-08-19T14:22:11+00:00'
+      shipped: null
+    affected_rows: 1

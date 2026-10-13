@@ -1,0 +1,76 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestTrackTables
+  method: test_track_untrack_table
+  fixtures:
+  - queries/v1/track_table/track_untrack_table.yaml
+steps:
+- description: Track table
+  url: /v1/query
+  status: 200
+  query:
+    type: track_table
+    args:
+      name: author
+  response:
+    message: success
+- description: Track already untracked table
+  url: /v1/query
+  status: 400
+  query:
+    type: track_table
+    args:
+      name: author
+  response:
+    error: 'view/table already tracked: "author"'
+    path: $.args
+    code: already-tracked
+- description: Select query
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - id
+      - name
+  response:
+  - id: 1
+    name: Author 1
+  - id: 2
+    name: Author 2
+- description: Untrack table
+  url: /v1/query
+  status: 200
+  query:
+    type: untrack_table
+    args:
+      table: author
+  response:
+    message: success
+- description: Untrack table
+  url: /v1/query
+  status: 400
+  query:
+    type: untrack_table
+    args:
+      table: author
+  response:
+    error: 'view/table already untracked: "author"'
+    path: $.args
+    code: already-untracked
+- description: Select query error
+  url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - id
+      - name
+  response:
+    error: table "author" does not exist
+    path: $.args.table
+    code: not-exists

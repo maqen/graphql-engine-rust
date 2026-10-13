@@ -1,0 +1,35 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlDeletePermissions
+  method: test_agent_delete_perm_arr_sess_var
+  fixtures:
+  - queries/graphql_mutation/delete/permissions/agent_delete_perm_arr_sess_var.yaml
+steps:
+- description: Delete a row in resident table where id=1 and in allowed-resident-ids
+  url: /v1alpha1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: agent
+    X-Hasura-Allowed-Resident-Ids: '{1,2}'
+  query:
+    query: |
+      mutation{
+        delete_resident(
+          where: {id: {_eq: 1}}
+        ){
+          affected_rows
+          returning {
+             id
+             name
+             age
+          }
+        }
+      }
+  response:
+    data:
+      delete_resident:
+        affected_rows: 1
+        returning:
+        - id: 1
+          name: Griffin
+          age: 25

@@ -1,0 +1,631 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "Company",
+            "schema": "public"
+          },
+          "insert_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "check": {
+                  "id": "X-HASURA-COMPANY-ID"
+                }
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name"
+                ],
+                "filter": {
+                  "id": "X-HASURA-COMPANY-ID"
+                }
+              }
+            }
+          ],
+          "update_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "columns": "*",
+                "filter": {
+                  "id": "X-HASURA-COMPANY-ID"
+                },
+                "check": null
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "account",
+            "schema": "public"
+          },
+          "insert_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "check": {
+                  "_exists": {
+                    "_table": {
+                      "name": "user",
+                      "schema": "public"
+                    },
+                    "_where": {
+                      "id": "X-Hasura-User-Id",
+                      "is_admin": true
+                    }
+                  }
+                },
+                "columns": [
+                  "account_no"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "address",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "article",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "author",
+              "using": {
+                "foreign_key_constraint_on": "author_id"
+              }
+            }
+          ],
+          "insert_permissions": [
+            {
+              "role": "editor",
+              "permission": {
+                "check": {
+                  "author_id": {
+                    "$in": "X-Hasura-Allowed-User-Ids"
+                  }
+                }
+              }
+            },
+            {
+              "role": "restricted",
+              "permission": {
+                "check": {
+                  "author_id": "X-Hasura-User-Id"
+                }
+              }
+            },
+            {
+              "role": "user",
+              "permission": {
+                "check": {
+                  "author_id": "X-Hasura-User-Id"
+                }
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "editor",
+              "permission": {
+                "columns": "*",
+                "filter": {
+                  "_or": [
+                    {
+                      "author_id": {
+                        "$in": "X-Hasura-Allowed-User-Ids"
+                      }
+                    },
+                    {
+                      "is_published": true
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "role": "restricted",
+              "permission": {
+                "columns": "*",
+                "filter": {
+                  "_or": [
+                    {
+                      "author_id": "X-HASURA-USER-ID"
+                    },
+                    {
+                      "is_published": true
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "role": "user",
+              "permission": {
+                "columns": "*",
+                "filter": {
+                  "_or": [
+                    {
+                      "author_id": "X-HASURA-USER-ID"
+                    },
+                    {
+                      "is_published": true
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "update_permissions": [
+            {
+              "role": "restricted",
+              "permission": {
+                "columns": [],
+                "filter": {
+                  "author_id": "X-Hasura-User-Id"
+                },
+                "check": null
+              }
+            },
+            {
+              "role": "user",
+              "permission": {
+                "columns": "*",
+                "filter": {
+                  "author_id": "X-Hasura-User-Id"
+                },
+                "check": null
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "author",
+            "schema": "public"
+          },
+          "array_relationships": [
+            {
+              "name": "articles",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "author_id",
+                  "table": {
+                    "name": "article",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ],
+          "computed_fields": [
+            {
+              "name": "get_articles",
+              "definition": {
+                "function": {
+                  "name": "fetch_articles",
+                  "schema": "public"
+                },
+                "table_argument": "author_row"
+              }
+            }
+          ],
+          "insert_permissions": [
+            {
+              "role": "student",
+              "permission": {
+                "check": {
+                  "bio": {
+                    "_is_null": false
+                  }
+                }
+              }
+            },
+            {
+              "role": "user",
+              "permission": {
+                "check": {
+                  "_and": [
+                    {
+                      "id": "X-HASURA-USER-ID"
+                    },
+                    {
+                      "is_registered": false
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name",
+                  "is_registered"
+                ],
+                "filter": {
+                  "id": "X-HASURA-USER-ID"
+                }
+              }
+            }
+          ],
+          "update_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "columns": "*",
+                "filter": {
+                  "_and": [
+                    {
+                      "id": "X-HASURA-USER-ID"
+                    },
+                    {
+                      "is_registered": false
+                    }
+                  ]
+                },
+                "check": null
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "blog",
+            "schema": "public"
+          },
+          "insert_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "check": {}
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "columns": "*",
+                "filter": {
+                  "author_id": "X-Hasura-User-Id"
+                }
+              }
+            }
+          ],
+          "update_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "columns": [
+                  "title",
+                  "content"
+                ],
+                "filter": {},
+                "check": null,
+                "set": {
+                  "last_updated": "NOW()",
+                  "updated_by": "X-Hasura-User-Id"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "computer",
+            "schema": "public"
+          },
+          "insert_permissions": [
+            {
+              "role": "developer",
+              "permission": {
+                "check": {
+                  "spec": {
+                    "_has_keys_any": "X-Hasura-Spec-Keys"
+                  }
+                },
+                "columns": "*"
+              }
+            },
+            {
+              "role": "seller",
+              "permission": {
+                "check": {
+                  "spec": {
+                    "_has_keys_all": "X-Hasura-Spec-Required-Keys"
+                  }
+                },
+                "columns": "*"
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "developer",
+              "permission": {
+                "columns": "*",
+                "filter": {}
+              }
+            },
+            {
+              "role": "seller",
+              "permission": {
+                "columns": "*",
+                "filter": {}
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "items",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "leads",
+            "schema": "public"
+          },
+          "insert_permissions": [
+            {
+              "role": "sales",
+              "permission": {
+                "check": {},
+                "columns": [
+                  "id",
+                  "name",
+                  "added_by"
+                ]
+              }
+            }
+          ],
+          "update_permissions": [
+            {
+              "role": "sales",
+              "permission": {
+                "columns": [
+                  "name"
+                ],
+                "filter": {
+                  "added_by": "X-Hasura-User-Id"
+                },
+                "check": {
+                  "name": {
+                    "_ne": ""
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "order_cart",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "item",
+              "using": {
+                "foreign_key_constraint_on": "item_id"
+              }
+            }
+          ],
+          "insert_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "check": {
+                  "item": {
+                    "item_quantity": {
+                      "_cgte": [
+                        "$",
+                        "order_cart_quantity"
+                      ]
+                    }
+                  }
+                },
+                "columns": [
+                  "item_id",
+                  "order_cart_quantity"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "resident",
+            "schema": "public"
+          },
+          "insert_permissions": [
+            {
+              "role": "infant",
+              "permission": {
+                "check": {
+                  "id": "X-Hasura-Infant-Id"
+                },
+                "set": {
+                  "id": "X-Hasura-Infant-Id",
+                  "name": "X-Hasura-Infant-Name"
+                },
+                "columns": [
+                  "age"
+                ]
+              }
+            },
+            {
+              "role": "resident",
+              "permission": {
+                "check": {
+                  "id": "X-Hasura-Resident-Id"
+                }
+              }
+            },
+            {
+              "role": "user",
+              "permission": {
+                "check": {
+                  "id": "X-Hasura-Resident-Id"
+                },
+                "set": {
+                  "is_user": true,
+                  "name": "X-Hasura-Resident-Name"
+                }
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "infant",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name",
+                  "age",
+                  "is_user"
+                ],
+                "filter": {
+                  "id": "X-Hasura-Infant-Id"
+                }
+              }
+            },
+            {
+              "role": "resident",
+              "permission": {
+                "columns": "*",
+                "filter": {
+                  "id": "X-Hasura-Resident-Id"
+                }
+              }
+            },
+            {
+              "role": "user",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name",
+                  "age",
+                  "is_user"
+                ],
+                "filter": {
+                  "id": "X-Hasura-Resident-Id"
+                }
+              }
+            }
+          ],
+          "update_permissions": [
+            {
+              "role": "resident",
+              "permission": {
+                "columns": "*",
+                "filter": {
+                  "id": "X-Hasura-Resident-Id"
+                },
+                "check": null
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "user",
+            "schema": "public"
+          },
+          "insert_permissions": [
+            {
+              "role": "backend_user",
+              "permission": {
+                "check": {},
+                "set": {
+                  "is_admin": true
+                },
+                "columns": "*",
+                "backend_only": true
+              }
+            },
+            {
+              "role": "backend_user_2",
+              "permission": {
+                "check": {},
+                "set": {
+                  "is_admin": true
+                },
+                "columns": "*",
+                "backend_only": true
+              }
+            },
+            {
+              "role": "user",
+              "permission": {
+                "check": {},
+                "set": {
+                  "is_admin": false
+                },
+                "columns": "*"
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "backend_user",
+              "permission": {
+                "columns": "*",
+                "filter": {}
+              }
+            },
+            {
+              "role": "backend_user_2",
+              "permission": {
+                "columns": "*",
+                "filter": {}
+              }
+            }
+          ],
+          "update_permissions": [
+            {
+              "role": "backend_user",
+              "permission": {
+                "columns": "*",
+                "filter": {},
+                "check": {}
+              }
+            }
+          ]
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

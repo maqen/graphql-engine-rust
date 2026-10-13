@@ -1,0 +1,26 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestRelayQueriesBasic
+  method: test_non_array_id
+  fixtures:
+  - queries/graphql_query/relay/basic/node_id_errors/non_array_id.yaml
+steps:
+- description: Query node interface with id as non array JSON string
+  url: /v1/relay
+  status: 200
+  query:
+    query: |
+      query {
+        node(id: "eyJpZCIgOiA0fQ=="){
+          __typename
+          ... on author{
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'invalid node id: Error in $: parsing node id failed, expected Array, but encountered Object'
+      extensions:
+        path: $.selectionSet.node.args.id
+        code: validation-failed

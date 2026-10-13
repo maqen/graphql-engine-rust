@@ -1,0 +1,29 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryOrderBy
+  method: test_articles_order_by_without_id
+  fixtures:
+  - queries/graphql_query/order_by/articles_order_by_without_id.yaml
+steps:
+- description: Fetch articles with order by id (DESC) without explicitly selecting id column
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        article(
+        order_by: {id: desc}
+        ){
+          title
+          content
+        }
+      }
+  response:
+    data:
+      article:
+      - title: Article 3
+        content: Sample article content 3
+      - title: Article 2
+        content: Sample article content 2
+      - title: Article 1
+        content: Sample article content 1

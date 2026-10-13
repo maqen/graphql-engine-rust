@@ -1,0 +1,24 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlNestedInserts
+  method: test_author_with_articles_author_id_fail
+  fixtures:
+  - queries/graphql_mutation/insert/nested/author_with_articles_author_id_fail.yaml
+steps:
+- description: Insert author and it's articles via nested mutation (Error)
+  url: /v1/graphql
+  status: 200
+  query:
+    query: "mutation nested_author_insert {\n   insert_author(\n     objects: [\n       {\n         name:\
+      \ \"Author 3\", \n         articles: {\n           data: [\n             {\n               title:\
+      \ \"An article by author 3\", \n               content: \"Content for article by author 4\", \n\
+      \               is_published: false,\n               author_id: 3\n             }\n           ]\n\
+      \         }\n       }\n     ]\n   ) {\n     affected_rows\n     returning {\n       id\n       name\n\
+      \       articles {\n         id\n       }\n     }\n   }\n}\n"
+  response:
+    errors:
+    - message: cannot insert "author_id" columns as their values are already being determined by parent
+        insert
+      extensions:
+        path: $.selectionSet.insert_author.args.objects[0].articles.data[0]
+        code: validation-failed

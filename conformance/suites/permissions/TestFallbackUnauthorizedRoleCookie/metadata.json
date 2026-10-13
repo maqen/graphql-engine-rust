@@ -1,0 +1,37 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "user",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "anonymous",
+              "permission": {
+                "columns": "*",
+                "filter": {
+                  "name": "anonymous"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

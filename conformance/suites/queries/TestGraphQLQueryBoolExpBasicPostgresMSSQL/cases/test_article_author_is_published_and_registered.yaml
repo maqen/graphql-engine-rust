@@ -1,0 +1,25 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpBasicPostgresMSSQL
+  method: test_article_author_is_published_and_registered
+  fixtures:
+  - queries/graphql_query/boolexp/basic/select_article_author_is_published_and_registered.yaml
+steps:
+- description: Nested select on article
+  url: /v1/graphql
+  status: 200
+  query:
+    query: "query {\n  article (\n    where : {_and: [\n      {is_published: {_eq: true}}\n      {author:\
+      \ {is_registered: {_eq:  true}}}\n      ]\n    }  \n  ) {\n    id\n    title\n    content\n    is_published\n\
+      \    author {\n      id\n      name\n      is_registered\n    }\n  }\n}\n"
+  response:
+    data:
+      article:
+      - id: 2
+        title: Article 2
+        content: Sample article content 2
+        is_published: true
+        author:
+          id: 1
+          name: Author 1
+          is_registered: true

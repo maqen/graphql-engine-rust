@@ -1,0 +1,134 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "article",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "author",
+              "using": {
+                "foreign_key_constraint_on": "author_id"
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "role_with_access_to_cols",
+              "permission": {
+                "columns": "*",
+                "filter": {},
+                "limit": 1,
+                "allow_aggregations": true
+              }
+            },
+            {
+              "role": "role_without_access_to_cols",
+              "permission": {
+                "columns": [],
+                "filter": {},
+                "limit": 1,
+                "allow_aggregations": true
+              }
+            },
+            {
+              "role": "user",
+              "permission": {
+                "columns": "*",
+                "filter": {},
+                "limit": 1
+              }
+            },
+            {
+              "role": "user_with_filter",
+              "permission": {
+                "columns": "*",
+                "filter": {
+                  "author_id": {
+                    "_eq": "X-Hasura-User-Id"
+                  }
+                },
+                "allow_aggregations": true
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "author",
+            "schema": "public"
+          },
+          "array_relationships": [
+            {
+              "name": "articles",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "author_id",
+                  "table": {
+                    "name": "article",
+                    "schema": "public"
+                  }
+                }
+              }
+            },
+            {
+              "name": "posts",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "author_id",
+                  "table": {
+                    "name": "post",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "columns": "*",
+                "filter": {},
+                "limit": 1,
+                "allow_aggregations": true
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "post",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "columns": "*",
+                "filter": {},
+                "limit": 1,
+                "allow_aggregations": true
+              }
+            }
+          ]
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

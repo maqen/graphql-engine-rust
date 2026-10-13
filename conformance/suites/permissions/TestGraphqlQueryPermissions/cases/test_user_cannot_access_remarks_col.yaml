@@ -1,0 +1,52 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphqlQueryPermissions
+  method: test_user_cannot_access_remarks_col
+  fixtures:
+  - queries/graphql_query/permissions/user_cannot_access_remarks_col.yaml
+steps:
+- description: User cannot access remarks column
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        author {
+          id
+          name
+          remarks_internal
+        }
+      }
+  response:
+    errors:
+    - message: 'field ''remarks_internal'' not found in type: ''author'''
+      extensions:
+        path: $.selectionSet.author.selectionSet.remarks_internal
+        code: validation-failed
+- description: Admin can access remarks column
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        author {
+          id
+          name
+          remarks_internal
+        }
+      }
+  response:
+    data:
+      author:
+      - id: 1
+        name: Author 1
+        remarks_internal: remark 1
+      - id: 2
+        name: Author 2
+        remarks_internal: remark 2
+      - id: 3
+        name: Author 3
+        remarks_internal: remark 3

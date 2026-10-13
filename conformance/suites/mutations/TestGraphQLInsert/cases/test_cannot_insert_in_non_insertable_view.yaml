@@ -1,0 +1,31 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphQLInsert
+  method: test_cannot_insert_in_non_insertable_view
+  fixtures:
+  - queries/graphql_mutation/insert/basic/cannot_insert_in_non_insertable_view.yaml
+steps:
+- description: Inserts in insertable view
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation insert_person_const_view{
+        insert_person_const_view(
+          objects: [
+            {
+              details: {name: {first: json last: murphy}}
+            }
+          ]
+        ) {
+          returning {
+            details
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'field ''insert_person_const_view'' not found in type: ''mutation_root'''
+      extensions:
+        path: $.selectionSet.insert_person_const_view
+        code: validation-failed

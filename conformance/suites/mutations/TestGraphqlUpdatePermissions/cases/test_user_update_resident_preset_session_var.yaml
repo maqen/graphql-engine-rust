@@ -1,0 +1,37 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlUpdatePermissions
+  method: test_user_update_resident_preset_session_var
+  fixtures:
+  - queries/graphql_mutation/update/permissions/user_update_resident_preset_session_var.yaml
+steps:
+- description: Update mutation on resident using preset permission (session variables)
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user2
+    X-Hasura-City: auckland
+  query:
+    query: |
+      mutation updateResident{
+        update_resident(
+          where: {name: {_eq: "clarke"}}
+        ){
+          affected_rows
+          returning{
+            id
+            name
+            age
+            city
+          }
+        }
+      }
+  response:
+    data:
+      update_resident:
+        affected_rows: 1
+        returning:
+        - id: 3
+          name: clarke
+          age: 21
+          city: auckland

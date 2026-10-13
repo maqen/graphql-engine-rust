@@ -1,0 +1,39 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectBoolExpPostGIS
+  method: test_query_cast_geography_to_geometry
+  fixtures:
+  - queries/v1/select/boolexp/postgis/query_cast_geography_to_geometry.yaml
+steps:
+- description: Test casting from PostGIS geography to geometry in condition
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: geog_table
+      columns:
+      - name
+      where:
+        geog_col:
+          $cast:
+            geometry:
+              $st_within:
+                type: Polygon
+                coordinates:
+                - - - -75
+                    - 40
+                  - - -74
+                    - 40
+                  - - -74
+                    - 41
+                  - - -75
+                    - 41
+                  - - -75
+                    - 40
+                crs:
+                  type: name
+                  properties:
+                    name: EPSG:4326
+  response:
+  - name: New York

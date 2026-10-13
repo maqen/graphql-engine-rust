@@ -1,0 +1,28 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpBasicPostgres
+  method: test_query_account_permission_success
+  fixtures:
+  - queries/graphql_query/boolexp/basic/query_account_permission_success.yaml
+steps:
+- description: Query data from account as a user who is an admin
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '2'
+  query:
+    query: |
+      query {
+        account{
+          id
+          account_no
+        }
+      }
+  response:
+    data:
+      account:
+      - id: 1
+        account_no: 1
+      - id: 2
+        account_no: 2

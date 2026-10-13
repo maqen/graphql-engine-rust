@@ -1,0 +1,30 @@
+upstream:
+  file: test_allowlist_queries.py
+  class: TestAllowlistQueries
+  method: test_query_user
+  fixtures:
+  - queries/graphql_query/allowlist/query_user.yaml
+steps:
+- description: Query data from user table
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: |
+      query {
+        user{
+          id
+          name
+          company
+        }
+      }
+  response:
+    data:
+      user:
+      - id: 1
+        name: clarke
+        company: Symons
+      - id: 2
+        name: reckler
+        company: null

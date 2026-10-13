@@ -1,0 +1,47 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpLtree
+  method: test_select_path_where_matches_array
+  fixtures:
+  - queries/graphql_query/boolexp/ltree/select_path_where_matches_array.yaml
+steps:
+- description: Select `ltree` paths matching any `lquery` regex in an array
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        tree (
+          where: {path: {_matches_any: ["*.Pictures.*", "*.Hobbies.*"]}}
+        ) {
+          path
+        }
+      }
+  response:
+    data:
+      tree:
+      - path: Tree.Hobbies
+      - path: Tree.Hobbies.Amateurs_Astronomy
+      - path: Tree.Collections.Pictures
+      - path: Tree.Collections.Pictures.Astronomy
+      - path: Tree.Collections.Pictures.Astronomy.Stars
+      - path: Tree.Collections.Pictures.Astronomy.Galaxies
+      - path: Tree.Collections.Pictures.Astronomy.Astronauts
+- description: Select `ltree` paths matching invalid `lquery` regexes in an array
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        tree (
+          where: {path: {_matches_any: ["*.Pictures.*\", "*.Hobbies.*\"]}}
+        ) {
+          path
+        }
+      }
+  response:
+    errors:
+    - message: not a valid graphql query
+      extensions:
+        path: $.query
+        code: validation-failed

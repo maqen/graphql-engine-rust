@@ -1,0 +1,21 @@
+upstream:
+  file: test_v2_queries.py
+  class: TestV2SelectBasic
+  method: test_select_query_author
+  fixtures:
+  - queries/v2/basic/select_article.yaml
+steps:
+- url: /v2/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - id
+      - name
+  response:
+  - id: 1
+    name: Author 1
+  - id: 2
+    name: Author 2

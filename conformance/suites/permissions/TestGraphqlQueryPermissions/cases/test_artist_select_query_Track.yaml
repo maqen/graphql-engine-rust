@@ -1,0 +1,26 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphqlQueryPermissions
+  method: test_artist_select_query_Track
+  fixtures:
+  - queries/graphql_query/permissions/artist_select_query_Track.yaml
+steps:
+- description: Artist can only select their tracks.
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: Artist
+    X-Hasura-Artist-Id: '2'
+  query:
+    query: |
+      query {
+        Track {
+          id
+          name
+        }
+      }
+  response:
+    data:
+      Track:
+      - id: 3
+        name: Happy

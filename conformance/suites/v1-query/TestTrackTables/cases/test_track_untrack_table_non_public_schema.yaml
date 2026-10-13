@@ -1,0 +1,61 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestTrackTables
+  method: test_track_untrack_table_non_public_schema
+  fixtures:
+  - queries/v1/track_table/track_untrack_table_non_public_schema.yaml
+steps:
+- description: Track table
+  url: /v1/query
+  status: 200
+  query:
+    type: track_table
+    args:
+      name: resident
+      schema: hge_tests
+  response:
+    message: success
+- description: Select query
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table:
+        name: resident
+        schema: hge_tests
+      columns:
+      - id
+      - name
+  response:
+  - id: 1
+    name: Resident 1
+  - id: 2
+    name: Resident 2
+- description: Untrack table
+  url: /v1/query
+  status: 200
+  query:
+    type: untrack_table
+    args:
+      table:
+        name: resident
+        schema: hge_tests
+  response:
+    message: success
+- description: Select query error
+  url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table:
+        name: resident
+        schema: hge_tests
+      columns:
+      - id
+      - name
+  response:
+    error: table "hge_tests.resident" does not exist
+    path: $.args.table
+    code: not-exists

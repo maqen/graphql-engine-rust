@@ -1,0 +1,37 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlUpdateBasic
+  method: test_empty_set_author
+  fixtures:
+  - queries/graphql_mutation/update/basic/author_empty_set.yaml
+steps:
+- description: Update mutation on author
+  url: /v1/graphql
+  status: 200
+  query:
+    variables:
+      set: {}
+    query: |
+      mutation update_author ($set: author_set_input!) {
+        update_author(
+          where: {id: {_eq: 1}},
+          _set: $set
+        ) {
+          affected_rows
+          returning{
+            id
+            name
+            articles{
+              id
+              title
+              content
+              is_published
+            }
+          }
+        }
+      }
+  response:
+    data:
+      update_author:
+        affected_rows: 0
+        returning: []

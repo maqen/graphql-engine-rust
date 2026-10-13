@@ -1,0 +1,42 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertPermission
+  method: test_developer_insert_computer_json_has_keys_any
+  fixtures:
+  - queries/graphql_mutation/insert/permissions/developer_insert_has_keys_any_pass.yaml
+steps:
+- description: Inserts computer specs with atleast one of the required keys
+  url: /v1alpha1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: developer
+    X-Hasura-Spec-Keys: '{processor,display,memory,warranty}'
+  query:
+    variables:
+      spec:
+        processor: AMD
+    query: |
+      mutation insert_computer($spec: jsonb) {
+        insert_computer (
+          objects: [
+            {
+              name: "Computer1",
+              spec: $spec
+            },
+            ],
+        ) {
+          affected_rows
+          returning {
+            name
+            spec
+            }
+          }
+      }
+  response:
+    data:
+      insert_computer:
+        affected_rows: 1
+        returning:
+        - name: Computer1
+          spec:
+            processor: AMD

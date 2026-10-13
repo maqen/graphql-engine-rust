@@ -1,0 +1,59 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestSetTableCustomization
+  method: test_alter_table_name_with_custom_name
+  fixtures:
+  - queries/v1/set_table_configuration/rename_original_table_with_custom_name.yaml
+steps:
+- description: set table customization with custom name
+  url: /v1/query
+  status: 200
+  query:
+    type: set_table_customization
+    args:
+      table: author
+      configuration:
+        custom_name: author_alias
+        custom_root_fields: {}
+        column_config: {}
+  response:
+    message: success
+- description: Check that above query has changed the schema
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+          author_alias_by_pk(id: 1){
+            name
+          }
+      }
+  response:
+    data:
+      author_alias_by_pk:
+        name: Clarke
+- description: rename the underlying table
+  url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        ALTER TABLE author RENAME TO authors;
+  response:
+    result_type: CommandOk
+    result: null
+- description: Check if the earlier query works after renaming the table
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+          author_alias_by_pk(id: 1){
+            name
+          }
+      }
+  response:
+    data:
+      author_alias_by_pk:
+        name: Clarke

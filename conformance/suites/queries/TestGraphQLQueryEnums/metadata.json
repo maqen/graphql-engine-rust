@@ -1,0 +1,71 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "colors",
+            "schema": "public"
+          },
+          "is_enum": true
+        },
+        {
+          "table": {
+            "name": "country",
+            "schema": "public"
+          },
+          "is_enum": true
+        },
+        {
+          "table": {
+            "name": "users",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "anonymous",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name",
+                  "favorite_color"
+                ],
+                "filter": {}
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "zones",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "columns": [
+                  "id",
+                  "code"
+                ],
+                "filter": {}
+              }
+            }
+          ]
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

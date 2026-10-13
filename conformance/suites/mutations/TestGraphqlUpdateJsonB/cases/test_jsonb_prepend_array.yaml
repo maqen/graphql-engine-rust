@@ -1,0 +1,45 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlUpdateJsonB
+  method: test_jsonb_prepend_array
+  fixtures:
+  - queries/graphql_mutation/update/jsonb/person_prepend_array.yaml
+steps:
+- description: Updated person data using _prepend operator
+  url: /v1/graphql
+  status: 200
+  query:
+    variables:
+      value:
+      - university:
+          name: Sydney university
+    query: |
+      mutation update_person($value: jsonb) {
+        update_person(
+          where: {id: {_eq: 2}},
+          _prepend: {
+            details: $value
+          }
+        ){
+          affected_rows
+          returning{
+            id
+            details
+          }
+        }
+      }
+  response:
+    data:
+      update_person:
+        affected_rows: 1
+        returning:
+        - id: 2
+          details:
+          - university:
+              name: Sydney university
+          - address:
+              city: Copenhagen
+              country: Denmark
+          - address:
+              city: Canterbury
+              country: United Kingdom

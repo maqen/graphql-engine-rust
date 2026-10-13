@@ -1,0 +1,100 @@
+upstream:
+  file: test_actions.py
+  class: TestActionIntrospection
+  method: test_output_types
+  fixtures:
+  - queries/actions/introspection/output_types_query.yaml
+steps:
+- description: Action introspection to check return types
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        __schema {
+          mutationType {
+            fields {
+              name
+              type {
+                name
+                kind
+                fields {
+                  name
+                  type {
+                    kind
+                    ofType {
+                      name
+                      kind
+                      ofType {
+                        name
+                        kind
+                      }
+                    }
+                  }
+                }
+                ofType {
+                  name
+                  kind
+                  ofType {
+                    name
+                    kind
+                    fields {
+                      name
+                      type {
+                        kind
+                        ofType {
+                          name
+                          kind
+                          ofType {
+                            name
+                            kind
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+  response:
+    data:
+      __schema:
+        mutationType:
+          fields:
+          - name: actionName
+            type:
+              name: null
+              kind: LIST
+              fields: null
+              ofType:
+                name: null
+                kind: NON_NULL
+                ofType:
+                  name: SampleOutput
+                  kind: OBJECT
+                  fields:
+                  - name: id
+                    type:
+                      kind: LIST
+                      ofType:
+                        name: null
+                        kind: NON_NULL
+                        ofType:
+                          name: String
+                          kind: SCALAR
+          - name: actionName2
+            type:
+              name: SampleOutput2
+              kind: OBJECT
+              fields:
+              - name: id
+                type:
+                  kind: NON_NULL
+                  ofType:
+                    name: String
+                    kind: SCALAR
+                    ofType: null
+              ofType: null

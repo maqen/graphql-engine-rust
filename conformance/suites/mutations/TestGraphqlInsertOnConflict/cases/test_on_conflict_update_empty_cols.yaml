@@ -1,0 +1,70 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertOnConflict
+  method: test_on_conflict_update_empty_cols
+  fixtures:
+  - queries/graphql_mutation/insert/onconflict/article_on_conflict_empty_update_columns.yaml
+steps:
+- description: Upserts article data via GraphQL mutation with empty update columns
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation insert_article {
+        insert_article (
+          objects: [
+            {
+              content: "Updated Article 1 content",
+              id: 1
+            },
+            {
+              content: "Updated Article 2 content",
+              id: 2
+            }
+            ],
+          on_conflict: {
+            constraint: article_pkey,
+            update_columns: []
+          }
+        ) {
+          returning {
+            title
+            content
+            }
+          }
+        }
+  response:
+    data:
+      insert_article:
+        returning: []
+- description: Upserts article data via GraphQL mutation with empty update columns (omitted columns)
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation insert_article {
+        insert_article (
+          objects: [
+            {
+              content: "Updated Article 1 content",
+              id: 1
+            },
+            {
+              content: "Updated Article 2 content",
+              id: 2
+            }
+            ],
+          on_conflict: {
+            constraint: article_pkey,
+          }
+        ) {
+          returning {
+            title
+            content
+            }
+          }
+        }
+  response:
+    data:
+      insert_article:
+        returning: []

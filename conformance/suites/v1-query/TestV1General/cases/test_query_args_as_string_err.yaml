@@ -1,0 +1,18 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1General
+  method: test_query_args_as_string_err
+  fixtures:
+  - queries/v1/basic/query_args_as_string_err.yaml
+steps:
+- description: Count number of authors
+  url: /v1/query
+  status: 400
+  query: |
+    type: count
+    args: |
+      table: author
+  response:
+    error: parsing Object failed, expected Object, but encountered String
+    path: $
+    code: parse-failed

@@ -1,0 +1,19 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1General
+  method: test_query_v2_invalid_version
+  fixtures:
+  - queries/v1/basic/query_v2_invalid_version.yaml
+steps:
+- description: Track function search_articles
+  url: /v1/query
+  status: 400
+  query:
+    type: track_function
+    version: 3
+    args:
+      function: search_articles
+  response:
+    error: expected 1 or 2, encountered 3
+    path: $.version
+    code: parse-failed

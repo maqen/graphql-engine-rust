@@ -1,0 +1,44 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestTrackTables
+  method: test_track_untrack_table_as_not_admin_error
+  fixtures:
+  - queries/v1/track_table/track_untrack_table_as_not_admin_error.yaml
+steps:
+- description: Track table
+  url: /v1/query
+  status: 400
+  headers:
+    X-Hasura-User-Id: '1'
+    X-Hasura-Role: user
+  query:
+    type: track_table
+    args:
+      name: author
+  response:
+    error: 'restricted access : admin only'
+    path: $.args
+    code: access-denied
+- description: 'Track table: Success'
+  url: /v1/query
+  status: 200
+  query:
+    type: track_table
+    args:
+      name: author
+  response:
+    message: success
+- description: 'Untrack table: error'
+  url: /v1/query
+  status: 400
+  headers:
+    X-Hasura-User-Id: '1'
+    X-Hasura-Role: user
+  query:
+    type: untrack_table
+    args:
+      table: author
+  response:
+    error: 'restricted access : admin only'
+    path: $.args
+    code: access-denied

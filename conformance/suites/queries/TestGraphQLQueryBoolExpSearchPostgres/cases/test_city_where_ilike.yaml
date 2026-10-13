@@ -1,0 +1,27 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpSearchPostgres
+  method: test_city_where_ilike
+  fixtures:
+  - queries/graphql_query/boolexp/search/select_city_where_ilike_postgres.yaml
+steps:
+- description: Select cities starting with new
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        city (
+        where: {name: {_ilike: "new %" }}
+        ) {
+          name
+          country
+        }
+      }
+  response:
+    data:
+      city:
+      - name: New York
+        country: USA
+      - name: New Orleans
+        country: USA

@@ -1,0 +1,89 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "joint_foreign_key",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "table2",
+              "using": {
+                "foreign_key_constraint_on": [
+                  "table2_name",
+                  "table2_table1_id"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "table1",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "via_table2",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "table1_id",
+                  "table": {
+                    "name": "table2",
+                    "schema": "public"
+                  }
+                }
+              }
+            },
+            {
+              "name": "via_table2_not_null",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "table1_id_not_null",
+                  "table": {
+                    "name": "table2",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "table2",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "via_table1",
+              "using": {
+                "foreign_key_constraint_on": "table1_id"
+              }
+            },
+            {
+              "name": "via_table1_not_null",
+              "using": {
+                "foreign_key_constraint_on": "table1_id_not_null"
+              }
+            }
+          ]
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

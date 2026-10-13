@@ -1,0 +1,25 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1Delete
+  method: test_delete_author
+  fixtures:
+  - queries/v1/delete/delete_article.yaml
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: delete
+    args:
+      table: article
+      where:
+        id: 2
+      returning:
+      - id
+      - content
+      - author_id
+  response:
+    returning:
+    - id: 2
+      content: Sample article content 2
+      author_id: 1
+    affected_rows: 1

@@ -1,0 +1,43 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertPermission
+  method: test_resident_user_role_insert
+  fixtures:
+  - queries/graphql_mutation/insert/permissions/resident_user.yaml
+steps:
+- description: Insert into resident table where name is taken from header value
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-Resident-Id: '4'
+    X-Hasura-Resident-Name: Clarke
+  query:
+    query: |
+      mutation {
+        insert_resident(
+          objects: [
+            {
+              id: 4
+              age: 25
+            }
+          ]
+        ){
+          affected_rows
+          returning{
+            id
+            name
+            age
+            is_user
+          }
+        }
+      }
+  response:
+    data:
+      insert_resident:
+        affected_rows: 1
+        returning:
+        - id: 4
+          name: Clarke
+          age: 25
+          is_user: true

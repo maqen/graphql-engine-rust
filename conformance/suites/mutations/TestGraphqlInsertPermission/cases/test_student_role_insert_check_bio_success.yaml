@@ -1,0 +1,32 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertPermission
+  method: test_student_role_insert_check_bio_success
+  fixtures:
+  - queries/graphql_mutation/insert/permissions/author_student_role_insert_check_bio_success.yaml
+steps:
+- description: Inserts author with bio as a student
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: student
+  query:
+    query: |
+      mutation insert_author {
+        insert_author (
+          objects: [
+            {
+              id: 5
+              name: "Student 1"
+              bio: "Electrical Engineering"
+              is_registered: false
+            }
+            ]
+        ) {
+          affected_rows
+          }
+        }
+  response:
+    data:
+      insert_author:
+        affected_rows: 1

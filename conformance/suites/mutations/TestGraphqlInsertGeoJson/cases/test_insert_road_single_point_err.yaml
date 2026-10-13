@@ -1,0 +1,35 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertGeoJson
+  method: test_insert_road_single_point_err
+  fixtures:
+  - queries/graphql_mutation/insert/geojson/insert_road_single_point_err.yaml
+steps:
+- description: Insert a path using just a single point; error
+  url: /v1/graphql
+  status: 200
+  query:
+    variables:
+      roads:
+      - name: Foo
+        path:
+          coordinates:
+          - - 43.75049
+            - 11.03207
+          type: LineString
+    query: |
+      mutation insertRoad($roads: [road_insert_input!]!) {
+        insert_road(objects: $roads) {
+          returning{
+            id
+            name
+            path
+          }
+        }
+      }
+  response:
+    errors:
+    - message: A LineString needs at least 2 Positions
+      extensions:
+        path: $.selectionSet.insert_road.args.objects[0].path
+        code: parse-failed

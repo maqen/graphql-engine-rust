@@ -1,0 +1,26 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1InsertBasic
+  method: test_insert_author
+  fixtures:
+  - queries/v1/insert/basic/insert_author.yaml
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: insert
+    args:
+      table: author
+      objects:
+      - name: Author 1
+      - name: Author 2
+      returning:
+      - name
+      - id
+  response:
+    returning:
+    - name: Author 1
+      id: 1
+    - name: Author 2
+      id: 2
+    affected_rows: 2

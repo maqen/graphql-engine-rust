@@ -1,0 +1,29 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1UpdateBasic
+  method: test_product_set_default_price
+  fixtures:
+  - queries/v1/update/basic/product_set_default_price.yaml
+steps:
+- description: Updated product price using _mul operator
+  url: /v1/query
+  status: 200
+  query:
+    type: update
+    args:
+      table: products
+      $mul:
+        price: 2
+      where:
+        product_id:
+          $eq: 1
+      returning:
+      - product_id
+      - name
+      - price
+  response:
+    returning:
+    - product_id: 1
+      name: Product 1
+      price: '10'
+    affected_rows: 1

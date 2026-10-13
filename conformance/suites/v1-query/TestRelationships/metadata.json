@@ -1,0 +1,74 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "address",
+            "schema": "hge_tests"
+          }
+        },
+        {
+          "table": {
+            "name": "address_view",
+            "schema": "hge_tests"
+          }
+        },
+        {
+          "table": {
+            "name": "resident",
+            "schema": "hge_tests"
+          }
+        },
+        {
+          "table": {
+            "name": "resident_view",
+            "schema": "hge_tests"
+          }
+        },
+        {
+          "table": {
+            "name": "article",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "article_view",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "author",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "author_details",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "author_view",
+            "schema": "public"
+          }
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

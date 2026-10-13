@@ -1,0 +1,20 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1CountBasic
+  method: test_count_distinct_authors_with_unpublished_articles
+  fixtures:
+  - queries/v1/count/basic/count_distinct_authors_with_unpublished_articles.yaml
+steps:
+- description: Count number of authors with atleast one published article
+  url: /v1/query
+  status: 200
+  query:
+    type: count
+    args:
+      table: article
+      distinct:
+      - author_id
+      where:
+        is_published: false
+  response:
+    count: 3

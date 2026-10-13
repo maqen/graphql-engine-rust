@@ -1,0 +1,38 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectBoolExpBasic
+  method: test_article_author_is_published_and_registered
+  fixtures:
+  - queries/v1/select/boolexp/basic/select_article_author_is_published_and_registered.yaml
+steps:
+- description: Nested select on article
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: article
+      where:
+        $and:
+        - is_published: true
+        - author:
+            is_registered: true
+      columns:
+      - id
+      - title
+      - content
+      - is_published
+      - name: author
+        columns:
+        - id
+        - name
+        - is_registered
+  response:
+  - id: 2
+    title: Article 2
+    content: Sample article content 2
+    is_published: true
+    author:
+      id: 1
+      name: Author 1
+      is_registered: true

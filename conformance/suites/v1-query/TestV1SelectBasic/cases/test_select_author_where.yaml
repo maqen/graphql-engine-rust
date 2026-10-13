@@ -1,0 +1,38 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectBasic
+  method: test_select_author_where
+  fixtures:
+  - queries/v1/select/basic/select_query_author_where.yaml
+steps:
+- description: Simple GraphQL object query on author
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - id
+      - name
+      where:
+        id: 2
+  response:
+  - id: 2
+    name: Author 2
+- description: Simple GraphQL object query on author
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - id
+      - name
+      where:
+        id:
+          $eq: 2
+  response:
+  - id: 2
+    name: Author 2

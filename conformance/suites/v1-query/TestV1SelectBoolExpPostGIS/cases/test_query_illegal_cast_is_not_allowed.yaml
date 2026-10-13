@@ -1,0 +1,25 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectBoolExpPostGIS
+  method: test_query_illegal_cast_is_not_allowed
+  fixtures:
+  - queries/v1/select/boolexp/postgis/query_illegal_cast_is_not_allowed.yaml
+steps:
+- description: Test that casting between incompatible types is rejected
+  url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: geog_table
+      columns:
+      - name
+      where:
+        geog_col:
+          $cast:
+            integer:
+              $eq: 0
+  response:
+    error: cannot cast column of type "geography" to type "integer"
+    path: $.args.where.geog_col["$cast"]
+    code: unexpected-payload

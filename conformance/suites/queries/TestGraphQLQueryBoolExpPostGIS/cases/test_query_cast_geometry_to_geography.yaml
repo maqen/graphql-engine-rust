@@ -1,0 +1,33 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpPostGIS
+  method: test_query_cast_geometry_to_geography
+  fixtures:
+  - queries/graphql_query/boolexp/postgis/query_cast_geometry_to_geography.yaml
+steps:
+- description: Test casting from PostGIS geometry to geography in condition
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        geog_as_geom_table(where: {
+          geom_col: {
+            _cast: {
+              geography: {
+                _st_d_within: {
+                  distance: 1000000
+                  from: { type: "Point", coordinates: [1, 50] }
+                }
+              }
+            }
+          }
+        }){
+          name
+        }
+      }
+  response:
+    data:
+      geog_as_geom_table:
+      - name: London
+      - name: Paris

@@ -1,0 +1,31 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestRelationships
+  method: test_array_relationship_foreign_key
+  fixtures:
+  - queries/v1/relationships/array_relationship_foreign_key.yaml
+steps:
+- description: Create object relationship using foreign key
+  url: /v1/query
+  status: 200
+  query:
+    type: create_array_relationship
+    args:
+      table: author
+      name: articles
+      using:
+        foreign_key_constraint_on:
+          table: article
+          column: author_id
+  response:
+    message: success
+- description: Drop object relationship
+  url: /v1/query
+  status: 200
+  query:
+    type: drop_relationship
+    args:
+      table: author
+      relationship: articles
+  response:
+    message: success

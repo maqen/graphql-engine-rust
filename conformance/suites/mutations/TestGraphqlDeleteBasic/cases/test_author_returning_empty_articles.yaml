@@ -1,0 +1,49 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlDeleteBasic
+  method: test_author_returning_empty_articles
+  fixtures:
+  - queries/graphql_mutation/delete/basic/author_returning_empty_articles.yaml
+steps:
+- description: Delete mutation on author with returning articles
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation DeleteAuthor3 {
+        delete_author(where: {id: {_eq: 3}}){
+          affected_rows
+          returning{
+            id
+            name
+            emails
+            info
+            location
+            articles{
+              id
+              title
+              content
+            }
+          }
+        }
+      }
+  response:
+    data:
+      delete_author:
+        affected_rows: 1
+        returning:
+        - id: 3
+          name: Author 3
+          emails: []
+          info:
+            age: 23
+          location:
+            type: Point
+            crs:
+              type: name
+              properties:
+                name: urn:ogc:def:crs:EPSG::4326
+            coordinates:
+            - -118.4079
+            - 33.9434
+          articles: []

@@ -1,0 +1,31 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1InsertPermissions
+  method: test_author_user_role_insert_check_perm_success
+  fixtures:
+  - queries/v1/insert/permissions/author_user_role_insert_check_perm_success.yaml
+steps:
+- description: Inserts author with id 5
+  url: /v1/query
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '5'
+  query:
+    type: insert
+    args:
+      table: author
+      objects:
+      - id: 5
+        name: Author 5
+        is_registered: false
+      returning:
+      - id
+      - name
+      - is_registered
+  response:
+    returning:
+    - id: 5
+      name: Author 5
+      is_registered: false
+    affected_rows: 1

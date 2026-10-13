@@ -1,0 +1,23 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1UpdateBasic
+  method: test_no_where_clause_err
+  fixtures:
+  - queries/v1/update/basic/person_error_no_where_clause.yaml
+steps:
+- description: Updated person data without any operator
+  url: /v1/query
+  status: 400
+  query:
+    type: update
+    args:
+      table: person
+      $set:
+        details: null
+      returning:
+      - id
+      - details
+  response:
+    error: key "where" not found
+    path: $.args
+    code: parse-failed

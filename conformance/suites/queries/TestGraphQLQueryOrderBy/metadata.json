@@ -1,0 +1,150 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "Album",
+            "schema": "public"
+          },
+          "array_relationships": [
+            {
+              "name": "Tags",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "album_id",
+                  "table": {
+                    "name": "Tag",
+                    "schema": "public"
+                  }
+                }
+              }
+            },
+            {
+              "name": "Tracks",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "album_id",
+                  "table": {
+                    "name": "Track",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "Tag",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "Track",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "Album",
+              "using": {
+                "foreign_key_constraint_on": "album_id"
+              }
+            }
+          ],
+          "computed_fields": [
+            {
+              "name": "size",
+              "definition": {
+                "function": {
+                  "name": "track_size_mb",
+                  "schema": "public"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "article",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "author",
+              "using": {
+                "foreign_key_constraint_on": "author_id"
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "author",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "contact",
+              "using": {
+                "foreign_key_constraint_on": "contact_id"
+              }
+            }
+          ],
+          "array_relationships": [
+            {
+              "name": "articles",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "author_id",
+                  "table": {
+                    "name": "article",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ],
+          "computed_fields": [
+            {
+              "name": "get_articles",
+              "definition": {
+                "function": {
+                  "name": "get_articles",
+                  "schema": "public"
+                },
+                "session_argument": "hasura_session",
+                "table_argument": "author_row"
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "contact",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "employee",
+            "schema": "public"
+          }
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

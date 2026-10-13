@@ -1,0 +1,42 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlUpdatePermissions
+  method: test_user_cannot_update_published_version_col
+  fixtures:
+  - queries/graphql_mutation/update/permissions/user_cannot_update_published_article_version.yaml
+steps:
+- description: Update mutation on author
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      mutation update_article {
+        update_article(
+          where: {id: {_eq: 1}},
+          _set: {
+             content: "Article content version 1.0.2"
+             version: "1.0.2"
+          }
+        ) {
+          affected_rows
+          returning{
+            id
+            version
+            title
+            content
+            author {
+              id
+              name
+            }
+            is_published
+          }
+        }
+      }
+  response:
+    data:
+      update_article:
+        affected_rows: 0
+        returning: []

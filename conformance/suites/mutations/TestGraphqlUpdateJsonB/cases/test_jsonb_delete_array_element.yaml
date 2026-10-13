@@ -1,0 +1,36 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlUpdateJsonB
+  method: test_jsonb_delete_array_element
+  fixtures:
+  - queries/graphql_mutation/update/jsonb/person_delete_array_element.yaml
+steps:
+- description: Updated person data using _delete_elem operator
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation update_person($value: jsonb) {
+        update_person(
+          where: {id: {_eq: 2}},
+          _delete_elem: {
+            details: 0
+          }
+        ){
+          affected_rows
+          returning{
+            id
+            details
+          }
+        }
+      }
+  response:
+    data:
+      update_person:
+        affected_rows: 1
+        returning:
+        - id: 2
+          details:
+          - address:
+              city: Canterbury
+              country: United Kingdom

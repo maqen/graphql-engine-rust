@@ -1,0 +1,32 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryOffsets
+  method: test_int_as_string_offset
+  fixtures:
+  - queries/graphql_query/offset/select_query_article_string_offset.yaml
+steps:
+- description: Nested select on article with string offset
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        article(offset: "1", limit: 1, order_by: {id: desc}) {
+          id
+          title
+          content
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    data:
+      article:
+      - id: 2
+        title: Article 2
+        content: Sample article content 2
+        author:
+          id: 1
+          name: Author 1

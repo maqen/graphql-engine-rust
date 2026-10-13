@@ -1,0 +1,44 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlUpdateJsonB
+  method: test_jsonb_append_object
+  fixtures:
+  - queries/graphql_mutation/update/jsonb/person_append_object.yaml
+steps:
+- description: Updated person data using _append operator
+  url: /v1/graphql
+  status: 200
+  query:
+    variables:
+      value:
+        address:
+          country: Australia
+          city: Sydney
+    query: |
+      mutation update_person($value: jsonb) {
+        update_person(
+          where: {id: {_eq: 1}},
+          _append: {
+            details: $value
+          }
+        ){
+          affected_rows
+          returning{
+            id
+            details
+          }
+        }
+      }
+  response:
+    data:
+      update_person:
+        affected_rows: 1
+        returning:
+        - id: 1
+          details:
+            name:
+              last: Taylor
+              first: John
+            address:
+              city: Sydney
+              country: Australia

@@ -1,0 +1,31 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphQLMutateEnums
+  method: test_insert_enum_field
+  fixtures:
+  - queries/graphql_mutation/enums/insert_enum_field.yaml
+steps:
+- description: Test inserting a record that references an enum table
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        insert_users(objects: [
+          { name: "Matthew", favorite_color: yellow },
+          { name: "Robby", favorite_color: purple }
+        ]) {
+          returning {
+            name
+            favorite_color
+          }
+        }
+      }
+  response:
+    data:
+      insert_users:
+        returning:
+        - name: Matthew
+          favorite_color: yellow
+        - name: Robby
+          favorite_color: purple

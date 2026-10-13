@@ -1,0 +1,18 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1CountBasic
+  method: test_count_published_articles
+  fixtures:
+  - queries/v1/count/basic/count_published_articles.yaml
+steps:
+- description: Count number of authors
+  url: /v1/query
+  status: 200
+  query:
+    type: count
+    args:
+      table: article
+      where:
+        is_published: true
+  response:
+    count: 2

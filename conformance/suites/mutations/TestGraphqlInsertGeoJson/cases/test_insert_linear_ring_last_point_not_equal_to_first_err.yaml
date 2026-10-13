@@ -1,0 +1,41 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertGeoJson
+  method: test_insert_linear_ring_last_point_not_equal_to_first_err
+  fixtures:
+  - queries/graphql_mutation/insert/geojson/insert_linear_ring_last_point_not_equal_to_first_err.yaml
+steps:
+- description: Inserting as polygon with last and first point not being same; error
+  url: /v1/graphql
+  status: 200
+  query:
+    variables:
+      areas:
+      - name: Foo
+        area:
+          coordinates:
+          - - - 43.75049
+              - 11.03207
+            - - 43.80009
+              - 11.03208
+            - - 42.60009
+              - 10.13248
+            - - 45.60009
+              - 13.13248
+          type: Polygon
+    query: |
+      mutation insertArea($areas: [area_insert_input!]!) {
+        insert_area(objects: $areas) {
+          returning{
+            id
+            name
+            area
+          }
+        }
+      }
+  response:
+    errors:
+    - message: the first and last locations have to be equal for a LinearRing
+      extensions:
+        path: $.selectionSet.insert_area.args.objects[0].area
+        code: parse-failed

@@ -1,0 +1,38 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryCaching
+  method: test_include_directive
+  fixtures:
+  - queries/graphql_query/caching/include_directive.yaml
+steps:
+- description: Test that include directives are properly cached (#3097)
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query ($flag: Boolean!) {
+        users @include(if: $flag) {
+          name
+        }
+      }
+    variables:
+      flag: true
+  response:
+    data:
+      users:
+      - name: Alyssa
+      - name: Ben
+- description: Test that include directives are properly cached (#3097)
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query ($flag: Boolean!) {
+        users @include(if: $flag) {
+          name
+        }
+      }
+    variables:
+      flag: false
+  response:
+    data: {}

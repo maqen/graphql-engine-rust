@@ -1,0 +1,40 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectPermissions
+  method: test_user_only_other_users_published_articles
+  fixtures:
+  - queries/v1/select/permissions/user_can_query_other_users_published_articles.yaml
+steps:
+- description: User can get other user's published articles
+  url: /v1/query
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    type: select
+    args:
+      table: article
+      where:
+        $and:
+        - is_published: true
+        - author:
+            id:
+              $neq: 1
+      columns:
+      - id
+      - title
+      - content
+      - is_published
+      - name: author
+        columns:
+        - id
+        - name
+  response:
+  - id: 3
+    title: Article 3
+    content: Sample article content 3
+    is_published: true
+    author:
+      id: 2
+      name: Author 2

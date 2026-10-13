@@ -1,0 +1,87 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestRelationships
+  method: test_array_relationship_manual
+  fixtures:
+  - queries/v1/relationships/array_relationship_manual.yaml
+steps:
+- description: Create array relationship using manual method
+  url: /v1/query
+  status: 200
+  query:
+    type: create_array_relationship
+    args:
+      table: author_view
+      name: articles
+      using:
+        manual_configuration:
+          remote_table: article
+          column_mapping:
+            id: author_id
+  response:
+    message: success
+- description: Rename relationship articles to articles_array
+  url: /v1/query
+  status: 200
+  query:
+    type: rename_relationship
+    args:
+      table: author_view
+      name: articles
+      new_name: articles_array
+  response:
+    message: success
+- description: Rename the remote table
+  url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        ALTER TABLE article RENAME TO articles;
+  response:
+    result_type: CommandOk
+    result: null
+- description: Rename the original table/view
+  url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        ALTER TABLE author_view RENAME TO authors_view;
+  response:
+    result_type: CommandOk
+    result: null
+- description: Rename tables back to the original name for the teardown process
+  url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        ALTER view authors_view RENAME TO author_view;
+  response:
+    result_type: CommandOk
+    result: null
+- description: Rename tables back to the original name for the teardown process
+  url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        ALTER TABLE articles RENAME TO article;
+  response:
+    result_type: CommandOk
+    result: null
+- description: Drop object relationship
+  url: /v1/query
+  status: 200
+  query:
+    type: drop_relationship
+    args:
+      table: author_view
+      relationship: articles_array
+  response:
+    message: success

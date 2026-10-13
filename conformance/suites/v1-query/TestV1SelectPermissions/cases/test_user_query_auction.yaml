@@ -1,0 +1,25 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectPermissions
+  method: test_user_query_auction
+  fixtures:
+  - queries/v1/select/permissions/user_query_auction.yaml
+steps:
+- description: Query bid prices more than action price
+  url: /v1/query
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    type: select
+    args:
+      table: auction
+      columns:
+      - id
+      - bid_price
+      order_by:
+      - bid_price
+      limit: 1
+  response:
+  - id: 4
+    bid_price: 260

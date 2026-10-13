@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_allowlist_queries.py::TestAllowlistQueries
+upstream:
+  file: test_allowlist_queries.py
+  class: TestAllowlistQueries
+  dir: queries/graphql_query/allowlist
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none

@@ -1,0 +1,26 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphqlQueryPermissions
+  method: test_artist_search_tracks
+  fixtures:
+  - queries/graphql_query/permissions/artist_search_tracks.yaml
+steps:
+- description: Search tracks of an artist
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: Artist
+    X-Hasura-Artist-Id: '1'
+  query:
+    query: |
+      query {
+        search_tracks(args: {search: "up"}){
+          id
+          name
+        }
+      }
+  response:
+    data:
+      search_tracks:
+      - id: 1
+        name: Keepup

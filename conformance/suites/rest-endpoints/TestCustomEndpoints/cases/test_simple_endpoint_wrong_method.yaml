@@ -1,0 +1,16 @@
+upstream:
+  file: test_endpoints.py
+  class: TestCustomEndpoints
+  method: test_simple_endpoint_wrong_method
+  fixtures:
+  - queries/endpoints/endpoint_simple_wrong_method.yaml
+steps:
+- description: call the new custom endpoint with the wrong method
+  url: /api/rest/simple
+  method: DELETE
+  status: 405
+  query: null
+  response:
+    error: 'Allowed methods: GET'
+    path: $
+    code: method-not-allowed

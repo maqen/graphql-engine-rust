@@ -1,0 +1,46 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertPermission
+  method: test_user_err_unexpected_action
+  fixtures:
+  - queries/graphql_mutation/insert/permissions/user_article_error_unexpected_on_conflict_action.yaml
+steps:
+- description: invalid on_conflict action
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      mutation insert_article {
+        insert_article (
+          objects: [
+            {
+              content: "Updated Article 1 content",
+              id: 1,
+              author_id: 1
+            },
+            {
+              content: "Updated Article 2 content",
+              id: 2,
+              author_id: 1
+            },
+            }
+            ],
+          on_conflict: {
+            action: random
+          }
+        ) {
+          returning {
+            title
+            content
+            }
+          }
+        }
+  response:
+    errors:
+    - message: not a valid graphql query
+      extensions:
+        path: $.query
+        code: validation-failed

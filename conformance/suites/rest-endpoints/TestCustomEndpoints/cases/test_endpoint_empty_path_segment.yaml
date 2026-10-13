@@ -1,0 +1,39 @@
+upstream:
+  file: test_endpoints.py
+  class: TestCustomEndpoints
+  method: test_endpoint_empty_path_segment
+  fixtures:
+  - queries/endpoints/endpoint_empty_path_segment.yaml
+steps:
+- description: Tries to create an endpoint with empty path component
+  url: /v1/query
+  status: 400
+  query:
+    type: create_rest_endpoint
+    args:
+      url: foo//bar
+      name: foo
+      methods:
+      - GET
+      definition:
+        query:
+          collection_name: test_collection
+          query_name: simple_query
+  response:
+    error: 'Empty segments or unnamed variables are not allowed: foo//bar'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          query:
+            collection_name: test_collection
+            query_name: simple_query
+        methods:
+        - GET
+        name: foo
+        url: foo//bar
+      name: rest_endpoint foo
+      reason: 'Empty segments or unnamed variables are not allowed: foo//bar'
+      type: rest_endpoint

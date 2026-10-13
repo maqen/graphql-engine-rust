@@ -1,0 +1,28 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestRelayQueriesBasic
+  method: test_after_and_before_fail
+  fixtures:
+  - queries/graphql_query/relay/basic/pagination_errors/after_and_before.yaml
+steps:
+- description: Use after and before arguments in the same query
+  url: /v1/relay
+  status: 200
+  query:
+    query: |
+      query {
+        author_connection(
+         after: "eyJpZCIgOiAyfQ=="
+         before: "eyJpZCIgOiA0fQ=="
+        ){
+          edges{
+            cursor
+          }
+        }
+      }
+  response:
+    errors:
+    - message: '"after" and "before" are not allowed at once'
+      extensions:
+        path: $.selectionSet.author_connection.args
+        code: validation-failed

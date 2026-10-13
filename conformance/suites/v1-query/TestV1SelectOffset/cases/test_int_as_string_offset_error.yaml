@@ -1,0 +1,29 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectOffset
+  method: test_int_as_string_offset_error
+  fixtures:
+  - queries/v1/select/offset/select_query_article_int_as_string_offset_error.yaml
+steps:
+- description: Nested select on article with string offset
+  url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      offset: '1'
+      columns:
+      - id
+      - title
+      - content
+      - name: author
+        columns:
+        - id
+        - name
+      order_by: -id
+      limit: 1
+  response:
+    error: parsing Int failed, expected Number, but encountered String
+    path: $.args.offset
+    code: parse-failed

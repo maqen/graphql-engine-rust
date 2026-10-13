@@ -1,0 +1,59 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestSetTableCustomization
+  method: test_use_deprecated_custom_column_names
+  fixtures:
+  - queries/v1/set_table_configuration/use_deprecated_custom_column_names.yaml
+steps:
+- description: Customise column names using deprecated custom_column_names
+  url: /v1/query
+  status: 200
+  query:
+    type: set_table_customization
+    args:
+      table: author
+      configuration:
+        custom_column_names:
+          id: AuthorId
+          name: AuthorName
+          age: age
+  response:
+    message: success
+- description: Check that above query has changed the schema
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+          author_by_pk(AuthorId: 1){
+            AuthorName
+          }
+      }
+  response:
+    data:
+      author_by_pk:
+        AuthorName: Clarke
+- description: Remove custom column names
+  url: /v1/query
+  status: 200
+  query:
+    type: set_table_customization
+    args:
+      table: author
+      configuration: {}
+  response:
+    message: success
+- description: Check that above query has changed the schema
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+          author_by_pk(id: 1){
+            name
+          }
+      }
+  response:
+    data:
+      author_by_pk:
+        name: Clarke

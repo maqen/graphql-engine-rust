@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_v1_queries.py::TestComputedFields
+upstream:
+  file: test_v1_queries.py
+  class: TestComputedFields
+  dir: queries/v1/computed_fields
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: database

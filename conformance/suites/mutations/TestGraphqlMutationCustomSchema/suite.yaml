@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_graphql_mutations.py::TestGraphqlMutationCustomSchema
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlMutationCustomSchema
+  dir: queries/graphql_mutation/custom_schema
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: data

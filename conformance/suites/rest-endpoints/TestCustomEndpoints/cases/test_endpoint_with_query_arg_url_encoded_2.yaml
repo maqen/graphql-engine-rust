@@ -1,0 +1,16 @@
+upstream:
+  file: test_endpoints.py
+  class: TestCustomEndpoints
+  method: test_endpoint_with_query_arg_url_encoded_2
+  fixtures:
+  - queries/endpoints/endpoint_with_query_arg_url_encoded_2.yaml
+steps:
+- description: Successful call of an endpoint with an url encoded query arg
+  url: /api/rest/with_arg?first_name=X%2520Y
+  method: GET
+  status: 200
+  query: null
+  response:
+    test_table:
+    - first_name: X%20Y
+      last_name: Test

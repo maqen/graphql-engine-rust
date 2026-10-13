@@ -1,0 +1,42 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpBasicPostgres
+  method: test_self_referential_relationships
+  fixtures:
+  - queries/graphql_query/boolexp/basic/self_referential_relationships.yaml
+steps:
+- description: Self referential relationships
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        m1: message (
+          where : {
+            _or: [
+              {content: {_ilike: "%hello%"}}
+              {children: {content: {_ilike: "%hello%"}}}
+            ]
+          }
+        ) {
+          id
+        }
+        level1: message (
+          where : {
+            parent: {parent_id: {_is_null: true}}
+          }
+        ) {
+          id
+        }
+      }
+  response:
+    data:
+      m1:
+      - id: 1
+      - id: 4
+      - id: 6
+      level1:
+      - id: 2
+      - id: 3
+      - id: 5
+      - id: 6

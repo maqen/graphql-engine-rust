@@ -1,0 +1,21 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlMutationCustomSchema
+  method: test_delete_article
+  fixtures:
+  - queries/graphql_mutation/custom_schema/delete_article.yaml
+steps:
+- description: Delete articles
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        DeleteArticles(where: {ArticleId: {_eq: 1}}){
+          affected_rows
+        }
+      }
+  response:
+    data:
+      DeleteArticles:
+        affected_rows: 1

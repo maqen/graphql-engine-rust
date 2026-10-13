@@ -1,0 +1,100 @@
+name: Conformance
+
+# Runs the conformance suite (conformance/suites: cases ported from Hasura V2's own tests,
+# with responses recorded from hasura/graphql-engine:v2.51.0-ce).
+#
+# * rust-engine: our binary. Fails on a regression (a failing case missing from
+#   conformance/expected-failures.txt) and on a listed case that now passes (remove it).
+# * hasura: Hasura itself; every case must pass. Only runs when cases or the runner change.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CONFORMANCE_PG_URL: postgres://postgres:postgres@localhost:5432/postgres
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      cases: ${{ steps.filter.outputs.cases }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            cases:
+              - 'conformance/**'
+              - 'crates/hge-conformance/**'
+              - '.github/workflows/conformance.yml'
+
+  rust-engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgis/postgis:15-3.4
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked -p graphql-engine -p hge-conformance
+      - name: Run conformance suite
+        run: >-
+          target/debug/hge-conformance --report-md conformance-rust.md
+          --report-json conformance-rust.json rust --bin target/debug/graphql-engine
+      - if: always()
+        run: cat conformance-rust.md >> "$GITHUB_STEP_SUMMARY" || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-rust
+          path: conformance-rust.*
+
+  hasura:
+    needs: changes
+    if: needs.changes.outputs.cases == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgis/postgis:15-3.4
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97
+      - uses: Swatinem/rust-cache@v2
+      - run: docker pull hasura/graphql-engine:v2.51.0-ce
+      - run: cargo build --locked -p hge-conformance
+      - name: Verify every case against Hasura v2.51.0-ce
+        run: >-
+          target/debug/hge-conformance --report-md conformance-hasura.md
+          --report-json conformance-hasura.json hasura --image hasura/graphql-engine:v2.51.0-ce
+      - if: always()
+        run: cat conformance-hasura.md >> "$GITHUB_STEP_SUMMARY" || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-hasura
+          path: conformance-hasura.*

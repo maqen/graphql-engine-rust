@@ -1,0 +1,18 @@
+upstream:
+  file: test_endpoints.py
+  class: TestCustomEndpoints
+  method: test_endpoint_with_body_arg
+  fixtures:
+  - queries/endpoints/endpoint_with_body_arg.yaml
+steps:
+- description: Successful call of an endpoint with a query arg
+  url: /api/rest/with_arg
+  method: POST
+  status: 200
+  query: null
+  body:
+    first_name: Foo
+  response:
+    test_table:
+    - first_name: Foo
+      last_name: Bar

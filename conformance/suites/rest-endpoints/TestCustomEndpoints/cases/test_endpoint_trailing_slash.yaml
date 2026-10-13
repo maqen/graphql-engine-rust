@@ -1,0 +1,39 @@
+upstream:
+  file: test_endpoints.py
+  class: TestCustomEndpoints
+  method: test_endpoint_trailing_slash
+  fixtures:
+  - queries/endpoints/endpoint_trailing_slash.yaml
+steps:
+- description: Tries to create an endpoint with trailing slash
+  url: /v1/query
+  status: 400
+  query:
+    type: create_rest_endpoint
+    args:
+      url: foo/
+      name: trailing
+      methods:
+      - GET
+      definition:
+        query:
+          collection_name: test_collection
+          query_name: simple_query
+  response:
+    error: 'Empty segments or unnamed variables are not allowed: foo/'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          query:
+            collection_name: test_collection
+            query_name: simple_query
+        methods:
+        - GET
+        name: trailing
+        url: foo/
+      name: rest_endpoint trailing
+      reason: 'Empty segments or unnamed variables are not allowed: foo/'
+      type: rest_endpoint

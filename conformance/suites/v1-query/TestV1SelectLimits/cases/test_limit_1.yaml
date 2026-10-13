@@ -1,0 +1,50 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectLimits
+  method: test_limit_1
+  fixtures:
+  - queries/v1/select/limits/select_query_article_limit_1.yaml
+steps:
+- description: Nested select on article with limit
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: article
+      columns: &id001
+      - id
+      - title
+      - content
+      - name: author
+        columns:
+        - id
+        - name
+      order_by: -id
+      limit: 1
+  response:
+  - id: 3
+    title: Article 3
+    content: Sample article content 3
+    author:
+      id: 2
+      name: Author 2
+- description: Nested select on article with limit
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: article
+      columns: *id001
+      order_by:
+      - type: desc
+        column: id
+      limit: 1
+  response:
+  - id: 3
+    title: Article 3
+    content: Sample article content 3
+    author:
+      id: 2
+      name: Author 2

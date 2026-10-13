@@ -1,0 +1,36 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertPermission
+  method: test_user_role_on_conflict_constraint_on_error
+  fixtures:
+  - queries/graphql_mutation/insert/permissions/article_on_conflict_constraint_on_user_role_error.yaml
+steps:
+- description: Upserts article data via GraphQL mutation as User role
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation insert_article {
+        insert_article (
+          objects: [
+            {
+              content: "Updated Article 1 content",
+              id: 1
+            }
+            ],
+          on_conflict: {
+            constraint_on: id
+          }
+        ) {
+          returning {
+            title
+            content
+            }
+          }
+        }
+  response:
+    errors:
+    - message: 'field ''constraint_on'' not found in type: ''article_on_conflict'''
+      extensions:
+        path: $.selectionSet.insert_article.args.on_conflict.constraint_on
+        code: validation-failed

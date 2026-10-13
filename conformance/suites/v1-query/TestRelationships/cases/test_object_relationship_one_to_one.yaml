@@ -1,0 +1,53 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestRelationships
+  method: test_object_relationship_one_to_one
+  fixtures:
+  - queries/v1/relationships/object_relationship_one_to_one.yaml
+steps:
+- description: Create object relationship using foreign key
+  url: /v1/query
+  status: 200
+  query:
+    type: create_object_relationship
+    args:
+      table: author
+      name: details
+      using:
+        foreign_key_constraint_on:
+          table: author_details
+          column: author_id
+  response:
+    message: success
+- description: Nested select
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - id
+      - name
+      - name: details
+        columns:
+        - email
+  response:
+  - id: 1
+    name: Author 1
+    details:
+      email: author1@authors.com
+  - id: 2
+    name: Author 2
+    details:
+      email: author2@authors.com
+- description: Drop object relationship
+  url: /v1/query
+  status: 200
+  query:
+    type: drop_relationship
+    args:
+      table: author
+      relationship: details
+  response:
+    message: success

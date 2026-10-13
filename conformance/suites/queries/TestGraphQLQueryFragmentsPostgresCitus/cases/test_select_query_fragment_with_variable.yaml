@@ -1,0 +1,28 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryFragmentsPostgresCitus
+  method: test_select_query_fragment_with_variable
+  fixtures:
+  - queries/graphql_query/basic/select_query_fragment_with_variable.yaml
+steps:
+- description: select query on author with id = 1, passed through a fragment with variables
+  url: /v1/graphql
+  status: 200
+  query:
+    variables:
+      authorId: 2
+    query: |
+      fragment MyFragment on query_root {
+        author_by_pk(id: $authorId){
+          id
+          name
+        }
+      }
+      query ($authorId : Int!) {
+        ...MyFragment
+      }
+  response:
+    data:
+      author_by_pk:
+        id: 2
+        name: Author 2

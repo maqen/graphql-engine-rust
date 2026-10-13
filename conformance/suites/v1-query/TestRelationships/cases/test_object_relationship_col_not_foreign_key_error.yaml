@@ -1,0 +1,36 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestRelationships
+  method: test_object_relationship_col_not_foreign_key_error
+  fixtures:
+  - queries/v1/relationships/object_relationship_col_not_foreign_key_error.yaml
+steps:
+- description: Create object relationship using foreign key
+  url: /v1/query
+  status: 400
+  query:
+    type: create_object_relationship
+    args:
+      table: article
+      name: author
+      using:
+        foreign_key_constraint_on: published_on
+  response:
+    error: 'Inconsistent object: in table "article": in relationship "author": no foreign constraint exists
+      on the given column(s)'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        name: author
+        source: default
+        table:
+          name: article
+          schema: public
+        using:
+          foreign_key_constraint_on: published_on
+      name: object_relation author in table article in source default
+      reason: 'Inconsistent object: in table "article": in relationship "author": no foreign constraint
+        exists on the given column(s)'
+      type: object_relation

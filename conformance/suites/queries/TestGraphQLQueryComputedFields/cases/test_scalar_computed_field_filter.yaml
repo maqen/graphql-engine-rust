@@ -1,0 +1,27 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryComputedFields
+  method: test_scalar_computed_field_filter
+  fixtures:
+  - queries/graphql_query/computed_fields/scalar_computed_field_filter.yaml
+steps:
+- description: Query author by using a scalar computed field in filter
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        author(where: {full_name: {_ilike: "%roger%"}}){
+          id
+          first_name
+          last_name
+          full_name
+        }
+      }
+  response:
+    data:
+      author:
+      - id: 1
+        first_name: Roger
+        last_name: Chris
+        full_name: Roger Chris

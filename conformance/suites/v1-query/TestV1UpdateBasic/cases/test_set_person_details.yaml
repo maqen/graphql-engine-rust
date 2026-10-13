@@ -1,0 +1,32 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1UpdateBasic
+  method: test_set_person_details
+  fixtures:
+  - queries/v1/update/basic/person_set_details.yaml
+steps:
+- description: Updated person data using _set operator
+  url: /v1/query
+  status: 200
+  query:
+    type: update
+    args:
+      table: person
+      $set:
+        details:
+          name:
+            first: john
+            last: taylor
+      where:
+        id: 1
+      returning:
+      - id
+      - details
+  response:
+    returning:
+    - id: 1
+      details:
+        name:
+          last: taylor
+          first: john
+    affected_rows: 1

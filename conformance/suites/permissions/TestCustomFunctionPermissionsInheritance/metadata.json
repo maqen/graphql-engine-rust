@@ -1,0 +1,110 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "user",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "role1",
+              "permission": {
+                "columns": [
+                  "name",
+                  "score",
+                  "role_echo"
+                ],
+                "filter": {}
+              }
+            },
+            {
+              "role": "role2",
+              "permission": {
+                "columns": [
+                  "name",
+                  "score",
+                  "role_echo"
+                ],
+                "filter": {}
+              }
+            },
+            {
+              "role": "role3",
+              "permission": {
+                "columns": [
+                  "name",
+                  "score",
+                  "role_echo"
+                ],
+                "filter": {}
+              }
+            },
+            {
+              "role": "role4",
+              "permission": {
+                "columns": [
+                  "name",
+                  "score"
+                ],
+                "filter": {
+                  "id": "X-Hasura-User-Id"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "function": {
+            "name": "add_to_score",
+            "schema": "public"
+          },
+          "configuration": {
+            "custom_root_fields": {},
+            "exposed_as": "mutation",
+            "session_argument": "hasura_session"
+          },
+          "permissions": [
+            {
+              "role": "role2"
+            },
+            {
+              "role": "role1"
+            }
+          ]
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ],
+  "inherited_roles": [
+    {
+      "role_name": "inherited_role1",
+      "role_set": [
+        "role1",
+        "role2"
+      ]
+    },
+    {
+      "role_name": "inherited_role2",
+      "role_set": [
+        "role3",
+        "role4"
+      ]
+    }
+  ]
+}

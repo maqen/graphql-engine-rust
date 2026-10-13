@@ -1,0 +1,25 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBasicPostgres
+  method: test_select_query_person_citext
+  fixtures:
+  - queries/graphql_query/basic/select_query_person_citext.yaml
+steps:
+- description: Query data using citext column in where clause
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        person(where: {name: {_eq: "clarke"}}){
+          id
+          name
+        }
+      }
+  response:
+    data:
+      person:
+      - id: 2
+        name: Clarke
+      - id: 3
+        name: clarke

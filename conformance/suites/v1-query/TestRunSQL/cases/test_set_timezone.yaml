@@ -1,0 +1,17 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestRunSQL
+  method: test_set_timezone
+  fixtures:
+  - queries/v1/run_sql/sql_set_timezone.yaml
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        SET TIME ZONE 'UTC'
+  response:
+    result_type: CommandOk
+    result: null

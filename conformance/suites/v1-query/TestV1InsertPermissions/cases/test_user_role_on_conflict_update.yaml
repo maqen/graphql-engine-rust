@@ -1,0 +1,32 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1InsertPermissions
+  method: test_user_role_on_conflict_update
+  fixtures:
+  - queries/v1/insert/permissions/article_on_conflict_user_role.yaml
+steps:
+- description: Upserts article data via GraphQL mutation as User role
+  url: /v1/query
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    type: insert
+    args:
+      table: article
+      objects:
+      - content: Updated Article 1 content
+        id: 1
+        author_id: 1
+      on_conflict:
+        constraint: article_pkey
+        action: update
+      returning:
+      - content
+      - id
+  response:
+    returning:
+    - content: Updated Article 1 content
+      id: 1
+    affected_rows: 1

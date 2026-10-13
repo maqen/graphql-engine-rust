@@ -1,0 +1,30 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestBulkQuery
+  method: test_run_bulk_with_select_and_writes
+  fixtures:
+  - queries/v1/bulk/select_with_writes.yaml
+steps:
+- description: Bulk query
+  url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: insert
+      args:
+        table: author
+        objects:
+        - name: author1
+          is_registered: true
+        - name: author2
+          is_registered: false
+    - type: select
+      args:
+        table: author
+        columns:
+        - name
+  response:
+  - affected_rows: 2
+  - - name: author1
+    - name: author2

@@ -1,0 +1,28 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestRelayQueriesBasic
+  method: test_unexpected_columns
+  fixtures:
+  - queries/graphql_query/relay/basic/node_id_errors/unexpected_columns.yaml
+steps:
+- description: Query node interface with an unexpected column value in node id json array
+  url: /v1/relay
+  status: 200
+  query:
+    query: |
+      query {
+        node(id: "WzEsICJwdWJsaWMiLCAidXNlciIsICJmaXJzdF8yIiwgImxhc3RfMiIsIDJdCg=="){
+          ... on user{
+            first_name
+            last_name
+            age
+            address
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'invalid node id: unexpected column values [2]'
+      extensions:
+        path: $.selectionSet.node.args.id
+        code: validation-failed

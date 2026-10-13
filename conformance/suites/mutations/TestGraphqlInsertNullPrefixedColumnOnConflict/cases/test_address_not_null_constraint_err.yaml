@@ -1,0 +1,24 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertNullPrefixedColumnOnConflict
+  method: test_address_not_null_constraint_err
+  fixtures:
+  - queries/graphql_mutation/insert/nullprefixcolumn/null_prefixed_column_ok.yaml
+steps:
+- description: |
+    Using "null" prefixed columns in on_conflict clause should behave normally.
+    Regression test for #3597.
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        insert_nullPrefixTestTable(objects: [{nullName: "2"}]
+        on_conflict:{constraint:nullPrefixTestTable_pkey, update_columns:[nullName]}){
+          affected_rows
+        }
+      }
+  response:
+    data:
+      insert_nullPrefixTestTable:
+        affected_rows: 1

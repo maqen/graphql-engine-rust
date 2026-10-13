@@ -1,0 +1,20 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertConstraints
+  method: test_address_not_null_constraint_err
+  fixtures:
+  - queries/graphql_mutation/insert/constraints/address_not_null_constraint_error.yaml
+steps:
+- description: Insert into order table as user role (Not Null Constraint Error)
+  url: /v1/graphql
+  status: 200
+  query:
+    query: "mutation {\n  insert_address(objects: [{street: \"koramangala\"}]){\n    returning{\n    \
+      \  id\n      street\n    }\n    affected_rows\n  }\n} \n"
+  response:
+    errors:
+    - message: Not-NULL violation. null value in column "door_no" of relation "address" violates not-null
+        constraint
+      extensions:
+        path: $.selectionSet.insert_address.args.objects
+        code: constraint-violation

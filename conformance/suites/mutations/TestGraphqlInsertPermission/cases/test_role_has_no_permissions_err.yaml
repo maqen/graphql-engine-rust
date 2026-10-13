@@ -1,0 +1,25 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertPermission
+  method: test_role_has_no_permissions_err
+  fixtures:
+  - queries/graphql_mutation/insert/permissions/address_permission_error.yaml
+steps:
+- description: Insert into order table as user role (Check Constraint Error)
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: merchant
+  query:
+    query: |
+      mutation {
+        insert_address(objects: [{door_no: "12-21", street: "Madhapur", city: "Hyderabad", resident_id: 1}]){
+          affected_rows
+        }
+      }
+  response:
+    errors:
+    - message: no mutations exist
+      extensions:
+        path: $
+        code: validation-failed

@@ -1,0 +1,10 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_roles_inheritance.py::TestCustomFunctionPermissionsInheritance
+upstream:
+  file: test_roles_inheritance.py
+  class: TestCustomFunctionPermissionsInheritance
+  dir: queries/graphql_mutation/functions/permissions/roles_inheritance/
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_INFER_FUNCTION_PERMISSIONS: 'false'
+isolation: data

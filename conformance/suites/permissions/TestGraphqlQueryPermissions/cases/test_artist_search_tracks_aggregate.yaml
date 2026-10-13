@@ -1,0 +1,39 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphqlQueryPermissions
+  method: test_artist_search_tracks_aggregate
+  fixtures:
+  - queries/graphql_query/permissions/artist_search_tracks_aggregate.yaml
+steps:
+- description: Search tracks of an artist (with Aggregate)
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: Artist
+    X-Hasura-Artist-Id: '1'
+  query:
+    query: |
+      query {
+        search_tracks_aggregate(args: {search: "keep"}){
+          aggregate{
+            count
+          }
+          nodes{
+            id
+            name
+            artist_id
+          }
+        }
+      }
+  response:
+    data:
+      search_tracks_aggregate:
+        aggregate:
+          count: 2
+        nodes:
+        - id: 1
+          name: Keepup
+          artist_id: 1
+        - id: 2
+          name: Keepdown
+          artist_id: 1

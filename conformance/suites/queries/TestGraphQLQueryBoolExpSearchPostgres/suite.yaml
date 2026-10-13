@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_graphql_queries.py::TestGraphQLQueryBoolExpSearchPostgres
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpSearchPostgres
+  dir: queries/graphql_query/boolexp/search
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none

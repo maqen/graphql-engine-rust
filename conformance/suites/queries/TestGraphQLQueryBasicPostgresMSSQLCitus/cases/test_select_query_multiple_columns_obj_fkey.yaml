@@ -1,0 +1,48 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBasicPostgresMSSQLCitus
+  method: test_select_query_multiple_columns_obj_fkey
+  fixtures:
+  - queries/graphql_query/basic/select_multiple_columns_obj_fkey.yaml
+steps:
+- description: Nested select on article
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        article_multi {
+          id
+          title
+          content
+          author {
+            id1
+            id2
+            name
+          }
+        }
+      }
+  response:
+    data:
+      article_multi:
+      - id: 1
+        title: Article 1
+        content: Sample article content 1
+        author:
+          id1: 1
+          id2: 1
+          name: Author 1
+      - id: 2
+        title: Article 2
+        content: Sample article content 2
+        author:
+          id1: 1
+          id2: 1
+          name: Author 1
+      - id: 3
+        title: Article 3
+        content: Sample article content 3
+        author:
+          id1: 2
+          id2: 2
+          name: Author 2

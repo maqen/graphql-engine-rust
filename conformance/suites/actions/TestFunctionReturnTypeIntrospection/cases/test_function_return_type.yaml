@@ -1,0 +1,92 @@
+upstream:
+  file: test_actions.py
+  class: TestFunctionReturnTypeIntrospection
+  method: test_function_return_type
+  fixtures:
+  - queries/actions/introspection/function_return_type/function_return_type.yaml
+steps:
+- description: Action introspection to check return types
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        __schema {
+          queryType {
+            fields {
+              name
+              type {
+                name
+                kind
+                ofType {
+                  name
+                  kind
+                  ofType {
+                    name
+                    kind
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+  response:
+    data:
+      __schema:
+        queryType:
+          fields:
+          - name: multi
+            type:
+              name: null
+              kind: NON_NULL
+              ofType:
+                name: null
+                kind: LIST
+                ofType:
+                  name: null
+                  kind: NON_NULL
+          - name: multi_aggregate
+            type:
+              name: null
+              kind: NON_NULL
+              ofType:
+                name: user_aggregate
+                kind: OBJECT
+                ofType: null
+          - name: single
+            type:
+              name: user
+              kind: OBJECT
+              ofType: null
+          - name: single_aggregate
+            type:
+              name: null
+              kind: NON_NULL
+              ofType:
+                name: user_aggregate
+                kind: OBJECT
+                ofType: null
+          - name: user
+            type:
+              name: null
+              kind: NON_NULL
+              ofType:
+                name: null
+                kind: LIST
+                ofType:
+                  name: null
+                  kind: NON_NULL
+          - name: user_aggregate
+            type:
+              name: null
+              kind: NON_NULL
+              ofType:
+                name: user_aggregate
+                kind: OBJECT
+                ofType: null
+          - name: user_by_pk
+            type:
+              name: user
+              kind: OBJECT
+              ofType: null

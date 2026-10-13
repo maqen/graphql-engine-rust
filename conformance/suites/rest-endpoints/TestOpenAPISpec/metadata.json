@@ -1,0 +1,102 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "test_table",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "test_table_recurse",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "recurse_rel",
+              "using": {
+                "manual_configuration": {
+                  "column_mapping": {
+                    "id": "id"
+                  },
+                  "insertion_order": null,
+                  "remote_table": {
+                    "name": "test_table_recurse",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ],
+  "query_collections": [
+    {
+      "name": "test_collection",
+      "definition": {
+        "queries": [
+          {
+            "name": "simple_query",
+            "query": "query { test_table { first_name last_name } }"
+          },
+          {
+            "name": "simple_query_with_aliases",
+            "query": "query { test: test_table { firstName: first_name lastName: last_name surname: last_name } }"
+          },
+          {
+            "name": "query_with_arg",
+            "query": "query ($first_name:String!) { test_table(where: {first_name: { _eq: $first_name } }) { first_name last_name } }"
+          },
+          {
+            "name": "query_with_args",
+            "query": "query ($first_name: String!, $last_name:String!) { test_table(where: {first_name: { _eq: $first_name } last_name: { _eq: $last_name }}) { first_name last_name } }"
+          },
+          {
+            "name": "query_with_uuid_arg",
+            "query": "query ($id: uuid!) { test_table(where: {id: { _neq: $id }}) { first_name last_name } }"
+          },
+          {
+            "name": "query_with_default_arg",
+            "query": "query ($first_name:String=\"Foo\") { test_table(where: {first_name: { _eq: $first_name } }) { first_name last_name } }"
+          },
+          {
+            "name": "mutation_with_args",
+            "query": "mutation ($first_name: String!, $last_name: String!) { insert_test_table( objects: {first_name: $first_name, last_name: $last_name }) { returning { id } affected_rows } }"
+          },
+          {
+            "name": "mutation_complex_arg",
+            "query": "mutation ($objects: [test_table_insert_input!]!) { insert_test_table( objects: $objects) { returning { id } } }"
+          },
+          {
+            "name": "mutation_complex_args",
+            "query": "mutation QQ($new_object: test_table_set_input!, $first_name: String!) { update_test_table(where: {first_name: {_eq: $first_name}}, _set: $new_object) { affected_rows } }"
+          },
+          {
+            "name": "mutation_recursive_arg",
+            "query": "mutation MyMutation($object: test_table_recurse_insert_input!) { insert_test_table_recurse_one(object: $object) { id } }"
+          },
+          {
+            "name": "query_with_duplicate_field_name",
+            "query": "query { test_table { first_name } test_table { last_name } }"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+upstream:
+  file: test_endpoints.py
+  class: TestCustomEndpoints
+  method: test_endpoint_with_pg_date_url_variable
+  fixtures:
+  - queries/endpoints/endpoint_pg_date_url_variable.yaml
+steps:
+- description: Successful call of an endpoint with date and point
+  url: /api/rest/with_date/2010-1-1/{"type":"Point","coordinates":[-48.23456,20.12345]}
+  method: GET
+  status: 200
+  query: null
+  response:
+    test_table: []

@@ -1,0 +1,19 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1CountBasic
+  method: test_count_articles_registered_authors
+  fixtures:
+  - queries/v1/count/basic/count_articles_with_registered_authors.yaml
+steps:
+- description: Count articles of registered authors
+  url: /v1/query
+  status: 200
+  query:
+    type: count
+    args:
+      table: article
+      where:
+        author:
+          is_registered: true
+  response:
+    count: 4

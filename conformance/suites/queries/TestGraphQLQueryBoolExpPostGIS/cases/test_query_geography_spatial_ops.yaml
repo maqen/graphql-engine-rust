@@ -1,0 +1,59 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpPostGIS
+  method: test_query_geography_spatial_ops
+  fixtures:
+  - queries/graphql_query/boolexp/postgis/query_geography_spatial_ops.yaml
+steps:
+- description: Test PostGIS spatial operators on a geography column
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query geography($point: geography!, $ipoint: geography!) {
+        stdwithin: geog_table(
+          where: {geog_col: {_st_d_within: {distance: 1000000, from: $point}}}
+        ) {
+          name
+        }
+        stdwithin_sph_false: geog_table(
+          where: {geog_col: {_st_d_within: {distance: 1000000, from: $point, use_spheroid: false}}}
+        ) {
+          name
+        }
+        stintersects: geog_table(
+          where: {geog_col: {_st_intersects: $ipoint}}
+        ) {
+          name
+        }
+      }
+    variables:
+      ipoint:
+        coordinates:
+        - 0.0
+        - 0.5
+        crs:
+          type: name
+          properties:
+            name: urn:ogc:def:crs:EPSG::4326
+        type: Point
+      point:
+        coordinates:
+        - 1
+        - 50
+        crs:
+          type: name
+          properties:
+            name: urn:ogc:def:crs:EPSG::4326
+        type: Point
+  response:
+    data:
+      stdwithin:
+      - name: London
+      - name: Paris
+      stdwithin_sph_false:
+      - name: London
+      - name: Paris
+      stintersects:
+      - name: Linestring
+      - name: Point

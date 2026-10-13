@@ -1,0 +1,24 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBasicPostgres
+  method: test_select_query_invalid_escape_sequence
+  fixtures:
+  - queries/graphql_query/basic/select_query_invalid_escape_sequence.yaml
+steps:
+- description: GraphQL query with invalid escape sequence
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        person(where: {name: {_like: "John\\"}}) {
+          id
+          name
+        }
+      }
+  response:
+    errors:
+    - message: LIKE pattern must not end with escape character
+      extensions:
+        path: $
+        code: bad-request

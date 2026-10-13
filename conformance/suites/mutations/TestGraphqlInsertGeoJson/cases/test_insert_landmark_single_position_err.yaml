@@ -1,0 +1,36 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertGeoJson
+  method: test_insert_landmark_single_position_err
+  fixtures:
+  - queries/graphql_mutation/insert/geojson/insert_landmark_single_position_err.yaml
+steps:
+- description: Insert landmark using only one co-ordinate. Error as minimum 2 are required
+  url: /v1/graphql
+  status: 200
+  query:
+    variables:
+      landmarks:
+      - name: Baz
+        type: house
+        location:
+          coordinates:
+          - 43.75049
+          type: Point
+    query: |
+      mutation insertLandmark($landmarks: [landmark_insert_input!]!) {
+        insert_landmark(objects: $landmarks) {
+          returning{
+            id
+            name
+            location
+            type
+          }
+        }
+      }
+  response:
+    errors:
+    - message: A Position needs at least 2 elements
+      extensions:
+        path: $.selectionSet.insert_landmark.args.objects[0].location
+        code: parse-failed

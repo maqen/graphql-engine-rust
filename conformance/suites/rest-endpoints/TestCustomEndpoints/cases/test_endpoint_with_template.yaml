@@ -1,0 +1,16 @@
+upstream:
+  file: test_endpoints.py
+  class: TestCustomEndpoints
+  method: test_endpoint_with_template
+  fixtures:
+  - queries/endpoints/endpoint_with_template.yaml
+steps:
+- description: Successful call of an endpoint with a url template
+  url: /api/rest/with_template/Foo
+  method: GET
+  status: 200
+  query: null
+  response:
+    test_table:
+    - first_name: Foo
+      last_name: Bar

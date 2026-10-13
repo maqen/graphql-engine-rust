@@ -1,0 +1,172 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestComputedFields
+  method: test_create_permissions
+  fixtures:
+  - queries/v1/computed_fields/create_permissions.yaml
+steps:
+- description: Add a computed field get_articles to author table
+  url: /v1/query
+  status: 200
+  query:
+    type: add_computed_field
+    args:
+      table: author
+      name: get_articles
+      definition:
+        function: fetch_articles
+        table_argument: author_row
+  response:
+    message: success
+- description: Add a computed field full_name to author table
+  url: /v1/query
+  status: 200
+  query:
+    type: add_computed_field
+    args:
+      table: author
+      name: full_name
+      definition:
+        function: full_name
+  response:
+    message: success
+- description: Create select permission with non existed computed fields
+  url: /v1/query
+  status: 400
+  query:
+    type: create_select_permission
+    args:
+      table: author
+      role: user
+      permission:
+        columns: '*'
+        computed_fields:
+        - full_name
+        - random
+        filter: {}
+  response:
+    error: 'Inconsistent object: in table "author": in permission for role "user": computed field "random"
+      does not exist'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        permission:
+          allow_aggregations: false
+          columns: '*'
+          computed_fields:
+          - full_name
+          - random
+          filter: {}
+        role: user
+        source: default
+        table:
+          name: author
+          schema: public
+      name: select_permission user in table author in source default
+      reason: 'Inconsistent object: in table "author": in permission for role "user": computed field "random"
+        does not exist'
+      type: select_permission
+- description: Create select permission with computed field which returns a set of table
+  url: /v1/query
+  status: 400
+  query:
+    type: create_select_permission
+    args:
+      table: author
+      role: user
+      permission:
+        columns: '*'
+        computed_fields:
+        - full_name
+        - get_articles
+        filter: {}
+  response:
+    error: 'Inconsistent object: in table "author": in permission for role "user": select permissions
+      on computed field "get_articles" are auto-derived from the permissions on its returning table "article"
+      and cannot be specified manually'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        permission:
+          allow_aggregations: false
+          columns: '*'
+          computed_fields:
+          - full_name
+          - get_articles
+          filter: {}
+        role: user
+        source: default
+        table:
+          name: author
+          schema: public
+      name: select_permission user in table author in source default
+      reason: 'Inconsistent object: in table "author": in permission for role "user": select permissions
+        on computed field "get_articles" are auto-derived from the permissions on its returning table
+        "article" and cannot be specified manually'
+      type: select_permission
+- description: Create select permission on article table
+  url: /v1/query
+  status: 200
+  query:
+    type: create_select_permission
+    args:
+      table: article
+      role: user
+      permission:
+        columns: '*'
+        filter: {}
+  response:
+    message: success
+- description: Create select permission with computed fields on author table
+  url: /v1/query
+  status: 200
+  query:
+    type: create_select_permission
+    args:
+      table: author
+      role: user
+      permission:
+        columns: '*'
+        computed_fields:
+        - full_name
+        filter: {}
+  response:
+    message: success
+- description: Try to drop a computed field defined in permission
+  url: /v1/query
+  status: 400
+  query:
+    type: drop_computed_field
+    args:
+      table: author
+      name: full_name
+  response:
+    error: 'cannot drop due to the following dependent objects: permission author.user.select in source
+      "default"'
+    path: $.args
+    code: dependency-error
+- description: Drop a computed field with cascade
+  url: /v1/query
+  status: 200
+  query:
+    type: drop_computed_field
+    args:
+      table: author
+      name: full_name
+      cascade: true
+  response:
+    message: success
+- description: Drop a computed field
+  url: /v1/query
+  status: 200
+  query:
+    type: drop_computed_field
+    args:
+      table: author
+      name: get_articles
+  response:
+    message: success

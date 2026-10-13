@@ -1,0 +1,44 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpJsonB
+  method: test_jsonb_has_keys_any_os_operating_system
+  fixtures:
+  - queries/graphql_query/boolexp/jsonb/select_product_jsonb_has_keys_any_os_operating_system.yaml
+steps:
+- description: Select products having key 'SIM type' in spec
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        product (
+        where: {spec: {_has_keys_any: ["OS","Operating System"] }}
+        ) {
+          id
+          category
+          name
+          spec
+        }
+      }
+  response:
+    data:
+      product:
+      - id: 1
+        category: Laptop
+        name: laptop1
+        spec:
+          RAM: 8GB
+          Disk: 128GB
+          Weight: 1.2Kg
+          Processor: processor1
+          Operating System: os1
+      - id: 2
+        category: Laptop
+        name: laptop2
+        spec:
+          OS: os2
+          RAM: 16GB
+          Disk: 128GB
+          Weight: 1.2Kg
+          Processor: processor2
+          Touchscreen: true

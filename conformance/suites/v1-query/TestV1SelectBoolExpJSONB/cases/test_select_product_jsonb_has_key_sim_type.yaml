@@ -1,0 +1,35 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectBoolExpJSONB
+  method: test_select_product_jsonb_has_key_sim_type
+  fixtures:
+  - queries/v1/select/boolexp/jsonb/select_product_jsonb_has_key_sim_type.yaml
+steps:
+- description: Select products having key 'SIM type' in spec
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: product
+      where:
+        spec:
+          $has_key: SIM type
+      columns:
+      - id
+      - category
+      - name
+      - spec
+  response:
+  - id: 3
+    category: Mobile
+    name: mobile1
+    spec:
+      RAM: 3GB
+      Weight: 200g
+      Sensors: Accelerometer sensor, E-compass, Proximity sensor
+      SIM type: DualSim
+      Processor: processor2
+      Touchscreen: true
+      Network type: 4G
+      Operating System Type: osType1

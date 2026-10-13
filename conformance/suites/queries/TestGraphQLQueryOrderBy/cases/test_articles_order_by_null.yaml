@@ -1,0 +1,30 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryOrderBy
+  method: test_articles_order_by_null
+  fixtures:
+  - queries/graphql_query/order_by/articles_order_by_null.yaml
+steps:
+- description: Fetch articles by using null values in order_by
+  url: /v1/graphql
+  status: 200
+  query:
+    variables:
+      author_order_by: null
+    query: |
+      query ($order_by: order_by, $author_order_by: author_order_by){
+        article(
+          order_by: [ {id: $order_by}
+                    , {author: $author_order_by}
+                    , {author: {articles_aggregate: {count: $order_by}}}
+                    ]
+        ){
+          title
+        }
+      }
+  response:
+    data:
+      article:
+      - title: Article 1
+      - title: Article 2
+      - title: Article 3

@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_v1_queries.py::TestTrackTables
+upstream:
+  file: test_v1_queries.py
+  class: TestTrackTables
+  dir: queries/v1/track_table
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: database

@@ -1,0 +1,41 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertPermission
+  method: test_column_comparison_across_different_tables
+  fixtures:
+  - queries/graphql_mutation/insert/permissions/column_comparison_across_tables.yaml
+steps:
+- description: Trying to order more number of an item than present in the inventory should fail
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: |
+      mutation {
+        insert_order_cart( objects: { item_id: 1, order_cart_quantity: 106 }) {
+          affected_rows
+        }
+      }
+  response:
+    errors:
+    - message: check constraint of an insert/update permission has failed
+      extensions:
+        path: $.selectionSet.insert_order_cart.args.objects
+        code: permission-error
+- description: When the order quantity is less than the item's inventory quantity, it should succeed
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: |
+      mutation {
+        insert_order_cart( objects: { item_id: 1, order_cart_quantity: 6 }) {
+          affected_rows
+        }
+      }
+  response:
+    data:
+      insert_order_cart:
+        affected_rows: 1

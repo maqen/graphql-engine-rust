@@ -1,0 +1,49 @@
+upstream:
+  file: test_tests.py
+  class: TestTests2
+  method: test_tests_ordering_differences_correctly_ignored
+  fixtures:
+  - test_tests/user_can_query_jsonb_values_filter_okay_orders.yaml
+steps:
+- description: User can query geometry values which satisfies filter in select permission (valid ordering
+    alternative)
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user1
+  query:
+    query: |
+      query {
+        jsonb_table{
+          id
+          jsonb_col
+        }
+      }
+  response:
+    data:
+      jsonb_table:
+      - id: 1
+        jsonb_col:
+          age: 7
+          name: Hasura
+- description: User can query geometry values which satisfies filter in select permission (valid ordering
+    alternative)
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user1
+  query:
+    query: |
+      query {
+        jsonb_table{
+          id
+          jsonb_col
+        }
+      }
+  response:
+    data:
+      jsonb_table:
+      - id: 1
+        jsonb_col:
+          age: 7
+          name: Hasura

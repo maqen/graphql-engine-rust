@@ -1,0 +1,293 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestComputedFields
+  method: test_add_computed_fields_errors
+  fixtures:
+  - queries/v1/computed_fields/add_computed_field_errors.yaml
+steps:
+- description: Try adding a computed field for invalid table
+  url: /v1/query
+  status: 400
+  query:
+    type: add_computed_field
+    args:
+      table: random
+      name: full_name
+      definition:
+        function: full_name
+  response:
+    error: 'table "random" does not exist in source: default'
+    path: $.args.table
+    code: not-exists
+- description: Try adding computed field with existing column name
+  url: /v1/query
+  status: 400
+  query:
+    type: add_computed_field
+    args:
+      table: author
+      name: first_name
+      definition:
+        function: full_name
+  response:
+    error: 'Inconsistent object: field definition conflicts with postgres column'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: full_name
+            schema: public
+        name: first_name
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field first_name in table author in source default
+      reason: 'Inconsistent object: field definition conflicts with postgres column'
+      type: computed_field
+- description: Try adding computed field with invalid function
+  url: /v1/query
+  status: 400
+  query:
+    type: add_computed_field
+    args:
+      table: author
+      name: full_name
+      definition:
+        function: random_function
+  response:
+    error: 'Inconsistent object: in table "author": in computed field "full_name": no such function exists:
+      "random_function"'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: random_function
+            schema: public
+        name: full_name
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field full_name in table author in source default
+      reason: 'Inconsistent object: in table "author": in computed field "full_name": no such function
+        exists: "random_function"'
+      type: computed_field
+- description: Try adding computed field with invalid table argument name
+  url: /v1/query
+  status: 400
+  query:
+    type: add_computed_field
+    args:
+      table: author
+      name: full_name
+      definition:
+        function: full_name
+        table_argument: random
+  response:
+    error: 'Inconsistent object: in table "author": in computed field "full_name": the computed field
+      "full_name" cannot be added to table "author" because "random" is not an input argument of the function
+      "full_name"'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: full_name
+            schema: public
+          table_argument: random
+        name: full_name
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field full_name in table author in source default
+      reason: 'Inconsistent object: in table "author": in computed field "full_name": the computed field
+        "full_name" cannot be added to table "author" because "random" is not an input argument of the
+        function "full_name"'
+      type: computed_field
+- description: Try adding computed field with a volatile function
+  url: /v1/query
+  status: 400
+  query:
+    type: add_computed_field
+    args:
+      table: author
+      name: get_articles
+      definition:
+        function: fetch_articles_volatile
+        table_argument: random
+  response:
+    error: |
+      Inconsistent object: in table "author": in computed field "get_articles": the computed field "get_articles" cannot be added to table "author" for the following reasons:
+        • the function "fetch_articles_volatile" is of type VOLATILE; cannot be added as a computed field
+        • "random" is not an input argument of the function "fetch_articles_volatile"
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: fetch_articles_volatile
+            schema: public
+          table_argument: random
+        name: get_articles
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field get_articles in table author in source default
+      reason: |
+        Inconsistent object: in table "author": in computed field "get_articles": the computed field "get_articles" cannot be added to table "author" for the following reasons:
+          • the function "fetch_articles_volatile" is of type VOLATILE; cannot be added as a computed field
+          • "random" is not an input argument of the function "fetch_articles_volatile"
+      type: computed_field
+- description: Try adding a computed field with a function with no input arguments
+  url: /v1/query
+  status: 400
+  query:
+    type: add_computed_field
+    args:
+      table: author
+      name: hello_world
+      definition:
+        function: hello_world
+  response:
+    error: 'Inconsistent object: in table "author": in computed field "hello_world": the computed field
+      "hello_world" cannot be added to table "author" because the function "hello_world" has no input
+      arguments'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: hello_world
+            schema: public
+        name: hello_world
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field hello_world in table author in source default
+      reason: 'Inconsistent object: in table "author": in computed field "hello_world": the computed field
+        "hello_world" cannot be added to table "author" because the function "hello_world" has no input
+        arguments'
+      type: computed_field
+- description: Try adding a computed field with first argument as table argument
+  url: /v1/query
+  status: 400
+  query:
+    type: add_computed_field
+    args:
+      table: author
+      name: get_articles
+      definition:
+        function: fetch_articles
+  response:
+    error: |
+      Inconsistent object: in table "author": in computed field "get_articles": the computed field "get_articles" cannot be added to table "author" for the following reasons:
+        • first argument of the function "fetch_articles" is not COMPOSITE type
+        • first argument of the function "fetch_articles" of type "pg_catalog.text" is not the table to which the computed field is being added
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: fetch_articles
+            schema: public
+        name: get_articles
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field get_articles in table author in source default
+      reason: |
+        Inconsistent object: in table "author": in computed field "get_articles": the computed field "get_articles" cannot be added to table "author" for the following reasons:
+          • first argument of the function "fetch_articles" is not COMPOSITE type
+          • first argument of the function "fetch_articles" of type "pg_catalog.text" is not the table to which the computed field is being added
+      type: computed_field
+- description: Try adding a computed field with an invalid session argument name
+  url: /v1/query
+  status: 400
+  query:
+    type: add_computed_field
+    args:
+      table: author
+      name: full_name
+      definition:
+        function: full_name
+        session_argument: random
+  response:
+    error: 'Inconsistent object: in table "author": in computed field "full_name": the computed field
+      "full_name" cannot be added to table "author" because "random" is not an input argument of the function
+      "full_name"'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: full_name
+            schema: public
+          session_argument: random
+        name: full_name
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field full_name in table author in source default
+      reason: 'Inconsistent object: in table "author": in computed field "full_name": the computed field
+        "full_name" cannot be added to table "author" because "random" is not an input argument of the
+        function "full_name"'
+      type: computed_field
+- description: Try adding a computed field with a non-JSON session argument
+  url: /v1/query
+  status: 400
+  query:
+    type: add_computed_field
+    args:
+      table: author
+      name: fetch_articles
+      definition:
+        function: fetch_articles
+        table_argument: author_row
+        session_argument: search
+  response:
+    error: 'Inconsistent object: in table "author": in computed field "fetch_articles": the computed field
+      "fetch_articles" cannot be added to table "author" because "search" argument of the function "fetch_articles"
+      is not of type JSON'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: fetch_articles
+            schema: public
+          session_argument: search
+          table_argument: author_row
+        name: fetch_articles
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field fetch_articles in table author in source default
+      reason: 'Inconsistent object: in table "author": in computed field "fetch_articles": the computed
+        field "fetch_articles" cannot be added to table "author" because "search" argument of the function
+        "fetch_articles" is not of type JSON'
+      type: computed_field

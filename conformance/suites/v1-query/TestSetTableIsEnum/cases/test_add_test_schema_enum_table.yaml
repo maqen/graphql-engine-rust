@@ -1,0 +1,52 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestSetTableIsEnum
+  method: test_add_test_schema_enum_table
+  fixtures:
+  - queries/v1/set_table_is_enum/add_test_schema_enum_table.yaml
+steps:
+- description: Create new schema and table for enum
+  url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        CREATE SCHEMA IF NOT EXISTS test;
+        CREATE TABLE test.colors
+          ( value text PRIMARY KEY
+          , comment text );
+        INSERT INTO test.colors (value, comment) VALUES
+          ('red',    '#FF0000'),
+          ('green',  '#00FF00'),
+          ('blue',   '#0000FF'),
+          ('orange', '#FFFF00'),
+          ('yellow', '#00FFFF'),
+          ('purple', '#FF00FF');
+  response:
+    result_type: CommandOk
+    result: null
+- description: Track table as enum
+  url: /v1/query
+  status: 200
+  query:
+    type: track_table
+    args:
+      table:
+        schema: test
+        name: colors
+      is_enum: true
+  response:
+    message: success
+- description: Drop schema
+  url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        DROP SCHEMA test CASCADE;
+    cascade: true
+  response:
+    result_type: CommandOk
+    result: null

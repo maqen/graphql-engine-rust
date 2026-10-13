@@ -1,0 +1,341 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "article",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "author",
+              "using": {
+                "foreign_key_constraint_on": "author_id"
+              }
+            }
+          ],
+          "insert_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "check": {
+                  "author_id": "X-Hasura-User-Id"
+                }
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "anonymous",
+              "permission": {
+                "columns": [
+                  "id",
+                  "title",
+                  "content",
+                  "is_published"
+                ],
+                "filter": {
+                  "is_published": true
+                }
+              }
+            },
+            {
+              "role": "user",
+              "permission": {
+                "columns": [
+                  "id",
+                  "title",
+                  "content",
+                  "is_published"
+                ],
+                "filter": {
+                  "_or": [
+                    {
+                      "author_id": "X-HASURA-USER-ID"
+                    },
+                    {
+                      "is_published": true
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "auction",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "columns": [
+                  "id",
+                  "bid_price"
+                ],
+                "filter": {
+                  "bid_price": {
+                    "$cgt": "price"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "author",
+            "schema": "public"
+          },
+          "array_relationships": [
+            {
+              "name": "articles",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "author_id",
+                  "table": {
+                    "name": "article",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ],
+          "insert_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "check": {
+                  "id": "X-HASURA-USER-ID"
+                }
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "anonymous",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name"
+                ],
+                "filter": {
+                  "articles": {
+                    "is_published": {
+                      "_eq": true
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "role": "user",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name",
+                  "is_registered"
+                ],
+                "filter": {
+                  "_or": [
+                    {
+                      "id": "X-HASURA-USER-ID"
+                    },
+                    {
+                      "articles": {
+                        "is_published": {
+                          "_eq": true
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "geog_table",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "postgis_user1",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name",
+                  "geog_col"
+                ],
+                "filter": {
+                  "geog_col": {
+                    "$st_intersects": {
+                      "coordinates": [
+                        0.0,
+                        0.5
+                      ],
+                      "crs": {
+                        "properties": {
+                          "name": "urn:ogc:def:crs:EPSG::4326"
+                        },
+                        "type": "name"
+                      },
+                      "type": "Point"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "role": "postgis_user2",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name",
+                  "geog_col"
+                ],
+                "filter": {
+                  "geog_col": {
+                    "$st_d_within": {
+                      "distance": "X-Hasura-Geog-Dist",
+                      "from": "X-Hasura-Geog-From",
+                      "use_spheroid": "X-Hasura-Geog-Sph"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "geom_table",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "user1",
+              "permission": {
+                "columns": [
+                  "id",
+                  "type",
+                  "geom_col"
+                ],
+                "filter": {
+                  "geom_col": {
+                    "$st_d_within": {
+                      "distance": 1,
+                      "from": {
+                        "coordinates": [
+                          [
+                            [
+                              2,
+                              0
+                            ],
+                            [
+                              2,
+                              1
+                            ],
+                            [
+                              3,
+                              1
+                            ],
+                            [
+                              3,
+                              0
+                            ],
+                            [
+                              2,
+                              0
+                            ]
+                          ]
+                        ],
+                        "crs": {
+                          "properties": {
+                            "name": "urn:ogc:def:crs:EPSG::4326"
+                          },
+                          "type": "name"
+                        },
+                        "type": "Polygon"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "role": "user2",
+              "permission": {
+                "columns": [
+                  "id",
+                  "type",
+                  "geom_col"
+                ],
+                "filter": {
+                  "geom_col": {
+                    "$st_d_within": {
+                      "distance": "X-Hasura-Geom-Dist",
+                      "from": "X-Hasura-Geom-Val"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "jsonb_table",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "user1",
+              "permission": {
+                "columns": [
+                  "id",
+                  "jsonb_col"
+                ],
+                "filter": {
+                  "jsonb_col": {
+                    "$has_key": "age"
+                  }
+                }
+              }
+            },
+            {
+              "role": "user2",
+              "permission": {
+                "columns": [
+                  "id",
+                  "jsonb_col"
+                ],
+                "filter": {
+                  "jsonb_col": {
+                    "$has_key": "X-Hasura-Has-Key"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

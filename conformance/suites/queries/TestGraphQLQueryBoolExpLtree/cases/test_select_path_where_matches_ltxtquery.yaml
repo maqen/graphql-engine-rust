@@ -1,0 +1,44 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpLtree
+  method: test_select_path_where_matches_ltxtquery
+  fixtures:
+  - queries/graphql_query/boolexp/ltree/select_path_where_matches_ltxtquery.yaml
+steps:
+- description: Select `ltree` paths matching an `ltxtquery` full text query
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        tree (
+          where: {path: {_matches_fulltext: "Astro*% & !pictures@"}}
+        ) {
+          path
+        }
+      }
+  response:
+    data:
+      tree:
+      - path: Tree.Science.Astronomy
+      - path: Tree.Science.Astronomy.Astrophysics
+      - path: Tree.Science.Astronomy.Cosmology
+      - path: Tree.Hobbies.Amateurs_Astronomy
+- description: Select `ltree` paths matching an invalid `ltxtquery` full text query
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        tree (
+          where: {path: {_matches_fulltext: "Astro*% & !pictures@\"}}
+        ) {
+          path
+        }
+      }
+  response:
+    errors:
+    - message: not a valid graphql query
+      extensions:
+        path: $.query
+        code: validation-failed

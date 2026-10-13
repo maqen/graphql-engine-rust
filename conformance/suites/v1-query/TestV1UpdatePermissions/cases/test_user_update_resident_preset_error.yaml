@@ -1,0 +1,24 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1UpdatePermissions
+  method: test_user_update_resident_preset_error
+  fixtures:
+  - queries/v1/update/permissions/user_update_resident_preset_error.yaml
+steps:
+- description: Update resident (error)
+  url: /v1/query
+  status: 400
+  headers:
+    X-Hasura-Role: user1
+  query:
+    type: update
+    args:
+      table: resident
+      $set:
+        city: hobart
+      where:
+        name: clarke
+  response:
+    error: column "city" is not updatable for role "user1"; its value is predefined in permission
+    path: $.args["$set"]
+    code: not-supported

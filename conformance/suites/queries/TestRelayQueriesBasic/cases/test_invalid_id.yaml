@@ -1,0 +1,28 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestRelayQueriesBasic
+  method: test_invalid_id
+  fixtures:
+  - queries/graphql_query/relay/basic/node_id_errors/invalid_id.yaml
+steps:
+- description: Query node interface with an invalid node id
+  url: /v1/relay
+  status: 200
+  query:
+    query: |
+      query {
+        node(id: "random"){
+          ... on user{
+            first_name
+            last_name
+            age
+            address
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'invalid node id: Unexpected "\173\169\221\162", expecting JSON value'
+      extensions:
+        path: $.selectionSet.node.args.id
+        code: validation-failed

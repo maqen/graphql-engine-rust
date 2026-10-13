@@ -1,0 +1,38 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryLimits
+  method: test_limit_2
+  fixtures:
+  - queries/graphql_query/limits/select_query_article_limit_2.yaml
+steps:
+- description: Nested select on article with limit
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        article(limit: 2, order_by: {id: desc}) {
+          id
+          title
+          content
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    data:
+      article:
+      - id: 3
+        title: Article 3
+        content: Sample article content 3
+        author:
+          id: 2
+          name: Author 2
+      - id: 2
+        title: Article 2
+        content: Sample article content 2
+        author:
+          id: 1
+          name: Author 1

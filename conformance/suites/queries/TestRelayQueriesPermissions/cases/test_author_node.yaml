@@ -1,0 +1,26 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestRelayQueriesPermissions
+  method: test_author_node
+  fixtures:
+  - queries/graphql_query/relay/permissions/author_node.yaml
+steps:
+- description: Query author node with id belongs to same user id
+  url: /v1/relay
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '2'
+  query:
+    query: |
+      query {
+        node(id: "WzEsICJwdWJsaWMiLCAiYXV0aG9yIiwgMl0K"){
+          ... on author{
+            name
+          }
+        }
+      }
+  response:
+    data:
+      node:
+        name: Author 2

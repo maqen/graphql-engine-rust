@@ -1,0 +1,23 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertPermission
+  method: test_resident_5_modifies_resident_6_upsert
+  fixtures:
+  - queries/graphql_mutation/insert/permissions/resident_5_modifies_resident_6_upsert.yaml
+steps:
+- description: Resident 5 trying to update Resident 6 age
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: resident
+    X-Hasura-Resident-Id: '5'
+  query:
+    query: "mutation {\n  insert_resident(\n    objects: [\n      {\n        id: 5\n        name: \"Resident\
+      \ 6\",\n        age: 23\n      }\n    ]\n    on_conflict: {\n    \tconstraint: resident_name_key\n\
+      \      update_columns: [name, age]\n    }\n  ){\n    affected_rows\n    returning{\n      id\n \
+      \     name\n      age\n      is_user\n    }\n  }\n}\n"
+  response:
+    data:
+      insert_resident:
+        affected_rows: 0
+        returning: []

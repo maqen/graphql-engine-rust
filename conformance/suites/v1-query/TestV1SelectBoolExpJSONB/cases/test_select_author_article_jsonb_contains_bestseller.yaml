@@ -1,0 +1,41 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectBoolExpJSONB
+  method: test_select_author_article_jsonb_contains_bestseller
+  fixtures:
+  - queries/v1/select/boolexp/jsonb/select_author_article_jsonb_contains_bestseller.yaml
+steps:
+- description: Select author and their articles
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: author
+      where:
+        articles:
+          tags:
+            $contains: bestseller
+      columns:
+      - id
+      - name
+      - name: articles
+        columns:
+        - id
+        - title
+        - content
+        - tags
+  response:
+  - id: 1
+    name: Author 1
+    articles:
+    - id: 1
+      title: Article 1
+      content: Sample article content 1
+      tags: null
+    - id: 2
+      title: Article 2
+      content: Sample article content 2
+      tags:
+      - bestseller
+      - latest

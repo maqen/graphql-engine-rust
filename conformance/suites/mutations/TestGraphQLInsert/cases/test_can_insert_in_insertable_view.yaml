@@ -1,0 +1,33 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphQLInsert
+  method: test_can_insert_in_insertable_view
+  fixtures:
+  - queries/graphql_mutation/insert/basic/can_insert_in_insertable_view.yaml
+steps:
+- description: Inserts in insertable view
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation insert_person_mut_view{
+        insert_person_mut_view(
+          objects: [
+            {
+              details: {name: {first: json last: murphy}}
+            }
+          ]
+        ) {
+          returning {
+            details
+          }
+        }
+      }
+  response:
+    data:
+      insert_person_mut_view:
+        returning:
+        - details:
+            name:
+              last: murphy
+              first: json

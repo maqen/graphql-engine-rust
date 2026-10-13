@@ -1,0 +1,30 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1UpdateBasic
+  method: test_person_id_inc
+  fixtures:
+  - queries/v1/update/basic/person_inc.yaml
+steps:
+- description: Updated person data using _inc operator
+  url: /v1/query
+  status: 200
+  query:
+    type: update
+    args:
+      table: person
+      $inc:
+        id: 2
+      where:
+        id: 1
+      returning:
+      - id
+      - details
+  response:
+    returning:
+    - id: 3
+      details:
+        name:
+          last: bar
+          first: foo
+        address: foobar
+    affected_rows: 1

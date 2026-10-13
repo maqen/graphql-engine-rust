@@ -1,0 +1,208 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "automatic_comment_in_db",
+            "schema": "public"
+          },
+          "computed_fields": [
+            {
+              "name": "upper_name",
+              "definition": {
+                "function": {
+                  "name": "automatic_comment_in_db_upper_name",
+                  "schema": "public"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "automatic_no_comment_in_db",
+            "schema": "public"
+          },
+          "configuration": {
+            "column_config": {},
+            "custom_column_names": {},
+            "custom_root_fields": {
+              "delete": "DeleteAutomaticNoCommentInDb",
+              "delete_by_pk": "DeleteByPkAutomaticNoCommentInDb",
+              "insert": "InsertAutomaticNoCommentInDb",
+              "insert_one": "InsertOneAutomaticNoCommentInDb",
+              "select": "AutomaticNoCommentInDb",
+              "select_aggregate": "AutomaticNoCommentInDbAgg",
+              "select_by_pk": "AutomaticNoCommentInDbByPk",
+              "update": "UpdateAutomaticNoCommentInDb",
+              "update_by_pk": "UpdateByPkAutomaticNoCommentInDb",
+              "update_many": "UpdateManyAutomaticNoCommentInDb"
+            }
+          },
+          "computed_fields": [
+            {
+              "name": "upper_name",
+              "definition": {
+                "function": {
+                  "name": "automatic_no_comment_in_db_upper_name",
+                  "schema": "public"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "explicit_comment_in_metadata",
+            "schema": "public"
+          },
+          "configuration": {
+            "column_config": {
+              "name": {
+                "comment": "Explicit comment on the name column"
+              }
+            },
+            "comment": "Such an explicit comment, wow",
+            "custom_column_names": {},
+            "custom_root_fields": {
+              "delete": {
+                "comment": "Explicit comment on delete",
+                "name": "DeleteExplicitCommentInMetadata"
+              },
+              "delete_by_pk": {
+                "comment": "Explicit comment on delete_by_pk",
+                "name": "DeleteByPkExplicitCommentInMetadata"
+              },
+              "insert": {
+                "comment": "Explicit comment on insert",
+                "name": "InsertExplicitCommentInMetadata"
+              },
+              "insert_one": {
+                "comment": "Explicit comment on insert_one",
+                "name": "InsertOneExplicitCommentInMetadata"
+              },
+              "select": {
+                "comment": "Explicit comment on select",
+                "name": "ExplicitCommentInMetadata"
+              },
+              "select_aggregate": {
+                "comment": "Explicit comment on select_aggregate",
+                "name": "ExplicitCommentInMetadataAgg"
+              },
+              "select_by_pk": {
+                "comment": "Explicit comment on select_by_pk",
+                "name": "ExplicitCommentInMetadataByPk"
+              },
+              "update": {
+                "comment": "Explicit comment on update",
+                "name": "UpdateExplicitCommentInMetadata"
+              },
+              "update_by_pk": {
+                "comment": "Explicit comment on update_by_pk",
+                "name": "UpdateByPkExplicitCommentInMetadata"
+              },
+              "update_many": {
+                "comment": "Explicit comment on update_many",
+                "name": "UpdateManyExplicitCommentInMetadata"
+              }
+            }
+          },
+          "computed_fields": [
+            {
+              "name": "upper_name",
+              "definition": {
+                "function": {
+                  "name": "explicit_comment_in_metadata_upper_name",
+                  "schema": "public"
+                }
+              },
+              "comment": "Such an explicit function comment, wow"
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "explicit_no_comment_in_metadata",
+            "schema": "public"
+          },
+          "configuration": {
+            "column_config": {
+              "name": {
+                "comment": ""
+              }
+            },
+            "comment": "",
+            "custom_column_names": {},
+            "custom_root_fields": {
+              "delete": {
+                "comment": "",
+                "name": null
+              },
+              "delete_by_pk": {
+                "comment": "",
+                "name": null
+              },
+              "insert": {
+                "comment": "",
+                "name": null
+              },
+              "insert_one": {
+                "comment": "",
+                "name": null
+              },
+              "select": {
+                "comment": "",
+                "name": null
+              },
+              "select_aggregate": {
+                "comment": "",
+                "name": null
+              },
+              "select_by_pk": {
+                "comment": "",
+                "name": null
+              },
+              "update": {
+                "comment": "",
+                "name": null
+              },
+              "update_by_pk": {
+                "comment": "",
+                "name": null
+              },
+              "update_many": {
+                "comment": "",
+                "name": null
+              }
+            }
+          },
+          "computed_fields": [
+            {
+              "name": "upper_name",
+              "definition": {
+                "function": {
+                  "name": "explicit_no_comment_in_metadata_upper_name",
+                  "schema": "public"
+                }
+              },
+              "comment": ""
+            }
+          ]
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

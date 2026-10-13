@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_graphql_queries.py::TestGraphQLQueryAgg
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryAgg
+  dir: queries/graphql_query/aggregations
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none

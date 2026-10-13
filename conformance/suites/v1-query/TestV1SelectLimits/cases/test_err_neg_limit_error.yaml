@@ -1,0 +1,28 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectLimits
+  method: test_err_neg_limit_error
+  fixtures:
+  - queries/v1/select/limits/select_query_article_neg_limit_error.yaml
+steps:
+- description: Nested select on article with limit expecting error
+  url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      - title
+      - content
+      - name: author
+        columns:
+        - id
+        - name
+      order_by: -id
+      limit: -1
+  response:
+    error: unexpected negative value
+    path: $.args.limit
+    code: not-supported

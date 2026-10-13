@@ -1,0 +1,38 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "article",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "author",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "misgivings",
+            "schema": "public"
+          }
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

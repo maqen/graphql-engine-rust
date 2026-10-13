@@ -1,0 +1,19 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestRunSQL
+  method: test_sql_alter_test_bool_col
+  fixtures:
+  - queries/v1/run_sql/sql_alter_test_bool_col.yaml
+steps:
+- description: Alter bool_col column type in test table whose permissions are defined with static value
+  url: /v1/query
+  status: 400
+  query:
+    type: run_sql
+    args:
+      sql: alter table test alter column bool_col set data type text;
+  response:
+    error: 'cannot change type of column "bool_col" in table "test" because of the following dependencies:
+      permission test.user.insert in source "default", permission test.user.select in source "default"'
+    path: $.args
+    code: dependency-error

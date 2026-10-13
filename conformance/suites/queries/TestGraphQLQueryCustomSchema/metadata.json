@@ -1,0 +1,88 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "article",
+            "schema": "public"
+          },
+          "configuration": {
+            "column_config": {
+              "author_id": {
+                "custom_name": "AuthorId"
+              },
+              "id": {
+                "custom_name": "ArticleId"
+              }
+            },
+            "custom_column_names": {
+              "author_id": "AuthorId",
+              "id": "ArticleId"
+            },
+            "custom_root_fields": {
+              "select": "Articles",
+              "select_aggregate": "ArticleAgg",
+              "select_by_pk": "Article"
+            }
+          },
+          "object_relationships": [
+            {
+              "name": "author",
+              "using": {
+                "foreign_key_constraint_on": "author_id"
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "author",
+            "schema": "public"
+          },
+          "configuration": {
+            "column_config": {
+              "id": {
+                "custom_name": "AuthorId"
+              }
+            },
+            "custom_column_names": {
+              "id": "AuthorId"
+            },
+            "custom_root_fields": {
+              "select": "Authors",
+              "select_aggregate": "AuthorAgg",
+              "select_by_pk": "Author"
+            }
+          },
+          "array_relationships": [
+            {
+              "name": "articles",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "author_id",
+                  "table": {
+                    "name": "article",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

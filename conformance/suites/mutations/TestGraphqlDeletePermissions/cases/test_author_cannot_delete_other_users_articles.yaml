@@ -1,0 +1,21 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlDeletePermissions
+  method: test_author_cannot_delete_other_users_articles
+  fixtures:
+  - queries/graphql_mutation/delete/permissions/author_cannot_delete_other_users_articles.yaml
+steps:
+- description: A user cannot delete other users articles
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '5'
+  query:
+    query: "mutation delete_article {\n  delete_article (\n    where: {id: {_eq: 1}}\n  ) \n  { affected_rows\n\
+      \    returning\n    { id\n      title\n      content\n      author_id\n    }\n  }\n}\n"
+  response:
+    data:
+      delete_article:
+        affected_rows: 0
+        returning: []

@@ -1,0 +1,47 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlNestedInserts
+  method: test_author_with_articles_empty
+  fixtures:
+  - queries/graphql_mutation/insert/nested/author_with_articles_empty.yaml
+steps:
+- description: Insert author with empty articles
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        insert_author(
+          objects: [
+            {
+              name: "Author 4"
+              articles: {
+                data: []
+              }
+            }
+          ]
+        ){
+          affected_rows
+          returning{
+            name
+            articles{
+              id
+              title
+              content
+            }
+            fetch_articles(args: {search: "Article"}){
+              id
+              title
+              content
+            }
+          }
+        }
+      }
+  response:
+    data:
+      insert_author:
+        affected_rows: 1
+        returning:
+        - name: Author 4
+          articles: []
+          fetch_articles: []

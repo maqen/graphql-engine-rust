@@ -1,0 +1,37 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpBasicPostgresMSSQL
+  method: test_author_article_where_in
+  fixtures:
+  - queries/graphql_query/boolexp/basic/select_author_article_where_in.yaml
+steps:
+- description: Select author and their articles
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |-
+      query {
+        author (
+        where: {name: {_in: [ "Author 2", "Author 3" ] }}
+        ) {
+          name
+          articles{
+            id
+            title
+            content
+          }
+        }
+      }
+  response:
+    data:
+      author:
+      - name: Author 2
+        articles:
+        - id: 3
+          title: Article 3
+          content: Sample article content 3
+      - name: Author 3
+        articles:
+        - id: 4
+          title: Article 4
+          content: Sample article content 4

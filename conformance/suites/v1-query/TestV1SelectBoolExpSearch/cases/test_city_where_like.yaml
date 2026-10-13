@@ -1,0 +1,25 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectBoolExpSearch
+  method: test_city_where_like
+  fixtures:
+  - queries/v1/select/boolexp/search/select_city_where_like.yaml
+steps:
+- description: Select cities ending with ham
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: city
+      where:
+        name:
+          $like: '%ham'
+      columns:
+      - name
+      - country
+  response:
+  - name: Durham
+    country: USA
+  - name: Framlingham
+    country: UK

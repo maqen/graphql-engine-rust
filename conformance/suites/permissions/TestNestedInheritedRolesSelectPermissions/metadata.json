@@ -1,0 +1,85 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "dummy_table",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "writer_role",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name"
+                ],
+                "filter": {}
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "users",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "public",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name"
+                ],
+                "filter": {}
+              }
+            },
+            {
+              "role": "reader_role",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name",
+                  "restricted_field"
+                ],
+                "filter": {
+                  "id": "X-Hasura-User-Id"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ],
+  "inherited_roles": [
+    {
+      "role_name": "base_role",
+      "role_set": [
+        "public",
+        "reader_role"
+      ]
+    },
+    {
+      "role_name": "nested_role",
+      "role_set": [
+        "base_role",
+        "writer_role"
+      ]
+    }
+  ]
+}

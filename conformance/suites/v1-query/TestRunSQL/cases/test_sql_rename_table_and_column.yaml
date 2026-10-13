@@ -1,0 +1,63 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestRunSQL
+  method: test_sql_rename_table_and_column
+  fixtures:
+  - queries/v1/run_sql/sql_rename_table_and_column.yaml
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        alter table article rename to articles;
+        alter table articles rename column id to article_id;
+  response:
+    result_type: CommandOk
+    result: null
+- url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: articles
+      columns:
+      - article_id
+      - title
+      - content
+  response:
+  - article_id: 1
+    title: article 1 by author 1
+    content: content for article 1
+  - article_id: 2
+    title: article 2 by author 1
+    content: content for article 2
+  - article_id: 3
+    title: article 1 by author 2
+    content: content for article 3
+- url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        alter table articles rename to article;
+        alter table article rename column article_id to id;
+  response:
+    result_type: CommandOk
+    result: null
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: articles
+      columns:
+      - id
+      - title
+      - content
+  response:
+    error: table "articles" does not exist
+    path: $.args.table
+    code: not-exists

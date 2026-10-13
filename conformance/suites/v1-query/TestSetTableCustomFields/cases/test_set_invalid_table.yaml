@@ -1,0 +1,25 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestSetTableCustomFields
+  method: test_set_invalid_table
+  fixtures:
+  - queries/v1/set_table_custom_fields/set_invalid_table.yaml
+steps:
+- description: Set custom fields of table which does not exist
+  url: /v1/query
+  status: 400
+  query:
+    type: set_table_custom_fields
+    version: 2
+    args:
+      table: author1
+      custom_root_fields:
+        select: Authors
+        select_by_pk: Author
+      custom_column_names:
+        id: AuthorId
+        name: AuthorName
+  response:
+    error: 'table "author1" does not exist in source: default'
+    path: $.args
+    code: not-exists

@@ -1,0 +1,31 @@
+upstream:
+  file: test_events.py
+  class: TestEventCreateAndDelete
+  method: test_create_operation_spec_not_provider_err
+  fixtures:
+  - queries/event_triggers/create-delete/create_trigger_operation_specs_not_provided_err.yaml
+steps:
+- description: Track table test_t1
+  url: /v1/query
+  status: 200
+  query:
+    type: track_table
+    args:
+      schema: hge_tests
+      name: test_t1
+  response:
+    message: success
+- description: 'Create event trigger with no operation specs provider: Error'
+  url: /v1/query
+  status: 400
+  query:
+    type: create_event_trigger
+    args:
+      name: t1_1
+      table:
+        schema: hge_tests
+        name: test_t1
+  response:
+    error: atleast one amongst insert/update/delete/enable_manual spec must be provided
+    path: $.args
+    code: parse-failed

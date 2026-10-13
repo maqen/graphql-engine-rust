@@ -1,0 +1,43 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlMutationCustomGraphQLTableName
+  method: test_insert_author
+  fixtures:
+  - queries/graphql_mutation/custom_schema/custom_table_name/insert_author_details.yaml
+steps:
+- description: Insert into "author details" table
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        insert_author_details(
+          objects: [{name: "Author 3", phone: "1234567890"}]
+        ){
+          affected_rows
+          returning{
+            id
+            name
+            phone
+          }
+        }
+
+        insert_author_details_one(
+          object: {name: "Author 3 updated", phone:"1234567890"},
+          on_conflict: { constraint: author_details_phone_key, update_columns: [name]}
+        ){
+          id
+          name
+        }
+      }
+  response:
+    data:
+      insert_author_details:
+        affected_rows: 1
+        returning:
+        - id: 3
+          name: Author 3
+          phone: '1234567890'
+      insert_author_details_one:
+        id: 3
+        name: Author 3 updated
