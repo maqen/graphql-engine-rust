@@ -31,10 +31,12 @@ hge-actions = { path = "crates/hge-actions" }
 hge-subscriptions = { path = "crates/hge-subscriptions" }
 hge-transforms = { path = "crates/hge-transforms" }
 hge-rest = { path = "crates/hge-rest" }
+hge-remote-schema = { path = "crates/hge-remote-schema" }
 
 # external crates
 anyhow = "1"
 arc-swap = "1"
+async-graphql = { version = "7", default-features = false }
 async-graphql-parser = "7"
 async-graphql-value = "7"
 async-trait = "0.1"

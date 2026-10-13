@@ -20,6 +20,8 @@ hge-actions.workspace = true
 hge-subscriptions.workspace = true
 hge-rest.workspace = true
 async-graphql-parser.workspace = true
+hge-remote-schema.workspace = true
+reqwest = { workspace = true, features = ["rustls-tls", "http2"] }
 anyhow.workspace = true
 arc-swap.workspace = true
 axum.workspace = true
@@ -46,6 +48,7 @@ workspace = true
 
 [dev-dependencies]
 hge-testdb.workspace = true
+async-graphql.workspace = true
 serde_yaml.workspace = true
 tokio-postgres.workspace = true
 tower = { workspace = true, features = ["util"] }

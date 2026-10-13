@@ -72,7 +72,7 @@ pub struct ServerConfig {
     /// `HASURA_GRAPHQL_ASYNC_ACTIONS_FETCH_BATCH_SIZE`
     pub async_actions_fetch_batch_size: u32,
     /// Values that take precedence over the process environment for `{{VAR}}` and
-    /// `value_from_env` lookups in action metadata (tests, embedding).
+    /// `value_from_env` lookups in action and remote schema metadata (tests, embedding).
     pub env_overrides: HashMap<String, String>,
     /// `HASURA_GRAPHQL_ENABLE_ALLOWLIST`
     pub enable_allowlist: bool,
@@ -84,6 +84,8 @@ pub struct ServerConfig {
     /// `HASURA_GRAPHQL_HTTP_LOG_QUERY_ONLY_ON_ERROR`: log request bodies in `http-log` only
     /// for failed requests.
     pub http_log_query_only_on_error: bool,
+    /// `HASURA_GRAPHQL_REMOTE_SCHEMA_PRIORITIZE_DATA`
+    pub remote_schema_prioritize_data: bool,
 }
 
 impl Default for ServerConfig {
@@ -129,6 +131,7 @@ impl Default for ServerConfig {
             websocket: WebSocketConfig::default(),
             enable_metadata_query_logging: false,
             http_log_query_only_on_error: false,
+            remote_schema_prioritize_data: false,
         }
     }
 }

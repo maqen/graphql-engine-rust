@@ -11,6 +11,7 @@ pub mod backend;
 pub mod count;
 pub mod mutation;
 pub mod permissions;
+pub mod remote;
 pub mod select;
 pub mod stream;
 pub mod value;
@@ -23,6 +24,7 @@ pub use backend::{BoxFuture, MultiplexedQuery, MultiplexedRow, SourceExecutor};
 pub use count::Count;
 pub use mutation::*;
 pub use permissions::*;
+pub use remote::*;
 pub use select::*;
 pub use stream::*;
 pub use value::*;
@@ -56,6 +58,8 @@ pub enum RootField {
     Mutation(Box<MutationRootField>),
     /// An action (HTTP handler call).
     Action(Box<ActionRootField>),
+    /// A field forwarded to a remote schema.
+    Remote(Box<RemoteRootField>),
 }
 
 /// A root field executed by a source's backend.

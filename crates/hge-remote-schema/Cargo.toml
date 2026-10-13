@@ -1,0 +1,24 @@
+[package]
+name = "hge-remote-schema"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Remote schemas: introspection and request forwarding (Hasura V2 compatible)"
+
+[dependencies]
+hge-core.workspace = true
+hge-ir.workspace = true
+hge-schema.workspace = true
+http.workspace = true
+reqwest = { workspace = true, features = ["rustls-tls", "http2"] }
+serde_json.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

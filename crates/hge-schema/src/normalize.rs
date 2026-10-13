@@ -31,8 +31,14 @@ pub struct SelectedField<'s> {
     pub kind: Selected<'s>,
     /// Coerced arguments that were provided (or have defaults), in schema order.
     pub args: IndexMap<String, Json>,
-    /// Sub-selection (empty for leaf fields).
+    /// Sub-selection (empty for leaf fields and fields of an abstract type).
     pub selection: Vec<SelectedField<'s>>,
+    /// For a field of an interface or union type: the sub-selection for each possible
+    /// object type, in schema order.
+    pub by_type: Vec<(&'s str, Vec<SelectedField<'s>>)>,
+    /// The arguments as written in the query (variables unresolved). Only kept for remote
+    /// schema fields, which forward them.
+    pub raw_args: Vec<(String, GqlValue)>,
     /// V2-style JSON path of this field (`$.selectionSet.author`).
     pub path: String,
 }
@@ -61,6 +67,10 @@ pub struct NormalizedOperation<'s> {
     pub fields: Vec<SelectedField<'s>>,
     /// The operation carries `@_multiple_top_level_fields` (subscriptions only).
     pub multiple_top_level_fields: bool,
+    /// The operation's variables, coerced.
+    pub variables: Variables,
+    /// The request's `operationName`.
+    pub operation_name: Option<String>,
 }
 
 /// Select the operation, coerce variables, and normalise its selection set.
@@ -98,6 +108,8 @@ pub fn normalize<'s>(
         root_type,
         fields,
         multiple_top_level_fields,
+        variables: cx.variables,
+        operation_name: operation_name.map(str::to_owned),
     })
 }
 
@@ -151,7 +163,7 @@ fn select_operation<'d>(
 /// Variable values as given (`None`: not provided and no default), and whether the variable
 /// has a default value. Like V2, values are coerced where they are used, so errors carry the
 /// path of the use.
-type Variables = HashMap<String, (TypeRef, Option<Json>, bool)>;
+pub type Variables = HashMap<String, (TypeRef, Option<Json>, bool)>;
 
 fn coerce_variables(
     schema: &Schema,
@@ -231,6 +243,21 @@ impl<'s, 'd> Context<'s, 'd> {
         depth: usize,
         visiting: &mut HashSet<String>,
     ) -> Result<Vec<SelectedField<'s>>, Error> {
+        self.collect_and_normalize_in(type_name, type_name, selection_sets, path, depth, visiting)
+    }
+
+    /// Like [`Self::collect_and_normalize`] for the object type `type_name`, with selection
+    /// sets written on type `scope` (an interface or union `type_name` belongs to, or
+    /// `type_name` itself).
+    fn collect_and_normalize_in(
+        &self,
+        scope: &'s str,
+        type_name: &'s str,
+        selection_sets: &[&'d SelectionSet],
+        path: &str,
+        depth: usize,
+        visiting: &mut HashSet<String>,
+    ) -> Result<Vec<SelectedField<'s>>, Error> {
         if depth > MAX_DEPTH {
             return Err(Error::validation(format!(
                 "the query exceeds the maximum depth of {MAX_DEPTH}"
@@ -240,7 +267,7 @@ impl<'s, 'd> Context<'s, 'd> {
         let mut grouped: IndexMap<String, Vec<&'d async_graphql_parser::types::Field>> =
             IndexMap::new();
         for set in selection_sets {
-            self.collect(type_name, set, &mut grouped, visiting, path, depth)?;
+            self.collect(scope, type_name, set, &mut grouped, visiting, path, depth)?;
         }
         let object = self.schema.object(type_name);
         let mut out = Vec::with_capacity(grouped.len());
@@ -262,6 +289,8 @@ impl<'s, 'd> Context<'s, 'd> {
                     kind: Selected::Typename(type_name),
                     args: IndexMap::new(),
                     selection: vec![],
+                    by_type: vec![],
+                    raw_args: vec![],
                     path: field_path,
                 });
                 continue;
@@ -283,6 +312,7 @@ impl<'s, 'd> Context<'s, 'd> {
                 .schema
                 .get(base)
                 .ok_or_else(|| Error::unexpected(format!("type '{base}' missing from schema")))?;
+            let mut by_type = vec![];
             let selection = if base_def.is_leaf() {
                 if fields
                     .iter()
@@ -304,7 +334,38 @@ impl<'s, 'd> Context<'s, 'd> {
                     );
                 }
                 let base_name: &'s str = base_def.name();
-                self.collect_and_normalize(base_name, &sets, &field_path, depth + 1, visiting)?
+                if base_def.is_abstract() {
+                    // The selection is collected once per possible type; charge the budget
+                    // for the most expensive pass only.
+                    let start = self.budget.get();
+                    let mut left = start;
+                    for concrete in self.schema.possible_types(base_name) {
+                        let concrete: &'s str = concrete;
+                        self.budget.set(start);
+                        let fields = self.collect_and_normalize_in(
+                            base_name,
+                            concrete,
+                            &sets,
+                            &field_path,
+                            depth + 1,
+                            visiting,
+                        )?;
+                        by_type.push((concrete, fields));
+                        left = left.min(self.budget.get());
+                    }
+                    self.budget.set(left);
+                    vec![]
+                } else {
+                    self.collect_and_normalize(base_name, &sets, &field_path, depth + 1, visiting)?
+                }
+            };
+            let raw_args = match def.kind {
+                FieldKind::Remote(_) => first
+                    .arguments
+                    .iter()
+                    .map(|(n, v)| (n.node.to_string(), v.node.clone()))
+                    .collect(),
+                _ => vec![],
             };
             out.push(SelectedField {
                 alias: key,
@@ -312,14 +373,20 @@ impl<'s, 'd> Context<'s, 'd> {
                 kind: Selected::Field(def),
                 args,
                 selection,
+                by_type,
+                raw_args,
                 path: field_path,
             });
         }
         Ok(out)
     }
 
+    /// Collect the fields of `set`, written on type `scope`, that apply to the object type
+    /// `type_name`.
+    #[allow(clippy::too_many_arguments)]
     fn collect(
         &self,
+        scope: &str,
         type_name: &str,
         set: &'d SelectionSet,
         grouped: &mut IndexMap<String, Vec<&'d async_graphql_parser::types::Field>>,
@@ -347,20 +414,40 @@ impl<'s, 'd> Context<'s, 'd> {
             }
             match &sel.node {
                 Selection::Field(f) => {
+                    let name = f.node.name.node.as_str();
+                    // On an interface or union, a field must exist on the abstract type itself.
+                    if scope != type_name
+                        && name != "__typename"
+                        && self
+                            .schema
+                            .fields_of(scope)
+                            .is_none_or(|fields| !fields.contains_key(name))
+                    {
+                        return Err(Error::validation(format!(
+                            "field '{name}' not found in type: '{scope}'"
+                        ))
+                        .with_path(format!(
+                            "{path}.selectionSet.{}",
+                            f.node.response_key().node
+                        )));
+                    }
                     grouped
                         .entry(f.node.response_key().node.to_string())
                         .or_default()
                         .push(&f.node);
                 }
                 Selection::InlineFragment(frag) => {
+                    let mut inner_scope = scope;
                     if let Some(cond) = &frag.node.type_condition {
                         let on = cond.node.on.node.as_str();
-                        self.check_fragment_type(on, type_name, path)?;
-                        if on != type_name {
+                        self.check_fragment_type(on, scope, path)?;
+                        if !self.applies(on, type_name) {
                             continue;
                         }
+                        inner_scope = on;
                     }
                     self.collect(
+                        inner_scope,
                         type_name,
                         &frag.node.selection_set.node,
                         grouped,
@@ -376,8 +463,8 @@ impl<'s, 'd> Context<'s, 'd> {
                             .with_path(path.to_owned())
                     })?;
                     let on = frag.node.type_condition.node.on.node.as_str();
-                    self.check_fragment_type(on, type_name, path)?;
-                    if on != type_name {
+                    self.check_fragment_type(on, scope, path)?;
+                    if !self.applies(on, type_name) {
                         continue;
                     }
                     if !visiting.insert(name.to_owned()) {
@@ -388,7 +475,7 @@ impl<'s, 'd> Context<'s, 'd> {
                     }
                     let frag_set: &'d SelectionSet = &frag.node.selection_set.node;
                     let result =
-                        self.collect(type_name, frag_set, grouped, visiting, path, depth + 1);
+                        self.collect(on, type_name, frag_set, grouped, visiting, path, depth + 1);
                     visiting.remove(name);
                     result?;
                 }
@@ -397,13 +484,35 @@ impl<'s, 'd> Context<'s, 'd> {
         Ok(())
     }
 
-    fn check_fragment_type(&self, on: &str, type_name: &str, path: &str) -> Result<(), Error> {
+    /// Whether a fragment on type `on` applies to an object of type `type_name`.
+    fn applies(&self, on: &str, type_name: &str) -> bool {
+        on == type_name
+            || self
+                .schema
+                .possible_types(on)
+                .iter()
+                .any(|t| t == type_name)
+    }
+
+    fn check_fragment_type(&self, on: &str, scope: &str, path: &str) -> Result<(), Error> {
         match self.schema.get(on) {
-            Some(TypeDef::Object(_)) if on == type_name => Ok(()),
-            Some(TypeDef::Object(_)) => Err(Error::validation(format!(
-                "cannot spread fragment on type '{on}' within type '{type_name}'"
-            ))
-            .with_path(path.to_owned())),
+            Some(TypeDef::Object(_) | TypeDef::Interface(_) | TypeDef::Union(_)) => {
+                let spreadable = on == scope || {
+                    let in_scope = self.schema.possible_types(scope);
+                    self.schema
+                        .possible_types(on)
+                        .iter()
+                        .any(|t| in_scope.contains(t))
+                };
+                if spreadable {
+                    Ok(())
+                } else {
+                    Err(Error::validation(format!(
+                        "cannot spread fragment on type '{on}' within type '{scope}'"
+                    ))
+                    .with_path(path.to_owned()))
+                }
+            }
             Some(_) => Err(Error::validation(format!(
                 "fragments can only be defined on object types, not on '{on}'"
             ))

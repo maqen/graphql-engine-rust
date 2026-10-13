@@ -286,11 +286,11 @@ fn type_object(schema: &Schema, ty: &TypeRef, selection: &[SelectedField<'_>]) -
                 "kind" => Json::String(def.kind().to_owned()),
                 "name" => Json::String(name.clone()),
                 "description" => opt_str(def.description()),
-                "fields" => match def {
-                    TypeDef::Object(obj) => {
+                "fields" => match schema.fields_of(name) {
+                    Some(fields) => {
                         let with_deprecated = include_deprecated_arg(sel);
                         Json::Array(
-                            obj.fields
+                            fields
                                 .values()
                                 .filter(|f| with_deprecated || f.deprecation_reason.is_none())
                                 .map(|f| field_object(schema, f, &sel.selection))
@@ -310,6 +310,13 @@ fn type_object(schema: &Schema, ty: &TypeRef, selection: &[SelectedField<'_>]) -
                     ),
                     _ => Json::Null,
                 },
+                "possibleTypes" if def.is_abstract() => Json::Array(
+                    schema
+                        .possible_types(name)
+                        .iter()
+                        .map(|t| type_object(schema, &TypeRef::named(t.clone()), &sel.selection))
+                        .collect(),
+                ),
                 "possibleTypes" => Json::Null,
                 "enumValues" => match def {
                     TypeDef::Enum(e) => {

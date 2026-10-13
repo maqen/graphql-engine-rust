@@ -221,6 +221,10 @@ struct ServeArgs {
     )]
     async_actions_fetch_batch_size: u32,
 
+    /// Use a remote schema's `data` even when it also returns `errors`.
+    #[arg(long, env = "HASURA_GRAPHQL_REMOTE_SCHEMA_PRIORITIZE_DATA", value_parser = parse_bool, default_value = "false")]
+    remote_schema_prioritize_data: bool,
+
     /// Accepted for compatibility; the console is not served.
     #[arg(long, env = "HASURA_GRAPHQL_ENABLE_CONSOLE", value_parser = parse_bool, default_value = "false")]
     enable_console: bool,
@@ -574,6 +578,7 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
         metadata_database_extensions_schema: args.metadata_database_extensions_schema.clone(),
         enable_metadata_query_logging: args.enable_metadata_query_logging,
         http_log_query_only_on_error: args.http_log_query_only_on_error,
+        remote_schema_prioritize_data: args.remote_schema_prioritize_data,
         ..ServerConfig::default()
     })
 }

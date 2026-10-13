@@ -91,9 +91,15 @@ async fn run(
     crate::policies::check_allowlist(&state, session, &endpoint.document, &endpoint.query)?;
     let rs = state.role_schema(&session.role, session.backend_only);
     let op = hge_schema::plan(&rs, &endpoint.document, None, &variables)?;
-    let (body, cookies) =
-        graphql::execute(engine, &state, session, headers, Some(&endpoint.query), &op).await?;
-    Ok((strip_data_envelope(body), cookies))
+    match graphql::execute(engine, &state, session, headers, Some(&endpoint.query), &op).await {
+        Ok((body, cookies)) => Ok((strip_data_envelope(body), cookies)),
+        Err(graphql::Failure::Error(e)) => Err(e),
+        // A remote schema's errors, as the GraphQL endpoint returns them.
+        Err(graphql::Failure::Remote(errors)) => Ok((
+            serde_json::json!({ "data": null, "errors": errors }).to_string(),
+            vec![],
+        )),
+    }
 }
 
 /// `{"data":X}` -> `X`

@@ -1,0 +1,23 @@
+config:
+  remote_schema_prioritize_data: true
+  inconsistencies:
+    - "remote_schema conflicting: Duplicate remote field 'hello', Duplicate remote field 'greet', Duplicate remote field 'user', Duplicate remote field 'users', Duplicate remote field 'countIn', Duplicate remote field 'character', Duplicate remote field 'characters', Duplicate remote field 'search', Duplicate remote field 'fail', Duplicate remote field 'partial', Duplicate remote field 'headers', Duplicate remote field 'lastRequest', Duplicate remote field 'createUser'"
+    - "remote_schema unreachable: HTTP exception occurred while sending the request to \"http://127.0.0.1:1/graphql\""
+cases:
+  - description: with prioritize data, data wins over errors from the remote
+    query:
+      query: "{ hello partial { ok bad } }"
+    response:
+      data:
+        hello: world
+        partial: {ok: "yes", bad: null}
+
+  - description: without data the errors are still returned
+    query:
+      query: "{ fail }"
+    response:
+      data: null
+      errors:
+        - message: intentional-error
+          locations: [{line: 1, column: 10}]
+          path: [fail]
