@@ -46,7 +46,8 @@ pub struct ServerConfig {
     pub cors_domain: String,
     /// `HASURA_GRAPHQL_DISABLE_CORS`
     pub disable_cors: bool,
-    /// `HASURA_GRAPHQL_ENABLED_APIS` (`graphql,metadata,config,pgdump,metrics`)
+    /// `HASURA_GRAPHQL_ENABLED_APIS` (`metadata,graphql,pgdump,config,developer,metrics`),
+    /// lower-case.
     pub enabled_apis: Vec<String>,
     /// `HASURA_GRAPHQL_PG_CONNECTIONS`: default pool size for sources without `pool_settings`.
     pub pg_connections: usize,
@@ -107,7 +108,9 @@ impl Default for ServerConfig {
             infer_function_permissions: true,
             cors_domain: "*".to_owned(),
             disable_cors: false,
-            enabled_apis: vec!["graphql".into(), "metadata".into()],
+            enabled_apis: ["metadata", "graphql", "pgdump", "config"]
+                .map(String::from)
+                .to_vec(),
             pg_connections: 50,
             use_prepared_statements: true,
             preserve_401_errors: false,

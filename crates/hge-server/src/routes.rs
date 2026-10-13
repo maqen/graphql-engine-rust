@@ -21,12 +21,12 @@ use crate::state::Engine;
 use crate::telemetry::http::{self as http_log, HttpLogInfo, RequestMode};
 use crate::ws::{self, MaybeUpgrade};
 
-pub const VERSION: &str = concat!("v2.48.0-rs.", env!("CARGO_PKG_VERSION"));
+/// The version reported by `/v1/version` and in `User-Agent` headers: the V2 release we are
+/// compatible with, then ours (the CLI compares major versions).
+pub const VERSION: &str = concat!("v2.51.0-rs.", env!("CARGO_PKG_VERSION"));
 
 pub fn router(engine: Arc<Engine>) -> Router {
-    let mut router = Router::new()
-        .route("/healthz", get(healthz))
-        .route("/v1/version", get(version))
+    let mut router = crate::telemetry::endpoints::register(Router::new(), &engine)
         .route("/api/rest", axum::routing::any(crate::rest::handler))
         .route("/api/rest/", axum::routing::any(crate::rest::handler))
         .route(
@@ -47,7 +47,7 @@ pub fn router(engine: Arc<Engine>) -> Router {
             .route("/v2/query", axum::routing::post(query_post))
             .route("/v1/query", axum::routing::post(crate::v1_query::handler));
     }
-    let mut router = router
+    let mut router = crate::telemetry::endpoints::fallbacks(router)
         .layer(axum::middleware::from_fn(ws::reject_other_paths))
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024));
     // The http-log layers are left out entirely when the log is off at startup.
@@ -67,7 +67,7 @@ pub fn router(engine: Arc<Engine>) -> Router {
             http_log::http_log,
         ));
     }
-    router.with_state(engine)
+    crate::telemetry::endpoints::without_allow(router.with_state(engine))
 }
 
 /// gzip like V2: responses under 700 bytes are sent uncompressed, at a fast compression
@@ -92,23 +92,6 @@ fn cors(domain: &str) -> CorsLayer {
             .collect();
         layer.allow_origin(AllowOrigin::list(origins))
     }
-}
-
-async fn healthz(State(engine): State<Arc<Engine>>) -> Response {
-    let state = engine.state.load();
-    if state.inconsistencies.is_empty() {
-        (StatusCode::OK, "OK").into_response()
-    } else {
-        (StatusCode::OK, "WARN: inconsistent objects in schema").into_response()
-    }
-}
-
-async fn version() -> Response {
-    json_response(
-        StatusCode::OK,
-        serde_json::json!({ "version": VERSION }).to_string(),
-        None,
-    )
 }
 
 pub(crate) fn request_id(headers: &HeaderMap) -> String {

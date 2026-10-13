@@ -16,6 +16,7 @@
 //!
 //! The line is written by a dedicated thread (see `writer`), never by the request task.
 
+pub mod endpoints;
 pub mod http;
 mod layer;
 pub mod startup;
