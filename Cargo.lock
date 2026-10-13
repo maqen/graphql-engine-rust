@@ -968,6 +968,7 @@ dependencies = [
  "deadpool-postgres",
  "futures",
  "hge-core",
+ "hge-events",
  "hge-metadata",
  "hge-postgres",
  "indexmap",

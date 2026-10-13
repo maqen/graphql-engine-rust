@@ -3,6 +3,7 @@
 //! A command is a function `(ctx, args) -> ApiResult<Value>` that edits `ctx.metadata` and
 //! then calls `ctx.check(..)` (modifying commands) or just reads state.
 
+pub mod event_triggers;
 pub mod metadata;
 
 use hge_core::Code;
@@ -187,18 +188,34 @@ pub async fn run_agnostic<R: Runtime>(ctx: &mut Ctx<'_, R>, cmd: &Command) -> Ap
         "get_catalog_state" => metadata::get_catalog_state(ctx).await,
         "set_catalog_state" => metadata::set_catalog_state(ctx, args).await,
         "list_source_kinds" => Ok(metadata::list_source_kinds()),
+        "cleanup_event_trigger_logs" => event_triggers::cleanup_event_trigger_logs(),
+        "pause_event_trigger_cleanups" => {
+            event_triggers::switch_event_trigger_cleanups(ctx, args, true).await
+        }
+        "resume_event_trigger_cleanups" => {
+            event_triggers::switch_event_trigger_cleanups(ctx, args, false).await
+        }
         name => Err(not_implemented(name)),
     }
 }
 
 pub async fn run_backend<R: Runtime>(
-    _ctx: &mut Ctx<'_, R>,
+    ctx: &mut Ctx<'_, R>,
     backend: &str,
     command: &str,
-    _args: &Value,
+    args: &Value,
 ) -> ApiResult<Value> {
     if !matches!(backend, "pg" | "postgres") {
         return Err(not_implemented(&format!("{backend}_{command}")));
     }
-    Err(not_implemented(&format!("{backend}_{command}")))
+    match command {
+        "create_event_trigger" => event_triggers::create_event_trigger(ctx, args).await,
+        "delete_event_trigger" => event_triggers::delete_event_trigger(ctx, args).await,
+        "invoke_event_trigger" => event_triggers::invoke_event_trigger(ctx, args).await,
+        "redeliver_event" => event_triggers::redeliver_event(ctx, args).await,
+        "get_event_logs" => event_triggers::get_event_logs(ctx, args).await,
+        "get_event_invocation_logs" => event_triggers::get_event_invocation_logs(ctx, args).await,
+        "get_event_by_id" => event_triggers::get_event_by_id(ctx, args).await,
+        _ => Err(not_implemented(&format!("{backend}_{command}"))),
+    }
 }

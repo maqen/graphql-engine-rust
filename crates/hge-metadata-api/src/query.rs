@@ -138,9 +138,16 @@ async fn handle<R: Runtime>(rt: &R, body: &[u8]) -> ApiResult<Value> {
     // Schema changes go through the metadata pipeline; the metadata is written once at the
     // end, and only if every query succeeded.
     let mut ctx = Ctx::begin(rt, true).await?;
-    let result = run_checked(&mut ctx, &query, "$").await?;
-    ctx.commit().await?;
-    Ok(result)
+    match run_checked(&mut ctx, &query, "$").await {
+        Ok(result) => {
+            ctx.commit().await?;
+            Ok(result)
+        }
+        Err(e) => {
+            ctx.discard().await;
+            Err(e)
+        }
+    }
 }
 
 async fn run_plain<R: Runtime>(rt: &R, query: &Query, path: &str) -> ApiResult<Value> {
