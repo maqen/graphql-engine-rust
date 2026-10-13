@@ -142,7 +142,14 @@ const RELATIONSHIP: &[&str] = &["name", "using", "comment"];
 const PERMISSION: &[&str] = &["role", "permission", "comment"];
 const COLLECTION: &[&str] = &["name", "definition", "comment"];
 const INHERITED_ROLE: &[&str] = &["role_name", "role_set"];
+const ACTION_PERMISSION: &[&str] = &["role", "comment"];
+const ACTION_ARGUMENT: &[&str] = &["name", "type", "description"];
 const CUSTOM_TYPES: &[&str] = &["input_objects", "objects", "scalars", "enums"];
+const INPUT_OBJECT_TYPE: &[&str] = &["name", "fields", "description"];
+const OBJECT_TYPE: &[&str] = &["name", "fields", "description", "relationships"];
+const TYPE_FIELD: &[&str] = &["name", "type", "arguments", "description"];
+const SCALAR_TYPE: &[&str] = &["name", "description"];
+const ENUM_TYPE: &[&str] = &["name", "values", "description"];
 
 /// The `export_metadata` document for `metadata`.
 pub fn export_json(metadata: &Metadata) -> Value {
@@ -177,23 +184,19 @@ pub fn export_json(metadata: &Metadata) -> Value {
             fixed(Value::Object(obj), REMOTE_SCHEMA)
         }),
         "query_collections" => map_array(v, |c| fixed(c, COLLECTION)),
-        "actions" => map_array(v, |a| {
-            let Value::Object(mut obj) = a else {
-                return a;
-            };
-            if let Some(def) = obj.remove("definition") {
-                obj.insert(
-                    "definition".into(),
-                    fixed(typed_transforms(def), ACTION_DEF),
-                );
-            }
-            fixed(Value::Object(obj), ACTION)
-        }),
-        "custom_types" => fixed(v, CUSTOM_TYPES),
+        "actions" => map_array(v, export_action),
+        "custom_types" => export_custom_types(v),
         "cron_triggers" => map_array(v, |c| fixed(c, CRON_TRIGGER)),
         "inherited_roles" => map_array(v, |r| fixed(r, INHERITED_ROLE)),
         _ => sorted(v),
     });
+    // `customTypesToOrdJSON` writes nothing when every type list is empty.
+    if out
+        .get("custom_types")
+        .is_some_and(|t| t.as_object().is_some_and(Map::is_empty))
+    {
+        out.remove("custom_types");
+    }
     // `sources` is always present; everything else only when non-empty.
     if !out.contains_key("sources") {
         out.insert("sources".into(), Value::Array(vec![]));
@@ -205,6 +208,179 @@ pub fn export_json(metadata: &Metadata) -> Value {
         }
     }
     Value::Object(result)
+}
+
+/// `actionMetadataToOrdJSON`: arguments and permissions have fixed key orders too.
+fn export_action(action: Value) -> Value {
+    // `actionMetadataToOrdJSON` leaves out a `null` comment (of the action, a permission,
+    // an argument's description) and an empty permission list.
+    let action = match action {
+        Value::Object(mut a) => {
+            if a.get("comment").is_some_and(Value::is_null) {
+                a.remove("comment");
+            }
+            if a.get("permissions")
+                .is_some_and(|p| p.is_null() || p.as_array().is_some_and(Vec::is_empty))
+            {
+                a.remove("permissions");
+            }
+            Value::Object(a)
+        }
+        other => other,
+    };
+    fixed_with(action, ACTION, |key, v| match key {
+        "definition" => fixed_with(
+            typed_transforms(action_defaults(v)),
+            ACTION_DEF,
+            |key, v| match key {
+                "arguments" => map_array(v, |a| {
+                    fixed(without_null(a, "description"), ACTION_ARGUMENT)
+                }),
+                _ => sorted(v),
+            },
+        ),
+        "permissions" => map_array(v, |p| fixed(without_null(p, "comment"), ACTION_PERMISSION)),
+        _ => sorted(v),
+    })
+}
+
+/// `v` without `key` when that is `null`.
+fn without_null(v: Value, key: &str) -> Value {
+    match v {
+        Value::Object(mut o) => {
+            if o.get(key).is_some_and(Value::is_null) {
+                o.remove(key);
+            }
+            Value::Object(o)
+        }
+        other => other,
+    }
+}
+
+/// V2 exports its parsed definition: defaults are written out (`type`,
+/// `ignored_client_headers`, `kind` for mutations) and default-valued optional keys are
+/// left out, so a definition loaded as written (`replace_metadata`, a metadata directory)
+/// exports like one stored by `create_action`.
+fn action_defaults(def: Value) -> Value {
+    let Value::Object(mut d) = def else {
+        return def;
+    };
+    let ty = match d.get("type") {
+        None | Some(Value::Null) => "mutation".to_owned(),
+        Some(Value::String(t)) => t.clone(),
+        Some(_) => return Value::Object(d),
+    };
+    match ty.as_str() {
+        "query" => {
+            d.remove("kind");
+        }
+        "mutation" => {
+            if d.get("kind").is_none_or(Value::is_null) {
+                d.insert("kind".into(), Value::String("synchronous".into()));
+            }
+        }
+        _ => return Value::Object(d),
+    }
+    d.insert("type".into(), Value::String(ty));
+    if d.get("ignored_client_headers").is_none_or(Value::is_null) {
+        let defaults = crate::actions::DEFAULT_IGNORED_CLIENT_HEADERS
+            .iter()
+            .map(|h| Value::String((*h).to_owned()))
+            .collect();
+        d.insert("ignored_client_headers".into(), Value::Array(defaults));
+    }
+    let default_valued = |key: &str, v: &Value| match key {
+        "forward_client_headers" => matches!(v, Value::Null | Value::Bool(false)),
+        "timeout" => v.is_null() || v.as_u64() == Some(crate::actions::DEFAULT_ACTION_TIMEOUT_SECS),
+        "headers" | "arguments" => v.is_null() || v.as_array().is_some_and(Vec::is_empty),
+        "request_transform" | "response_transform" => v.is_null(),
+        _ => false,
+    };
+    d.retain(|k, v| !default_valued(k, v));
+    Value::Object(d)
+}
+
+/// `customTypesToOrdJSON`: types and their fields have fixed key orders; relationships
+/// and enum values come out of plain `ToJSON` (sorted, enum values with `null`s).
+fn export_custom_types(types: Value) -> Value {
+    let types = drop_custom_type_defaults(types);
+    let with_fields = |order: &'static [&'static str]| {
+        move |t: Value| {
+            fixed_with(t, order, |key, v| match key {
+                "fields" => map_array(v, |f| fixed(f, TYPE_FIELD)),
+                _ => sorted(v),
+            })
+        }
+    };
+    fixed_with(types, CUSTOM_TYPES, |key, v| match key {
+        "input_objects" => map_array(v, with_fields(INPUT_OBJECT_TYPE)),
+        "objects" => map_array(v, |t| {
+            fixed_with(t, OBJECT_TYPE, |key, v| match key {
+                "fields" => map_array(v, |f| fixed(f, TYPE_FIELD)),
+                "relationships" => map_array(v, |r| sorted(typed_type_relationship(r))),
+                _ => sorted(v),
+            })
+        }),
+        "scalars" => map_array(v, |t| fixed(t, SCALAR_TYPE)),
+        "enums" => map_array(v, |t| {
+            fixed_with(t, ENUM_TYPE, |key, v| match key {
+                // Plain `ToJSON` of `EnumValueDefinition`: unset fields are `null`.
+                "values" => map_array(v, |value| {
+                    let Value::Object(mut o) = value else {
+                        return sorted(value);
+                    };
+                    for key in ["description", "is_deprecated"] {
+                        o.entry(key).or_insert(Value::Null);
+                    }
+                    sorted(Value::Object(o))
+                }),
+                _ => sorted(v),
+            })
+        }),
+        _ => sorted(v),
+    })
+}
+
+/// What `customTypesToOrdJSON` leaves out: empty type lists, `null` descriptions and
+/// field arguments, and an empty relationship list.
+fn drop_custom_type_defaults(types: Value) -> Value {
+    fn clean(v: &mut Value) {
+        if let Value::Object(o) = v {
+            o.retain(|k, v| {
+                !(matches!(k.as_str(), "description" | "arguments") && v.is_null()
+                    || k == "relationships" && v.as_array().is_some_and(Vec::is_empty))
+            });
+            if let Some(Value::Array(fields)) = o.get_mut("fields") {
+                fields.iter_mut().for_each(clean);
+            }
+        }
+    }
+    let Value::Object(mut t) = types else {
+        return types;
+    };
+    t.retain(|_, v| !(v.is_null() || v.as_array().is_some_and(Vec::is_empty)));
+    for list in t.values_mut() {
+        if let Value::Array(items) = list {
+            items.iter_mut().for_each(clean);
+        }
+    }
+    Value::Object(t)
+}
+
+/// A custom type relationship as its parsed `ToJSON` writes it: `source` defaults to
+/// `default` and `remote_table` is always `{schema, name}`.
+fn typed_type_relationship(rel: Value) -> Value {
+    let Value::Object(mut r) = rel else {
+        return rel;
+    };
+    if r.get("source").is_none_or(Value::is_null) {
+        r.insert("source".into(), Value::String("default".into()));
+    }
+    if let Some(Value::String(name)) = r.get("remote_table") {
+        let table = serde_json::json!({"schema": "public", "name": name});
+        r.insert("remote_table".into(), table);
+    }
+    Value::Object(r)
 }
 
 /// Transforms go through their typed `ToJSON` (spec 06 §2.7): `version` and
@@ -329,10 +505,15 @@ fn permission(p: Value, order: &[&str]) -> Value {
 /// An object with a fixed key order: known keys first (in `order`, values sorted
 /// recursively unless already handled), then any unknown keys sorted.
 fn fixed(v: Value, order: &[&str]) -> Value {
+    fixed_with(v, order, |_, v| sorted(v))
+}
+
+/// [`fixed`], with the values of known keys transformed by `f`.
+fn fixed_with(v: Value, order: &[&str], f: impl FnMut(&str, Value) -> Value) -> Value {
     let Value::Object(mut obj) = v else {
         return sorted(v);
     };
-    let out = ordered(&mut obj, order, |_, v| sorted(v));
+    let out = ordered(&mut obj, order, f);
     Value::Object(reorder(out, order))
 }
 
@@ -426,6 +607,50 @@ mod tests {
         assert_eq!(
             def["response_transform"].to_string(),
             r#"{"body":{"action":"remove"},"template_engine":"Kriti","version":2}"#
+        );
+    }
+
+    #[test]
+    fn actions_and_custom_types_keep_v2_key_orders() {
+        let md = crate::from_json(json!({
+            "version": 3, "sources": [],
+            "actions": [{"permissions": [{"comment": "c", "role": "r"}], "name": "a",
+                "definition": {"type": "query", "output_type": "O", "handler": "h",
+                    "arguments": [{"type": "Int", "description": "d", "name": "x"}]}},
+                {"name": "b", "comment": null, "permissions": [],
+                    "definition": {"handler": "h", "output_type": "O", "timeout": 30,
+                    "forward_client_headers": false, "headers": [], "ignored_client_headers": [],
+                    "arguments": [{"name": "y", "type": "Int", "description": null}]}}],
+            "custom_types": {
+                "enums": [{"values": [{"value": "A", "description": "d"}], "name": "E"}],
+                "objects": [{"relationships": [{"type": "object", "name": "r", "remote_table": "t",
+                        "field_mapping": {"f": "id"}}], "description": "d",
+                    "fields": [{"type": "Int", "description": "d", "name": "f"}], "name": "O"},
+                    {"name": "P", "description": null, "relationships": [],
+                        "fields": [{"name": "g", "type": "Int", "description": null}]}],
+                "input_objects": [], "scalars": []
+            }
+        }))
+        .unwrap();
+        let empty = crate::from_json(json!({"version": 3, "sources": [],
+            "custom_types": {"enums": [], "objects": []}}))
+        .unwrap();
+        assert!(export_json(&empty).get("custom_types").is_none());
+        let out = export_json(&md);
+        assert_eq!(
+            out["actions"][0].to_string(),
+            format!(
+                r#"{{"name":"a","definition":{{"handler":"h","output_type":"O","ignored_client_headers":{},"arguments":[{{"name":"x","type":"Int","description":"d"}}],"type":"query"}},"permissions":[{{"role":"r","comment":"c"}}]}}"#,
+                json!(crate::actions::DEFAULT_IGNORED_CLIENT_HEADERS)
+            )
+        );
+        assert_eq!(
+            out["actions"][1].to_string(),
+            r#"{"name":"b","definition":{"handler":"h","output_type":"O","ignored_client_headers":[],"arguments":[{"name":"y","type":"Int"}],"type":"mutation","kind":"synchronous"}}"#
+        );
+        assert_eq!(
+            out["custom_types"].to_string(),
+            r#"{"objects":[{"name":"O","fields":[{"name":"f","type":"Int","description":"d"}],"description":"d","relationships":[{"field_mapping":{"f":"id"},"name":"r","remote_table":{"name":"t","schema":"public"},"source":"default","type":"object"}]},{"name":"P","fields":[{"name":"g","type":"Int"}]}],"enums":[{"name":"E","values":[{"description":"d","is_deprecated":null,"value":"A"}]}]}"#
         );
     }
 

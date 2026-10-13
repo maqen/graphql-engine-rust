@@ -27,8 +27,8 @@ pub enum Check {
     None,
     /// Reject inconsistencies that were not there before.
     NoNew,
-    /// Like [`Check::NoNew`], but if the object being created is itself inconsistent, report
-    /// it as `invalid-configuration` (V2's `buildSchemaCacheFor`).
+    /// Like [`Check::NoNew`], but if the object being created is itself inconsistent (new or
+    /// not), report it as `invalid-configuration` (V2's `buildSchemaCacheFor`).
     Object { kind: String, name: String },
 }
 
@@ -187,11 +187,9 @@ impl<'a, R: Runtime> Ctx<'a, R> {
             }
             Check::None => {}
             Check::Object { kind, name } => {
-                let own: Vec<&InconsistentObject> = new
-                    .iter()
-                    .copied()
-                    .filter(|o| o.involves(kind, name))
-                    .collect();
+                // The object itself is rejected even if it was inconsistent before.
+                let own: Vec<&InconsistentObject> =
+                    found.iter().filter(|o| o.involves(kind, name)).collect();
                 if !own.is_empty() {
                     let reasons: Vec<String> = own.iter().map(|o| o.display_reason()).collect();
                     return Err(

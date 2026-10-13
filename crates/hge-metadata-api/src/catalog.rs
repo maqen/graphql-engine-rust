@@ -504,4 +504,16 @@ impl MetadataStore for PgCatalog {
             Ok(())
         })
     }
+
+    fn delete_action_logs<'a>(&'a self, action: &'a str) -> BoxFuture<'a, Result<(), Error>> {
+        Box::pin(async move {
+            const SQL: &str = "DELETE FROM hdb_catalog.hdb_action_log WHERE action_name = $1";
+            let client = self.client().await?;
+            client
+                .execute(SQL, &[&action])
+                .await
+                .map_err(|e| pg_error(e, SQL))?;
+            Ok(())
+        })
+    }
 }

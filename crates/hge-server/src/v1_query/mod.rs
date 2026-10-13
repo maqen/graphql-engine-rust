@@ -196,9 +196,10 @@ impl<'a> Executor<'a> {
                         ApiError::from(Error::unexpected("no metadata context for the request"))
                     })?;
                     let result = hge_metadata_api::api::run(ctx, command).await;
-                    result
-                        .map(|v| v.to_string())
-                        .map_err(|e| e.under(path.as_str()))
+                    result.map(|v| v.to_string()).map_err(|e| {
+                        hge_metadata_api::ops::actions::relative_to_args(&command.name, e)
+                            .under(path.as_str())
+                    })
                 }
                 Query::Other { ty, path, .. } => Err(err400(
                     Code::NotSupported,

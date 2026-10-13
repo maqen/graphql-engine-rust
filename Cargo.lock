@@ -963,6 +963,7 @@ version = "0.1.0"
 dependencies = [
  "deadpool-postgres",
  "futures",
+ "hge-actions",
  "hge-core",
  "hge-events",
  "hge-metadata",

@@ -199,6 +199,12 @@ pub async fn run_agnostic<R: Runtime>(ctx: &mut Ctx<'_, R>, cmd: &Command) -> Ap
             event_triggers::switch_event_trigger_cleanups(ctx, args, false).await
         }
         "test_webhook_transform" => actions::test_webhook_transform(args),
+        "create_action" => actions::create_action(ctx, args).await,
+        "update_action" => actions::update_action(ctx, args).await,
+        "drop_action" => actions::drop_action(ctx, args).await,
+        "create_action_permission" => actions::create_action_permission(ctx, args).await,
+        "drop_action_permission" => actions::drop_action_permission(ctx, args).await,
+        "set_custom_types" => actions::set_custom_types(ctx, args).await,
         "create_cron_trigger" => scheduled::create_cron_trigger(ctx, args).await,
         "delete_cron_trigger" => scheduled::delete_cron_trigger(ctx, args).await,
         "get_cron_triggers" => scheduled::get_cron_triggers(ctx),

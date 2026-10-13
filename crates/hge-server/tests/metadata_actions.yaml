@@ -1,0 +1,503 @@
+# Replayed in order by metadata_actions.rs. Each step: url (default /v1/metadata),
+# optional headers, query, status (default 200), response.
+# Known differences from V2:
+# - drop_action's 500 "cannot continue due to newly found inconsistent metadata" has no
+#   step: nothing in the metadata can depend on an action.
+steps:
+  - description: tables for the relationship
+    url: /v2/query
+    query:
+      type: run_sql
+      args:
+        sql: >-
+          DROP TABLE IF EXISTS ma_user; CREATE TABLE ma_user(id int primary key, name text);
+          INSERT INTO ma_user VALUES (1, 'Ada'), (2, 'Bob');
+    response: {result_type: CommandOk, result: null}
+
+  - description: track the table
+    query:
+      type: replace_metadata
+      args:
+        version: 3
+        sources:
+          - name: default
+            kind: postgres
+            tables:
+              - table: {schema: public, name: ma_user}
+                select_permissions:
+                  - role: user
+                    permission: {columns: [id, name], filter: {}}
+            configuration:
+              connection_info:
+                database_url: {from_env: HASURA_GRAPHQL_DATABASE_URL}
+    response: {message: success}
+
+  # set_custom_types
+
+  - description: set_custom_types rejects a relationship to an unknown table
+    query:
+      type: set_custom_types
+      args:
+        objects:
+          - name: UserOut
+            fields: [{name: id, type: Int!}]
+            relationships:
+              - {name: user, type: object, remote_table: ma_nope, field_mapping: {id: id}}
+    status: 400
+    response: {"error": "Inconsistent object: validation for the given custom types failed because the remote table \"ma_nope\" for relationship \"user\" of object type \"UserOut\" does not exist", "path": "$.args", "code": "invalid-configuration", "internal": [{"definition": {"enums": [], "input_objects": [], "objects": [{"description": null, "fields": [{"arguments": null, "description": null, "name": "id", "type": "Int!"}], "name": "UserOut", "relationships": [{"field_mapping": {"id": "id"}, "name": "user", "remote_table": {"name": "ma_nope", "schema": "public"}, "source": "default", "type": "object"}]}], "scalars": []}, "name": "custom_types custom_types", "reason": "Inconsistent object: validation for the given custom types failed because the remote table \"ma_nope\" for relationship \"user\" of object type \"UserOut\" does not exist", "type": "custom_types"}]}
+
+  - description: set_custom_types rejects invalid types (several reasons)
+    query:
+      type: set_custom_types
+      args:
+        scalars: [{name: Dup}]
+        enums: [{name: Dup, values: [{value: A}, {value: A}]}]
+    status: 400
+    response: {"error": "Inconsistent object: validation for the given custom types failed for the following reasons:\n  • duplicate type names: \"Dup\"\n  • the enum type \"Dup\" has duplicate values: \"A\"\n", "path": "$.args", "code": "invalid-configuration", "internal": [{"definition": {"enums": [{"description": null, "name": "Dup", "values": [{"description": null, "is_deprecated": null, "value": "A"}, {"description": null, "is_deprecated": null, "value": "A"}]}], "input_objects": [], "objects": [], "scalars": [{"description": null, "name": "Dup"}]}, "name": "custom_types custom_types", "reason": "Inconsistent object: validation for the given custom types failed for the following reasons:\n  • duplicate type names: \"Dup\"\n  • the enum type \"Dup\" has duplicate values: \"A\"\n", "type": "custom_types"}]}
+
+  - description: set_custom_types with an empty field list
+    query:
+      type: set_custom_types
+      args:
+        input_objects: [{name: In, fields: []}]
+    status: 400
+    response: {"error": "parsing NonEmpty failed, unexpected empty list", "path": "$.args.input_objects[0].fields", "code": "parse-failed"}
+
+  - description: set_custom_types
+    query:
+      type: set_custom_types
+      args:
+        input_objects:
+          - name: UserInput
+            description: the input
+            fields: [{name: id, type: Int!}]
+        objects:
+          - name: UserOut
+            unknown_key: dropped
+            fields:
+              - {name: id, type: Int!}
+              - {name: name, type: String, description: null}
+              - {name: role, type: String}
+            relationships:
+              - {name: user, type: object, remote_table: ma_user, field_mapping: {id: id}}
+        scalars: [{name: Cursor}]
+        enums: [{name: Color, values: [{value: RED, is_deprecated: false}]}]
+    response: {message: success}
+
+  # create_action
+
+  - description: create_action
+    query:
+      type: create_action
+      args:
+        name: getUser
+        definition:
+          type: query
+          kind: ""
+          arguments: [{name: id, type: Int!}]
+          output_type: UserOut
+          handler: "{{ACTION_BASE_URL}}/user"
+    response: {message: success}
+
+  - description: the action answers
+    url: /v1/graphql
+    query:
+      query: "{ getUser(id: 1) { id name user { name } } }"
+    response: {data: {getUser: {id: 1, name: user 1, user: {name: Ada}}}}
+
+  - description: create_action of an existing action
+    query:
+      type: create_action
+      args:
+        name: getUser
+        definition: {output_type: UserOut, handler: "{{ACTION_BASE_URL}}/user"}
+    status: 400
+    response: {error: action with name "getUser" already exists, path: $.args, code: already-exists}
+
+  - description: create_action with an unknown output type
+    query:
+      type: create_action
+      args:
+        name: bad
+        definition: {output_type: Nope, handler: "http://localhost/x"}
+    status: 400
+    response: {"error": "Inconsistent object: in action \"bad\"; the type: \"Nope\" is not an object or scalar type defined in custom types", "path": "$.args", "code": "invalid-configuration", "internal": [{"definition": {"comment": null, "definition": {"arguments": [], "forward_client_headers": false, "handler": "http://localhost/x", "headers": [], "kind": "synchronous", "output_type": "Nope", "timeout": 30, "type": "mutation"}, "name": "bad"}, "name": "action bad", "reason": "Inconsistent object: in action \"bad\"; the type: \"Nope\" is not an object or scalar type defined in custom types", "type": "action"}]}
+
+  - description: create_action with a missing environment variable
+    query:
+      type: create_action
+      args:
+        name: bad
+        definition: {output_type: UserOut, handler: "{{MA_MISSING_ENV}}/x"}
+    status: 400
+    response: {"error": "Inconsistent object: in action \"bad\"; Value for environment variables not found: MA_MISSING_ENV", "path": "$.args", "code": "invalid-configuration", "internal": [{"definition": {"definition": {"handler": "{{MA_MISSING_ENV}}/x", "ignored_client_headers": ["Content-Length", "Content-MD5", "User-Agent", "Host", "Origin", "Referer", "Accept", "Accept-Encoding", "Accept-Language", "Accept-Datetime", "Cache-Control", "Connection", "DNT", "Content-Type"], "kind": "synchronous", "output_type": "UserOut", "type": "mutation"}, "name": "bad"}, "name": "action bad", "reason": "Inconsistent object: in action \"bad\"; Value for environment variables not found: MA_MISSING_ENV", "type": "action"}]}
+
+  - description: create_action with an invalid name
+    query:
+      type: create_action
+      args:
+        name: not-a-name
+        definition: {output_type: UserOut, handler: "http://localhost/x"}
+    status: 400
+    response: {"error": "not-a-name is not valid GraphQL name", "path": "$.args.name", "code": "parse-failed"}
+
+  - description: create_action with an invalid argument name
+    query:
+      type: create_action
+      args:
+        name: bad
+        definition:
+          arguments: [{name: id, type: Int!}, {name: not-a-name, type: Int}]
+          output_type: UserOut
+          handler: "http://localhost/x"
+    status: 400
+    response: {"error": "not-a-name is not valid GraphQL name", "path": "$.args.definition.arguments[1].name", "code": "parse-failed"}
+
+  - description: create_action with an invalid type
+    query:
+      type: create_action
+      args:
+        name: bad
+        definition: {output_type: "UserOut!!", handler: "http://localhost/x"}
+    status: 400
+    response: {"error": "not a valid GraphQL type: UserOut!!", "path": "$.args.definition.output_type", "code": "parse-failed"}
+
+  - description: set_custom_types with an invalid enum value
+    query:
+      type: set_custom_types
+      args:
+        enums: [{name: Color, values: [{value: RED}, {value: not-a-value}]}]
+    status: 400
+    response: {"error": "not-a-value is not valid GraphQL name", "path": "$.args.enums[0].values[1].value", "code": "parse-failed"}
+
+  - description: create_action without a handler
+    query:
+      type: create_action
+      args:
+        name: bad
+        definition: {output_type: UserOut}
+    status: 400
+    response: {"error": "key \"handler\" not found", "path": "$.args.definition", "code": "parse-failed"}
+
+  - description: create_action with a bad header
+    query:
+      type: create_action
+      args:
+        name: bad
+        definition:
+          output_type: UserOut
+          handler: "http://localhost/x"
+          headers: [{name: X-A, value: a}, {name: X-B, value_from_env: HASURA_GRAPHQL_ADMIN_SECRET}]
+    status: 400
+    response: {"error": "env variables starting with \"HASURA_GRAPHQL_\" are not allowed in value_from_env: HASURA_GRAPHQL_ADMIN_SECRET", "path": "$.args.definition.headers[1]", "code": "parse-failed"}
+
+  - description: create_action with a bad handler template
+    query:
+      type: create_action
+      args:
+        name: bad
+        definition: {output_type: UserOut, handler: "{{BASE_URL/x"}
+    status: 400
+    response: {"error": "Parsing URL template failed: unclosed '{{' in template: {{BASE_URL/x", "path": "$.args.definition.handler", "code": "parse-failed"}
+
+  - description: create_action on /v1/query decodes args without the args path
+    url: /v1/query
+    query:
+      type: create_action
+      args:
+        name: bad
+        definition:
+          output_type: UserOut
+          handler: "http://localhost/x"
+          headers: [{name: X-A}]
+    status: 400
+    response: {"error": "expecting value or value_from_env keys", "path": "$.definition.headers[0]", "code": "parse-failed"}
+
+  - description: create_action with an unparsable transform template
+    query:
+      type: create_action
+      args:
+        name: bad
+        definition:
+          output_type: UserOut
+          handler: "http://localhost/x"
+          request_transform: {template_engine: Kriti, url: "{{$base_url"}
+    status: 400
+    response: {"error": "request transform validation failed", "path": "$.args", "code": "validation-failed", "internal": [{"error_code": "Parse Error", "message": "Unexpected token '\"'.", "source_position": {"end_column": 14, "end_line": 0, "start_column": 13, "start_line": 0}}]}
+
+  - description: nothing was added
+    url: /v1/graphql
+    query:
+      query: "mutation { bad(id: 1) { id } }"
+    response: {"errors": [{"message": "field 'bad' not found in type: 'mutation_root'", "extensions": {"path": "$.selectionSet.bad", "code": "validation-failed"}}]}
+
+  # update_action
+
+  - description: update_action
+    query:
+      type: update_action
+      args:
+        name: getUser
+        comment: Fetch a user
+        definition:
+          type: query
+          arguments: [{name: id, type: Int!, description: the id}]
+          output_type: UserOut
+          handler: "{{ACTION_BASE_URL}}/user"
+          timeout: 10
+    response: {message: success}
+
+  - description: update_action of an unknown action
+    query:
+      type: update_action
+      args:
+        name: nope
+        definition: {output_type: UserOut, handler: "{{ACTION_BASE_URL}}/user"}
+    status: 400
+    response: {error: action with name "nope" does not exist, path: $.args, code: not-exists}
+
+  - description: update_action to an invalid definition
+    query:
+      type: update_action
+      args:
+        name: getUser
+        definition: {output_type: Color, handler: "{{ACTION_BASE_URL}}/user"}
+    status: 400
+    response: {"error": "Inconsistent object: in action \"getUser\"; the type: \"Color\" is not an object or scalar type defined in custom types", "path": "$.args", "code": "invalid-configuration", "internal": [{"definition": {"comment": null, "definition": {"arguments": [], "forward_client_headers": false, "handler": "{{ACTION_BASE_URL}}/user", "headers": [], "kind": "synchronous", "output_type": "Color", "timeout": 30, "type": "mutation"}, "name": "getUser"}, "name": "action getUser", "reason": "Inconsistent object: in action \"getUser\"; the type: \"Color\" is not an object or scalar type defined in custom types", "type": "action"}]}
+
+  # create_action_permission / drop_action_permission
+
+  - description: the role cannot see the action yet
+    url: /v1/graphql
+    headers: {x-hasura-role: user}
+    query:
+      query: "{ getUser(id: 2) { id } }"
+    response: {"errors": [{"message": "field 'getUser' not found in type: 'query_root'", "extensions": {"path": "$.selectionSet.getUser", "code": "validation-failed"}}]}
+
+  - description: create_action_permission
+    query:
+      type: create_action_permission
+      args: {action: getUser, role: user, definition: {}, comment: users may}
+    response: {message: success}
+
+  - description: create_action_permission prepends
+    query:
+      type: create_action_permission
+      args: {action: getUser, role: editor}
+    response: {message: success}
+
+  - description: create_action_permission twice
+    query:
+      type: create_action_permission
+      args: {action: getUser, role: user}
+    status: 400
+    response: {error: permission for role "user" is already defined on "getUser", path: $.args, code: already-exists}
+
+  - description: create_action_permission on an unknown action is a no-op (V2's ix)
+    query:
+      type: create_action_permission
+      args: {action: nope, role: user}
+    response: {message: success}
+
+  - description: create_action_permission with an empty role
+    query:
+      type: create_action_permission
+      args: {action: getUser, role: ""}
+    status: 400
+    response: {"error": "empty string not allowed", "path": "$.args.role", "code": "parse-failed"}
+
+  - description: the role sees the action
+    url: /v1/graphql
+    headers: {x-hasura-role: user}
+    query:
+      query: "{ getUser(id: 2) { id name role user { name } } }"
+    response: {data: {getUser: {id: 2, name: user 2, role: user, user: {name: Bob}}}}
+
+  - description: drop_action_permission of an unknown role
+    query:
+      type: drop_action_permission
+      args: {action: getUser, role: nobody}
+    status: 400
+    response: {error: "permission for role: \"nobody\" is not defined on \"getUser\"", path: $.args, code: not-exists}
+
+  - description: drop_action_permission
+    query:
+      type: drop_action_permission
+      args: {action: getUser, role: editor}
+    response: {message: success}
+
+  # set_custom_types against existing actions
+
+  - description: set_custom_types that breaks an action
+    query:
+      type: set_custom_types
+      args: {}
+    status: 400
+    response: {"error": "cannot continue due to new inconsistent metadata", "path": "$.args", "code": "unexpected", "internal": [{"definition": {"comment": "Fetch a user", "definition": {"arguments": [{"description": "the id", "name": "id", "type": "Int!"}], "forward_client_headers": false, "handler": "{{ACTION_BASE_URL}}/user", "headers": [], "output_type": "UserOut", "timeout": 10, "type": "query"}, "name": "getUser"}, "name": "action getUser", "reason": "Inconsistent object: in action \"getUser\"; the type: \"UserOut\" is not an object or scalar type defined in custom types", "type": "action"}]}
+
+  - description: set_custom_types with a relationship that breaks the sync action
+    query:
+      type: set_custom_types
+      args:
+        input_objects:
+          - name: UserInput
+            fields: [{name: id, type: Int!}]
+        objects:
+          - name: Nested
+            fields: [{name: id, type: Int!}]
+          - name: UserOut
+            fields:
+              - {name: id, type: Int!}
+              - {name: name, type: String}
+              - {name: role, type: String}
+              - {name: nested, type: Nested}
+            relationships:
+              - {name: user, type: object, remote_table: ma_user, field_mapping: {nested: id}}
+    status: 400
+    response: {"error": "cannot continue due to new inconsistent metadata", "path": "$.args", "code": "unexpected", "internal": [{"definition": {"comment": "Fetch a user", "definition": {"arguments": [{"description": "the id", "name": "id", "type": "Int!"}], "forward_client_headers": false, "handler": "{{ACTION_BASE_URL}}/user", "headers": [], "output_type": "UserOut", "timeout": 10, "type": "query"}, "name": "getUser"}, "name": "action getUser", "reason": "Inconsistent object: in action \"getUser\"; Relationships cannot be defined with nested object fields: \"user\"", "type": "action"}]}
+
+  # async actions and drop_action
+
+  - description: create async actions
+    query:
+      type: bulk
+      args:
+        - type: create_action
+          args:
+            name: asyncKeep
+            definition:
+              kind: asynchronous
+              arguments: [{name: id, type: Int!}]
+              output_type: UserOut
+              handler: "{{ACTION_BASE_URL}}/user"
+        - type: create_action
+          args:
+            name: asyncClear
+            definition:
+              kind: asynchronous
+              arguments: [{name: id, type: Int!}]
+              output_type: UserOut
+              handler: "{{ACTION_BASE_URL}}/user"
+    response: [{message: success}, {message: success}]
+
+  - description: submit async actions
+    url: /v1/graphql
+    query:
+      query: "mutation { a: asyncKeep(id: 1) b: asyncClear(id: 1) c: asyncClear(id: 2) }"
+    response: {"data": {"a": "00000000-0000-0000-0000-000000000000", "b": "00000000-0000-0000-0000-000000000000", "c": "00000000-0000-0000-0000-000000000000"}}
+
+  - description: drop_action with clear_data false
+    query:
+      type: drop_action
+      args: {name: asyncKeep, clear_data: false}
+    response: {message: success}
+
+  - description: drop_action (clear_data defaults to true)
+    query:
+      type: drop_action
+      args: {name: asyncClear}
+    response: {message: success}
+
+  - description: only the cleared action's log is gone
+    url: /v2/query
+    query:
+      type: run_sql
+      args:
+        sql: SELECT action_name, count(*) FROM hdb_catalog.hdb_action_log GROUP BY action_name ORDER BY 1
+    response: {"result_type": "TuplesOk", "result": [["action_name", "count"], ["asyncKeep", "1"]]}
+
+  - description: drop_action of an unknown action
+    query:
+      type: drop_action
+      args: {name: asyncKeep}
+    status: 400
+    response: {error: action with name "asyncKeep" does not exist, path: $.args, code: not-exists}
+
+  - description: drop_action with a bad clear_data
+    query:
+      type: drop_action
+      args: {name: getUser, clear_data: "yes"}
+    status: 400
+    response: {"error": "expected Bool, but encountered String", "path": "$.args.clear_data", "code": "parse-failed"}
+
+  # bulk, resource_version
+
+  - description: a failing bulk changes nothing
+    query:
+      type: bulk
+      args:
+        - type: drop_action_permission
+          args: {action: getUser, role: user}
+        - type: drop_action
+          args: {name: nope}
+    status: 400
+    response: {error: action with name "nope" does not exist, path: "$.args[1].args", code: not-exists}
+
+  - description: bulk_keep_going keeps what succeeded
+    query:
+      type: bulk_keep_going
+      args:
+        - type: create_action_permission
+          args: {action: getUser, role: viewer, comment: kept}
+        - type: create_action_permission
+          args: {action: getUser, role: viewer}
+    response:
+      - {message: success}
+      - {error: permission for role "viewer" is already defined on "getUser", path: "$.args[1].args", code: already-exists}
+
+  - description: a stale resource_version
+    query:
+      type: create_action_permission
+      resource_version: 1
+      args: {action: getUser, role: other}
+    status: 409
+    response: {"error": "metadata resource version referenced (1) did not match current version", "path": "$", "code": "conflict"}
+
+  - description: the resulting metadata
+    query: {type: export_metadata, args: {}}
+    response: {"version": 3, "sources": [{"name": "default", "kind": "postgres", "tables": [{"table": {"name": "ma_user", "schema": "public"}, "select_permissions": [{"role": "user", "permission": {"columns": ["id", "name"], "filter": {}}}]}], "configuration": {"connection_info": {"database_url": {"from_env": "HASURA_GRAPHQL_DATABASE_URL"}}}}], "actions": [{"name": "getUser", "definition": {"handler": "{{ACTION_BASE_URL}}/user", "output_type": "UserOut", "ignored_client_headers": ["Content-Length", "Content-MD5", "User-Agent", "Host", "Origin", "Referer", "Accept", "Accept-Encoding", "Accept-Language", "Accept-Datetime", "Cache-Control", "Connection", "DNT", "Content-Type"], "arguments": [{"name": "id", "type": "Int!", "description": "the id"}], "type": "query", "timeout": 10}, "comment": "Fetch a user", "permissions": [{"role": "viewer", "comment": "kept"}, {"role": "user", "comment": "users may"}]}], "custom_types": {"input_objects": [{"name": "UserInput", "fields": [{"name": "id", "type": "Int!"}], "description": "the input"}], "objects": [{"name": "UserOut", "fields": [{"name": "id", "type": "Int!"}, {"name": "name", "type": "String"}, {"name": "role", "type": "String"}], "relationships": [{"field_mapping": {"id": "id"}, "name": "user", "remote_table": {"name": "ma_user", "schema": "public"}, "source": "default", "type": "object"}]}], "scalars": [{"name": "Cursor"}], "enums": [{"name": "Color", "values": [{"description": null, "is_deprecated": false, "value": "RED"}]}]}}
+
+  - description: drop_action
+    query:
+      type: drop_action
+      args: {name: getUser}
+    response: {message: success}
+
+  - description: the action is gone
+    url: /v1/graphql
+    query:
+      query: "{ getUser(id: 1) { id } }"
+    response: {"errors": [{"message": "field 'getUser' not found in type: 'query_root'", "extensions": {"path": "$.selectionSet.getUser", "code": "validation-failed"}}]}
+
+  - description: custom types with a relationship to an untracked table, allowed inconsistent
+    query:
+      type: replace_metadata
+      args:
+        allow_inconsistent_metadata: true
+        metadata:
+          version: 3
+          sources:
+            - name: default
+              kind: postgres
+              tables: []
+              configuration:
+                connection_info:
+                  database_url: {from_env: HASURA_GRAPHQL_DATABASE_URL}
+          custom_types:
+            objects:
+              - name: Out
+                fields: [{name: id, type: Int!}]
+                relationships:
+                  - {name: user, type: object, remote_table: ma_user, field_mapping: {id: id}}
+              - name: Other
+                fields: [{name: id, type: Int!}]
+          actions:
+            - name: act
+              definition: {kind: synchronous, type: query, arguments: [], output_type: Out, handler: "http://localhost:1/x"}
+            - name: otherAct
+              definition: {output_type: Other, handler: "http://localhost:1/y", headers: [{name: X, value: a}]}
+    response: {"inconsistent_objects": [{"definition": {"enums": [], "input_objects": [], "objects": [{"description": null, "fields": [{"arguments": null, "description": null, "name": "id", "type": "Int!"}], "name": "Out", "relationships": [{"field_mapping": {"id": "id"}, "name": "user", "remote_table": {"name": "ma_user", "schema": "public"}, "source": "default", "type": "object"}]}, {"description": null, "fields": [{"arguments": null, "description": null, "name": "id", "type": "Int!"}], "name": "Other", "relationships": []}], "scalars": []}, "name": "custom_types custom_types", "reason": "Inconsistent object: validation for the given custom types failed because the remote table \"ma_user\" for relationship \"user\" of object type \"Out\" does not exist", "type": "custom_types"}, {"definition": {"comment": null, "definition": {"arguments": [], "forward_client_headers": false, "handler": "http://localhost:1/x", "headers": [], "output_type": "Out", "timeout": 30, "type": "query"}, "name": "act"}, "name": "action act", "reason": "Inconsistent object: custom types are inconsistent", "type": "action"}, {"definition": {"comment": null, "definition": {"arguments": [], "forward_client_headers": false, "handler": "http://localhost:1/y", "headers": [{"name": "X", "value": "a"}], "kind": "synchronous", "output_type": "Other", "timeout": 30, "type": "mutation"}, "name": "otherAct"}, "name": "action otherAct", "reason": "Inconsistent object: custom types are inconsistent", "type": "action"}], "is_consistent": false}
+
+  - description: the custom types and every action are inconsistent
+    query: {type: get_inconsistent_metadata, args: {}}
+    response: {"inconsistent_objects": [{"definition": {"enums": [], "input_objects": [], "objects": [{"description": null, "fields": [{"arguments": null, "description": null, "name": "id", "type": "Int!"}], "name": "Out", "relationships": [{"field_mapping": {"id": "id"}, "name": "user", "remote_table": {"name": "ma_user", "schema": "public"}, "source": "default", "type": "object"}]}, {"description": null, "fields": [{"arguments": null, "description": null, "name": "id", "type": "Int!"}], "name": "Other", "relationships": []}], "scalars": []}, "name": "custom_types custom_types", "reason": "Inconsistent object: validation for the given custom types failed because the remote table \"ma_user\" for relationship \"user\" of object type \"Out\" does not exist", "type": "custom_types"}, {"definition": {"comment": null, "definition": {"arguments": [], "forward_client_headers": false, "handler": "http://localhost:1/x", "headers": [], "output_type": "Out", "timeout": 30, "type": "query"}, "name": "act"}, "name": "action act", "reason": "Inconsistent object: custom types are inconsistent", "type": "action"}, {"definition": {"comment": null, "definition": {"arguments": [], "forward_client_headers": false, "handler": "http://localhost:1/y", "headers": [{"name": "X", "value": "a"}], "kind": "synchronous", "output_type": "Other", "timeout": 30, "type": "mutation"}, "name": "otherAct"}, "name": "action otherAct", "reason": "Inconsistent object: custom types are inconsistent", "type": "action"}], "is_consistent": false}
