@@ -403,10 +403,7 @@ impl Builder<'_> {
             table.description.clone(),
         )));
 
-        let description = table.description.clone().or_else(|| {
-            (!table.logical_model).then(|| format!("columns and relationships of \"{display}\""))
-        });
-        let mut obj = ObjectDef::new(table.type_name(), description);
+        let mut obj = ObjectDef::new(table.type_name(), table.description.clone());
         let what = if table.logical_model {
             "the logical model for"
         } else {
