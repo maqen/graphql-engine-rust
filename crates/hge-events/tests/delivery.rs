@@ -1,5 +1,6 @@
-//! Event triggers end to end against a real Postgres (`HASURA_GRAPHQL_DATABASE_URL`) and a
-//! mock webhook. Skipped when no database is configured.
+//! Event triggers end to end against a throwaway database on the Postgres server
+//! `HASURA_GRAPHQL_DATABASE_URL` points at (see `hge-testdb`) and a mock webhook. Skipped when
+//! no database is configured.
 
 use std::collections::{BTreeMap, HashSet};
 use std::net::SocketAddr;

@@ -1,5 +1,6 @@
-//! Event trigger conformance cases (`tests/events_cases/*.yaml`) against a real Postgres
-//! (`HASURA_GRAPHQL_DATABASE_URL`) and an in-process webhook. Skipped without a database.
+//! Event trigger conformance cases (`tests/events_cases/*.yaml`) against a throwaway database
+//! on the Postgres server `HASURA_GRAPHQL_DATABASE_URL` points at (see `hge-testdb`) and an
+//! in-process webhook. Skipped without a database.
 //!
 //! The engine boots from `tests/fixtures/events/metadata` (with the webhook address filled
 //! in), so this also covers catalog set-up and SQL trigger installation on startup.

@@ -4,14 +4,26 @@
 //! touch the database it names: [`TestDb::create`] makes a uniquely named database on that
 //! server and drops it again when the [`TestDb`] is dropped, so test binaries and parallel
 //! runs (CI jobs, several worktrees) never share state.
+//!
+//! The URL must be in URL form (`postgres://user:pass@host:port/db?…`) and its role needs
+//! `CREATEDB`. Databases left behind by killed runs (named `hge_t_*`) are swept by later runs
+//! once they are older than [`STALE_AFTER_SECS`].
 
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio_postgres::NoTls;
 
 /// The variable that names the Postgres server tests run against.
 pub const URL_VAR: &str = "HASURA_GRAPHQL_DATABASE_URL";
+
+/// Test databases older than this are assumed abandoned and dropped by the next run.
+pub const STALE_AFTER_SECS: u64 = 6 * 60 * 60;
+
+/// How long connecting to the server may take before the test fails.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+const PREFIX: &str = "hge_t_";
 
 /// A database created for one test; dropped (with `FORCE`) on drop.
 pub struct TestDb {
@@ -27,9 +39,9 @@ impl TestDb {
     pub async fn create(label: &str) -> Option<TestDb> {
         let admin_url = std::env::var(URL_VAR).ok()?;
         static SEQ: AtomicU32 = AtomicU32::new(0);
-        let nanos = SystemTime::now()
+        let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.subsec_nanos());
+            .unwrap_or_default();
         let label: String = label
             .chars()
             .map(|c| {
@@ -39,14 +51,18 @@ impl TestDb {
                     '_'
                 }
             })
-            .take(20)
+            .take(12)
             .collect();
+        // `hge_t_<unix secs>_<label>_<pid>_<nanos>_<seq>`, at most 58 bytes.
         let name = format!(
-            "hge_t_{label}_{}_{nanos}_{}",
+            "{PREFIX}{}_{label}_{}_{}_{}",
+            now.as_secs(),
             std::process::id(),
+            now.subsec_nanos(),
             SEQ.fetch_add(1, Ordering::Relaxed)
         );
         let url = with_database(&admin_url, &name);
+        sweep_stale(&admin_url, now.as_secs()).await;
         execute(&admin_url, &format!("CREATE DATABASE \"{name}\"")).await;
         Some(TestDb {
             name,
@@ -86,10 +102,52 @@ impl Drop for TestDb {
     }
 }
 
-async fn execute(url: &str, sql: &str) {
-    let (client, conn) = tokio_postgres::connect(url, NoTls)
+/// Drop test databases created more than [`STALE_AFTER_SECS`] ago (runs that were killed
+/// before they could clean up). Best effort: errors are ignored.
+async fn sweep_stale(admin_url: &str, now: u64) {
+    let Ok(client) = connect(admin_url).await else {
+        return;
+    };
+    let Ok(rows) = client
+        .query(
+            "SELECT datname FROM pg_database WHERE datname LIKE 'hge\\_t\\_%'",
+            &[],
+        )
         .await
-        .unwrap_or_else(|e| panic!("connect to {URL_VAR}: {e}"));
+    else {
+        return;
+    };
+    for row in rows {
+        let name: String = row.get(0);
+        let created = name[PREFIX.len()..]
+            .split('_')
+            .next()
+            .and_then(|s| s.parse::<u64>().ok());
+        if created.is_some_and(|t| now.saturating_sub(t) > STALE_AFTER_SECS) {
+            let _ = client
+                .batch_execute(&format!("DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)"))
+                .await;
+        }
+    }
+}
+
+async fn connect(url: &str) -> Result<tokio_postgres::Client, String> {
+    let mut config: tokio_postgres::Config = url.parse().map_err(|e| format!("{e}"))?;
+    config.connect_timeout(CONNECT_TIMEOUT);
+    let (client, conn) = config.connect(NoTls).await.map_err(|e| format!("{e}"))?;
+    tokio::spawn(conn);
+    Ok(client)
+}
+
+async fn execute(url: &str, sql: &str) {
+    let mut config: tokio_postgres::Config = url
+        .parse()
+        .unwrap_or_else(|e| panic!("{URL_VAR} is not a valid URL: {e}"));
+    config.connect_timeout(CONNECT_TIMEOUT);
+    let (client, conn) = config
+        .connect(NoTls)
+        .await
+        .unwrap_or_else(|e| panic!("connect to the server in {URL_VAR}: {e}"));
     let conn = tokio::spawn(conn);
     client
         .batch_execute(sql)

@@ -1,5 +1,6 @@
-//! Cron triggers and one-off scheduled events against a real Postgres
-//! (`HASURA_GRAPHQL_DATABASE_URL`) and a mock webhook. Skipped without a database.
+//! Cron triggers and one-off scheduled events against a throwaway database on the Postgres
+//! server `HASURA_GRAPHQL_DATABASE_URL` points at (see `hge-testdb`) and a mock webhook. Skipped
+//! without a database.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
