@@ -119,7 +119,7 @@ async fn config_endpoint() {
     );
     assert_eq!(
         v["live_queries"],
-        json!({"batch_size": 100, "refetch_delay": 1.0})
+        json!({"batch_size": 100, "refetch_delay": 1})
     );
 }
 

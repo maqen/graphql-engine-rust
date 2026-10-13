@@ -1,0 +1,1 @@
+# Steps whose outcome still differs from Hasura (see README). Only ever shrinks.

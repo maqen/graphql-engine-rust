@@ -86,6 +86,14 @@ pub struct ServerConfig {
     pub http_log_query_only_on_error: bool,
     /// `HASURA_GRAPHQL_REMOTE_SCHEMA_PRIORITIZE_DATA`
     pub remote_schema_prioritize_data: bool,
+    /// `HASURA_GRAPHQL_ENABLE_REMOTE_SCHEMA_PERMISSIONS`
+    pub remote_schema_permissions: bool,
+    /// `HASURA_GRAPHQL_EXPERIMENTAL_FEATURES`, sorted and deduplicated.
+    pub experimental_features: Vec<String>,
+    /// `HASURA_GRAPHQL_DEFAULT_NAMING_CONVENTION` (`hasura-default` | `graphql-default`).
+    pub default_naming_convention: String,
+    /// `HASURA_GRAPHQL_ENABLE_APOLLO_FEDERATION`
+    pub apollo_federation: bool,
 }
 
 impl Default for ServerConfig {
@@ -132,6 +140,10 @@ impl Default for ServerConfig {
             enable_metadata_query_logging: false,
             http_log_query_only_on_error: false,
             remote_schema_prioritize_data: false,
+            remote_schema_permissions: false,
+            experimental_features: vec![],
+            default_naming_convention: "hasura-default".to_owned(),
+            apollo_federation: false,
         }
     }
 }

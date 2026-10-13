@@ -233,6 +233,25 @@ struct ServeArgs {
     #[arg(long, env = "HASURA_GRAPHQL_ENABLE_ALLOWLIST", value_parser = parse_bool, default_value = "false")]
     enable_allowlist: bool,
 
+    /// Reported by `/v1alpha1/config`; remote schema permissions are always enforced.
+    #[arg(long, env = "HASURA_GRAPHQL_ENABLE_REMOTE_SCHEMA_PERMISSIONS", value_parser = parse_bool, default_value = "false")]
+    enable_remote_schema_permissions: bool,
+
+    /// Comma-separated experimental features (reported by `/v1alpha1/config`).
+    #[arg(long, env = "HASURA_GRAPHQL_EXPERIMENTAL_FEATURES", default_value = "")]
+    experimental_features: String,
+
+    /// `hasura-default` or `graphql-default`.
+    #[arg(
+        long,
+        env = "HASURA_GRAPHQL_DEFAULT_NAMING_CONVENTION",
+        default_value = "hasura-default"
+    )]
+    default_naming_convention: String,
+
+    #[arg(long, env = "HASURA_GRAPHQL_ENABLE_APOLLO_FEDERATION", value_parser = parse_bool, default_value = "false")]
+    enable_apollo_federation: bool,
+
     #[arg(long, env = "HASURA_GRAPHQL_LOG_LEVEL", default_value = "info")]
     log_level: String,
 
@@ -579,6 +598,20 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
         enable_metadata_query_logging: args.enable_metadata_query_logging,
         http_log_query_only_on_error: args.http_log_query_only_on_error,
         remote_schema_prioritize_data: args.remote_schema_prioritize_data,
+        remote_schema_permissions: args.enable_remote_schema_permissions,
+        experimental_features: {
+            let mut features: Vec<String> = args
+                .experimental_features
+                .split(',')
+                .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty())
+                .collect();
+            features.sort();
+            features.dedup();
+            features
+        },
+        default_naming_convention: args.default_naming_convention.clone(),
+        apollo_federation: args.enable_apollo_federation,
         ..ServerConfig::default()
     })
 }
@@ -651,7 +684,11 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match &cli.command {
         Command::Version => {
-            println!("{}", hge_server::routes::VERSION);
+            println!(
+                "{} (graphql-engine-rust {})",
+                hge_server::routes::VERSION,
+                hge_server::routes::ENGINE_VERSION
+            );
             Ok(())
         }
         Command::ExportMetadata { dir } => {

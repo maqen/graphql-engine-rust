@@ -175,13 +175,9 @@ pub fn export_json(metadata: &Metadata) -> Value {
         "version" => v,
         "sources" => map_array(v, export_source),
         "remote_schemas" => map_array(v, |rs| {
-            let Value::Object(mut obj) = rs else {
-                return rs;
-            };
-            if let Some(def) = obj.remove("definition") {
-                obj.insert("definition".into(), fixed(def, REMOTE_SCHEMA_DEF));
-            }
-            fixed(Value::Object(obj), REMOTE_SCHEMA)
+            nested(rs, REMOTE_SCHEMA, "definition", |d| {
+                fixed(d, REMOTE_SCHEMA_DEF)
+            })
         }),
         "query_collections" => map_array(v, |c| fixed(c, COLLECTION)),
         "actions" => map_array(v, export_action),
@@ -203,7 +199,9 @@ pub fn export_json(metadata: &Metadata) -> Value {
     }
     let mut result = Map::new();
     for key in TOP_LEVEL {
-        if let Some(v) = out.remove(*key) {
+        if let Some(v) = out.remove(*key)
+            && (matches!(*key, "version" | "sources") || !is_empty(&v))
+        {
             result.insert((*key).to_owned(), v);
         }
     }
@@ -387,6 +385,17 @@ fn typed_type_relationship(rel: Value) -> Value {
         r.insert("remote_table".into(), table);
     }
     Value::Object(r)
+}
+
+/// V2 leaves out top-level objects equal to their default. Covered here: nothing but empty
+/// lists and objects (`network: {}`, `graphql_schema_introspection: {disabled_for_roles: []}`).
+fn is_empty(v: &Value) -> bool {
+    match v {
+        Value::Null => true,
+        Value::Array(items) => items.is_empty(),
+        Value::Object(obj) => obj.values().all(is_empty),
+        _ => false,
+    }
 }
 
 /// Transforms go through their typed `ToJSON` (spec 06 §2.7): `version` and
@@ -611,6 +620,15 @@ fn normalise_bool_exp(exp: &mut Value) {
     }
 }
 
+/// [`fixed`] for `v`, then `f` for its `key` (which `fixed` alone would sort).
+fn nested(v: Value, order: &[&str], key: &str, f: impl FnOnce(Value) -> Value) -> Value {
+    let mut out = fixed(v, order);
+    if let Some(inner) = out.get_mut(key) {
+        *inner = f(std::mem::take(inner));
+    }
+    out
+}
+
 /// An object with a fixed key order: known keys first (in `order`, values sorted
 /// recursively unless already handled), then any unknown keys sorted.
 fn fixed(v: Value, order: &[&str]) -> Value {
@@ -826,6 +844,44 @@ mod tests {
             r#"{"connection_info":{"database_url":"x","use_prepared_statements":true}}"#
         );
         assert!(text.ends_with(r#""inherited_roles":[{"role_name":"r","role_set":["a"]}]}"#));
+    }
+
+    #[test]
+    fn nested_objects_keep_their_fixed_order() {
+        let md: Metadata = serde_json::from_value(json!({
+            "version": 3,
+            "sources": [{"name": "a", "kind": "postgres",
+                "configuration": {"connection_info": {"database_url": "y"}},
+                "tables": [{"table": {"schema": "public", "name": "b"},
+                    "insert_permissions": [{"role": "m", "permission": {"columns": ["x"], "set": {"x": 1}, "check": {}}}],
+                    "select_permissions": [{"role": "m", "permission": {"allow_aggregations": true, "limit": 1, "columns": ["x"], "filter": {}}}]}]}],
+            "actions": [{"name": "a", "definition": {"type": "query", "output_type": "String", "handler": "http://h"}}]
+        }))
+        .unwrap();
+        let out = export_json(&md);
+        let table = &out["sources"][0]["tables"][0];
+        assert_eq!(
+            table["select_permissions"][0]["permission"].to_string(),
+            r#"{"columns":["x"],"filter":{},"limit":1,"allow_aggregations":true}"#
+        );
+        assert_eq!(
+            table["insert_permissions"][0]["permission"].to_string(),
+            r#"{"check":{},"set":{"x":1},"columns":["x"]}"#
+        );
+        let def = out["actions"][0]["definition"].as_object().unwrap();
+        let keys: Vec<_> = def.keys().map(String::as_str).collect();
+        assert_eq!(keys[..2], ["handler", "output_type"]);
+    }
+
+    #[test]
+    fn empty_top_level_objects_are_left_out() {
+        let md = crate::from_json(json!({
+            "version": 3, "sources": [], "network": {},
+            "graphql_schema_introspection": {"disabled_for_roles": []},
+            "backend_configs": {}, "opentelemetry": {}
+        }))
+        .unwrap();
+        assert_eq!(export_json(&md), json!({"version": 3, "sources": []}));
     }
 
     #[test]
