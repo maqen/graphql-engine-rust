@@ -327,7 +327,7 @@ impl<'de> Deserialize<'de> for Seconds {
     }
 }
 
-fn aeson_type(v: &Value) -> &'static str {
+pub(crate) fn aeson_type(v: &Value) -> &'static str {
     match v {
         Value::Null => "Null",
         Value::Bool(_) => "Boolean",

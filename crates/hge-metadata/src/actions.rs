@@ -11,6 +11,24 @@ use serde_json::{Value, json};
 use hge_core::{Code, Error, QualifiedTable};
 use hge_transforms::{ParseError, RequestTransform, ResponseTransform};
 
+/// V2's `Timeout` parser: any integral number (`2.0` and `1e3` too, via
+/// `toBoundedInteger`) that is not negative.
+pub fn timeout_secs(n: &serde_json::Number) -> Result<u64, String> {
+    let integral = n.as_i64().or_else(|| {
+        n.as_f64()
+            .filter(|f| f.fract() == 0.0 && *f >= i64::MIN as f64 && *f < i64::MAX as f64)
+            .map(|f| f as i64)
+    });
+    match integral {
+        Some(t) if t < 0 => Err("timeout value cannot be negative".into()),
+        Some(t) => Ok(t.unsigned_abs()),
+        None => {
+            let shown = hge_core::scientific_show(&n.to_string()).unwrap_or_else(|| n.to_string());
+            Err(format!("{shown} is out of bounds"))
+        }
+    }
+}
+
 /// `definition.timeout` default, in seconds.
 pub const DEFAULT_ACTION_TIMEOUT_SECS: u64 = 30;
 
@@ -290,11 +308,7 @@ impl ActionDefinition {
         };
         let timeout_secs = match obj.get("timeout") {
             None | Some(Value::Null) => DEFAULT_ACTION_TIMEOUT_SECS,
-            Some(Value::Number(n)) => match (n.as_u64(), n.as_f64()) {
-                (Some(t), _) => t,
-                (None, Some(f)) if f < 0.0 => return Err("timeout value cannot be negative".into()),
-                _ => return Err(format!("{n} is out of bounds")),
-            },
+            Some(Value::Number(n)) => timeout_secs(n)?,
             Some(_) => return Err("expected Number for 'timeout'".into()),
         };
         let request_transform =
@@ -325,14 +339,27 @@ fn transform<T>(
     v.filter(|v| !v.is_null()).map(parse).transpose()
 }
 
-/// Decode every action's transforms. As in V2's `FromJSON`, a malformed transform makes
-/// the whole metadata document unreadable: `parse-failed` at
-/// `$.actions[i].definition.request_transform…`.
+/// Decode every action's transforms and timeout. As in V2's `FromJSON`, a malformed one
+/// makes the whole metadata document unreadable: `parse-failed` at
+/// `$.actions[i].definition.request_transform…` (or `.timeout`).
 pub fn check_transforms(actions: &[Value]) -> Result<(), Error> {
     for (i, action) in actions.iter().enumerate() {
         let Some(def) = action.get("definition") else {
             continue;
         };
+        // `Timeout`'s `FromJSON` fails the same way.
+        let timeout = match def.get("timeout") {
+            None | Some(Value::Null) => Ok(0),
+            Some(Value::Number(n)) => timeout_secs(n),
+            Some(other) => Err(format!(
+                "parsing Timeout failed, expected Number, but encountered {}",
+                crate::collections::aeson_type(other)
+            )),
+        };
+        if let Err(e) = timeout {
+            return Err(Error::new(Code::ParseFailed, e)
+                .with_path(format!("$.actions[{i}].definition.timeout")));
+        }
         let request = transform(def.get("request_transform"), RequestTransform::from_json);
         let response = transform(def.get("response_transform"), ResponseTransform::from_json);
         for (key, result) in [
@@ -510,6 +537,19 @@ pub struct EnumValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timeouts_follow_v2_bounds() {
+        let t = |v: Value| timeout_secs(&serde_json::from_value(v).unwrap());
+        assert_eq!(t(json!(2.0)), Ok(2));
+        assert_eq!(t(json!(1e1)), Ok(10));
+        assert_eq!(t(json!(-1)), Err("timeout value cannot be negative".into()));
+        assert_eq!(t(json!(2.5)), Err("2.5 is out of bounds".into()));
+        assert_eq!(t(json!(1e20)), Err("1.0e20 is out of bounds".into()));
+        // 2^63 does not fit an `Int`.
+        assert!(t(json!(9223372036854775808.0)).is_err());
+        assert!(t(json!(9223372036854775808u64)).is_err());
+    }
     use serde_json::json;
 
     #[test]
