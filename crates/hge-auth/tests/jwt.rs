@@ -623,3 +623,78 @@ async fn hostile_but_signed_claims_do_not_panic() {
         .unwrap_err();
     assert_eq!(err(e).2, "Could not verify JWT: JWTNotInAudience");
 }
+
+/// Keys ring cannot check (RSA under 2048 bits, P-521) work like in V2. The tokens were
+/// signed with openssl; the private keys were not kept.
+#[tokio::test]
+async fn legacy_keys() {
+    for (ty, key, token) in [
+        (
+            "RS256",
+            include_str!("fixtures/rsa1024_public.pem"),
+            include_str!("fixtures/rsa1024.jwt"),
+        ),
+        (
+            "ES512",
+            include_str!("fixtures/ec521_public.pem"),
+            include_str!("fixtures/ec521.jwt"),
+        ),
+    ] {
+        let a = jwt_auth(json!({"type": ty, "key": key})).await;
+        let ok = run(&a, &[("authorization", &bearer(token.trim()))]).await;
+        assert_eq!(ok.unwrap().session.role.as_str(), "user", "{ty}");
+        // A tampered signature fails.
+        let mut bad: Vec<char> = token.trim().chars().collect();
+        let i = bad.len() - 10;
+        bad[i] = if bad[i] == 'A' { 'B' } else { 'A' };
+        let bad: String = bad.into_iter().collect();
+        let e = run(&a, &[("authorization", &bearer(&bad))])
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err(e).2,
+            "Could not verify JWT: JWSError JWSInvalidSignature",
+            "{ty}"
+        );
+    }
+}
+
+/// The other RSA algorithms on the legacy path, a truncated ES512 signature and a token
+/// whose `alg` does not fit the key.
+#[tokio::test]
+async fn legacy_keys_other_algs() {
+    let rsa =
+        jwt_auth(json!({"type": "RS256", "key": include_str!("fixtures/rsa1024_public.pem")}))
+            .await;
+    for token in [
+        include_str!("fixtures/rsa1024_rs512.jwt"),
+        include_str!("fixtures/rsa1024_ps256.jwt"),
+        include_str!("fixtures/rsa1024_ps384.jwt"),
+    ] {
+        let ok = run(&rsa, &[("authorization", &bearer(token.trim()))]).await;
+        assert_eq!(ok.unwrap().session.role.as_str(), "user", "{token}");
+    }
+
+    let ec =
+        jwt_auth(json!({"type": "ES512", "key": include_str!("fixtures/ec521_public.pem")})).await;
+    let token = include_str!("fixtures/ec521.jwt").trim();
+    let e = run(
+        &ec,
+        &[("authorization", &bearer(&token[..token.len() - 8]))],
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        err(e).2,
+        "Could not verify JWT: JWSError JWSInvalidSignature"
+    );
+    let e = run(
+        &ec,
+        &[(
+            "authorization",
+            &bearer(include_str!("fixtures/rsa1024.jwt").trim()),
+        )],
+    )
+    .await;
+    assert!(e.is_err());
+}
