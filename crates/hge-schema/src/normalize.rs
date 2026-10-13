@@ -14,7 +14,7 @@ use async_graphql_parser::types::{
     Selection, SelectionSet,
 };
 use async_graphql_value::{Name, Value as GqlValue};
-use hge_core::Error;
+use hge_core::{Code, Error};
 use hge_ir::OperationKind;
 use indexmap::IndexMap;
 use serde_json::{Map, Value as Json};
@@ -900,6 +900,16 @@ fn coerce_scalar(name: &str, value: Json, path: &str) -> Result<Json, Error> {
             {
                 Ok(Json::from(n.as_f64().unwrap_or_default() as i64))
             }
+            // V2 parses the number first, then rejects it with this message (and code).
+            Json::Number(n) => Err(Error::new(
+                Code::ParseFailed,
+                format!(
+                    "The value {} lies outside the bounds or is not an integer. Maybe it is a \
+                     float, or is there integer overflow?",
+                    haskell_scientific(n)
+                ),
+            )
+            .with_path(path.to_owned())),
             _ => Err(err("a 32-bit integer")),
         },
         Some(BuiltinScalar::Float) => match &value {
@@ -924,6 +934,43 @@ fn coerce_scalar(name: &str, value: Json, path: &str) -> Result<Json, Error> {
     }
 }
 
+/// A number as Haskell's `Scientific` shows it (V2 quotes values this way in errors): fixed
+/// notation for `0.1 <= |x| < 10^7`, else `d.ddde<n>`.
+fn haskell_scientific(n: &serde_json::Number) -> String {
+    let text = n.to_string();
+    let (sign, text) = match text.strip_prefix('-') {
+        Some(rest) => ("-", rest),
+        None => ("", text.as_str()),
+    };
+    let (mantissa, exp) = match text.split_once(['e', 'E']) {
+        Some((m, e)) => (m, e.parse::<i64>().unwrap_or(0)),
+        None => (text, 0),
+    };
+    let (int, frac) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    let all: String = format!("{int}{frac}");
+    let lead = all.len() - all.trim_start_matches('0').len();
+    let digits = all.trim_matches('0');
+    if digits.is_empty() {
+        return format!("{sign}0.0");
+    }
+    // value = 0.<digits> × 10^e
+    let e = int.len() as i64 - lead as i64 + exp;
+    if !(0..=7).contains(&e) {
+        let (first, rest) = digits.split_at(1);
+        let rest = if rest.is_empty() { "0" } else { rest };
+        return format!("{sign}{first}.{rest}e{}", e - 1);
+    }
+    if e == 0 {
+        return format!("{sign}0.{digits}");
+    }
+    let e = e as usize;
+    if digits.len() <= e {
+        format!("{sign}{digits}{}.0", "0".repeat(e - digits.len()))
+    } else {
+        format!("{sign}{}.{}", &digits[..e], &digits[e..])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -935,5 +982,27 @@ mod tests {
         assert!(!variable_usage_allowed(&int, &int.clone().non_null()));
         assert!(variable_usage_allowed(&int, &int.clone().list()));
         assert!(!variable_usage_allowed(&TypeRef::named("String"), &int));
+    }
+
+    #[test]
+    fn numbers_shown_like_haskell_scientific() {
+        let show = |v: serde_json::Value| match v {
+            serde_json::Value::Number(n) => super::haskell_scientific(&n),
+            _ => unreachable!(),
+        };
+        assert_eq!(show(serde_json::json!(2147483648u64)), "2.147483648e9");
+        assert_eq!(show(serde_json::json!(1.5)), "1.5");
+        assert_eq!(show(serde_json::json!(0.5)), "0.5");
+        assert_eq!(show(serde_json::json!(0.05)), "5.0e-2");
+        assert_eq!(show(serde_json::json!(-3000000000i64)), "-3.0e9");
+        assert_eq!(show(serde_json::json!(12.25)), "12.25");
+    }
+
+    #[test]
+    fn names_starting_with_keywords_parse() {
+        // Our vendored parser only matches `null`/`true`/`false` as whole words (V2 parses these).
+        let doc = "mutation { f(objects: [{nullName: \"2\"}], cols: [nullName, trueish, falsey], n: null, t: true) }";
+        assert!(async_graphql_parser::parse_query(doc).is_ok());
+        assert!(async_graphql_parser::parse_query("{ f(a: nullx) }").is_ok());
     }
 }
