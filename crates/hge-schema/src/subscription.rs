@@ -230,6 +230,7 @@ pub(crate) fn lower_stream(
             ty: col.ty.clone(),
             direction,
             initial_value,
+            redact: lw.redaction(table, &col.name).cloned().map(Box::new),
         },
     })
 }

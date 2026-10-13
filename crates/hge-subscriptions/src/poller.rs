@@ -92,6 +92,8 @@ struct PollerState {
     /// Incremented by every poll; subscribers that joined after a poll took its snapshot
     /// (`joined > epoch`) are left out of that poll's results.
     epoch: u64,
+    /// The last subscriber left and the poller is stopping: `add` must use a new poller.
+    closed: bool,
 }
 
 struct Cohort {
@@ -231,51 +233,47 @@ impl RegistryInner {
             executor: Arc::as_ptr(&executor) as *const () as usize,
             sql,
         };
-        let mut pollers = self.pollers.lock().expect("lock");
-        let poller = pollers
-            .entry(key.clone())
-            .or_insert_with(|| {
-                let poller = Arc::new(Poller {
-                    key,
-                    executor,
-                    cursor,
-                    state: Mutex::new(PollerState::default()),
-                    task: Mutex::new(None),
-                });
-                let task = tokio::spawn(run(poller.clone(), self.options));
-                *poller.task.lock().expect("lock") = Some(task.abort_handle());
-                poller
-            })
-            .clone();
-        let mut state = poller.state.lock().expect("lock");
-        let joined = state.epoch;
-        let cohort = state
-            .cohorts
-            .entry(values.clone())
-            .or_insert_with(|| Cohort {
-                json: values_json(&values).into(),
-                hash: last_hash,
-                mixed: false,
-                subscribers: HashMap::new(),
-            });
-        if cohort.hash != last_hash {
-            cohort.mixed = true;
+        // The registry lock is never held while waiting for a poller's state, which a poll
+        // holds while delivering results.
+        loop {
+            let poller = self
+                .pollers
+                .lock()
+                .expect("lock")
+                .entry(key.clone())
+                .or_insert_with(|| {
+                    let poller = Arc::new(Poller {
+                        key: key.clone(),
+                        executor: executor.clone(),
+                        cursor,
+                        state: Mutex::new(PollerState::default()),
+                        task: Mutex::new(None),
+                    });
+                    let task = tokio::spawn(run(poller.clone(), self.options));
+                    *poller.task.lock().expect("lock") = Some(task.abort_handle());
+                    poller
+                })
+                .clone();
+            if poller.join(id, &values, &sink, last_hash) {
+                return poller;
+            }
+            // Stopping: make sure it is unregistered (its `remove` may not have got there
+            // yet), then start a new one.
+            self.unregister(&poller);
         }
-        cohort.subscribers.insert(
-            id,
-            Member {
-                sink,
-                last_hash,
-                joined,
-            },
-        );
-        state.members.insert(id, values);
-        drop(state);
-        poller
+    }
+
+    fn unregister(&self, poller: &Arc<Poller>) {
+        let mut pollers = self.pollers.lock().expect("lock");
+        if pollers
+            .get(&poller.key)
+            .is_some_and(|p| Arc::ptr_eq(p, poller))
+        {
+            pollers.remove(&poller.key);
+        }
     }
 
     fn remove(&self, poller: &Arc<Poller>, id: u64) {
-        let mut pollers = self.pollers.lock().expect("lock");
         let mut state = poller.state.lock().expect("lock");
         if let Some(values) = state.members.remove(&id)
             && let Some(cohort) = state.cohorts.get_mut(&values)
@@ -285,13 +283,11 @@ impl RegistryInner {
                 state.cohorts.remove(&values);
             }
         }
-        if state.cohorts.is_empty() {
-            if pollers
-                .get(&poller.key)
-                .is_some_and(|p| Arc::ptr_eq(p, poller))
-            {
-                pollers.remove(&poller.key);
-            }
+        if state.members.is_empty() && !state.closed {
+            state.closed = true;
+            state.cohorts.clear();
+            drop(state);
+            self.unregister(poller);
             if let Some(task) = poller.task.lock().expect("lock").take() {
                 task.abort();
             }
@@ -307,6 +303,43 @@ async fn run(poller: Arc<Poller>, options: PollerOptions) {
 }
 
 impl Poller {
+    /// Add a subscriber to the cohort for `values`; false if the poller is stopping.
+    fn join(
+        &self,
+        id: u64,
+        values: &Values,
+        sink: &Arc<dyn Subscriber>,
+        last_hash: Option<u128>,
+    ) -> bool {
+        let mut state = self.state.lock().expect("lock");
+        if state.closed {
+            return false;
+        }
+        let joined = state.epoch;
+        let cohort = state
+            .cohorts
+            .entry(values.clone())
+            .or_insert_with(|| Cohort {
+                json: values_json(values).into(),
+                hash: last_hash,
+                mixed: false,
+                subscribers: HashMap::new(),
+            });
+        if cohort.hash != last_hash {
+            cohort.mixed = true;
+        }
+        cohort.subscribers.insert(
+            id,
+            Member {
+                sink: sink.clone(),
+                last_hash,
+                joined,
+            },
+        );
+        state.members.insert(id, values.clone());
+        true
+    }
+
     async fn poll(&self, batch_size: usize) {
         let started = Instant::now();
         let (epoch, cohorts) = {
@@ -438,7 +471,9 @@ impl PollerState {
         let mut next = values.to_vec();
         next[cursor_index] = Some(cursor);
         let next: Values = next.into();
-        if next == *values {
+        // Nobody to move (every subscriber joined after this poll's snapshot): creating the
+        // target cohort would leave an empty cohort polled forever.
+        if next == *values || polled.is_empty() {
             return;
         }
         let moved: Vec<(u64, Member)> = polled

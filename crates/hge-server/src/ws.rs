@@ -225,7 +225,8 @@ enum Event {
     /// Close the connection (server-initiated).
     Close(u16, String),
     /// A subscription's results could not be queued: stop it.
-    Overflow(String),
+    /// A subscription's results overflowed the send queue: (operation id, generation).
+    Overflow(String, u64),
 }
 
 /// Frames for the writer.
@@ -325,8 +326,9 @@ struct Connection {
     /// Headers of the upgrade request (used by the first `connection_init` only).
     upgrade_headers: HeaderMap,
     state: ConnState,
-    /// Running subscriptions by operation id.
-    subscriptions: HashMap<String, SubscriptionHandle>,
+    /// Running subscriptions by operation id, with the generation they were started with.
+    subscriptions: HashMap<String, (u64, SubscriptionHandle)>,
+    next_generation: u64,
     queries: JoinSet<()>,
     /// Set once the server sent a close frame: wait for the client's reply.
     closing: bool,
@@ -381,6 +383,7 @@ impl Connection {
             upgrade_headers,
             state: ConnState::NotInitialised,
             subscriptions: HashMap::new(),
+            next_generation: 0,
             queries: JoinSet::new(),
             closing: false,
         };
@@ -390,6 +393,8 @@ impl Connection {
         let close_deadline = tokio::time::sleep(Duration::MAX / 4);
         tokio::pin!(close_deadline);
         let mut close_armed = false;
+        // A finished `JoinHandle` must not be polled again.
+        let mut writer_done = false;
         loop {
             let expiry = conn.expiry();
             tokio::select! {
@@ -401,7 +406,7 @@ impl Connection {
                 },
                 Some(event) = events_rx.recv() => match event {
                     Event::Close(code, reason) => conn.close(code, reason),
-                    Event::Overflow(op) => conn.on_overflow(&op),
+                    Event::Overflow(op, generation) => conn.on_overflow(&op, generation),
                 },
                 () = &mut init_deadline, if matches!(conn.state, ConnState::NotInitialised) && !conn.closing => {
                     let code = match protocol {
@@ -419,7 +424,10 @@ impl Connection {
                     break;
                 }
                 () = &mut close_deadline, if close_armed => break,
-                _ = &mut writer => break,
+                _ = &mut writer => {
+                    writer_done = true;
+                    break;
+                }
             }
             if conn.closing && !close_armed {
                 close_armed = true;
@@ -434,8 +442,10 @@ impl Connection {
         conn.queries.abort_all();
         // Dropping the outbox lets the writer finish what is queued, then stop.
         drop(conn);
-        let _ = tokio::time::timeout(Duration::from_secs(1), &mut writer).await;
-        writer.abort();
+        if !writer_done {
+            let _ = tokio::time::timeout(Duration::from_secs(1), &mut writer).await;
+            writer.abort();
+        }
         tracing::info!(target: "websocket-log", connection = id, "closed");
     }
 
@@ -583,16 +593,24 @@ impl Connection {
             Ok(op) => op,
             Err(e) => return self.request_error(&id, &e),
         };
+        let is_mutation = op.kind == OperationKind::Mutation;
         if op.kind != OperationKind::Subscription {
+            // Forget finished queries, so a long-lived connection does not accumulate them.
+            while self.queries.try_join_next().is_some() {}
             let out = self.out.clone();
             let (protocol, endpoint) = (self.protocol, self.endpoint);
-            self.queries.spawn(async move {
+            let run = async move {
                 match graphql::execute(&state, &session, &headers, Some(&query), &op).await {
                     // Like V2, `Set-Cookie` headers from actions are dropped over websockets.
                     Ok((body, _set_cookies)) => {
                         if !out.data(protocol.data(&id, &body)) {
                             let e = Error::unexpected(OVERFLOW_MESSAGE);
-                            out.control(protocol.error(&id, &[error_json(&e, endpoint)]));
+                            out.control(error_message(
+                                protocol,
+                                endpoint,
+                                &id,
+                                error_json(&e, endpoint),
+                            ));
                         }
                     }
                     Err(e) => {
@@ -601,12 +619,21 @@ impl Connection {
                     }
                 }
                 out.control(protocol::complete(&id));
-            });
+            };
+            // Mutations run before the next message is read, like V2, so that an operation
+            // sent after a mutation sees its effects. Queries run concurrently.
+            if is_mutation {
+                run.await;
+            } else {
+                self.queries.spawn(run);
+            }
             return;
         }
-        match self.subscribe(&state, &session, &id, &op).await {
+        let generation = self.next_generation;
+        self.next_generation += 1;
+        match self.subscribe(&state, &session, &id, generation, &op).await {
             Ok(handle) => {
-                self.subscriptions.insert(id, handle);
+                self.subscriptions.insert(id, (generation, handle));
             }
             Err(e) => self.request_error(&id, &e),
         }
@@ -617,6 +644,7 @@ impl Connection {
         state: &AppState,
         session: &Session,
         id: &str,
+        generation: u64,
         op: &hge_ir::Operation,
     ) -> Result<SubscriptionHandle, Error> {
         let (source, fields, layout) = subscription_fields(op)?;
@@ -633,6 +661,7 @@ impl Connection {
         };
         let sink = Arc::new(OperationSink {
             id: id.to_owned(),
+            generation,
             protocol: self.protocol,
             out: self.out.clone(),
             events: self.events.clone(),
@@ -642,11 +671,18 @@ impl Connection {
         registry.subscribe(executor, query, sink).await
     }
 
-    fn on_overflow(&mut self, id: &str) {
-        if self.subscriptions.remove(id).is_some() {
+    /// `generation` tells the overflowed subscription apart from a later one reusing its id.
+    fn on_overflow(&mut self, id: &str, generation: u64) {
+        if self
+            .subscriptions
+            .get(id)
+            .is_some_and(|(g, _)| *g == generation)
+        {
+            self.subscriptions.remove(id);
             let e = Error::unexpected(OVERFLOW_MESSAGE);
+            let error = error_json(&e, self.endpoint);
             self.out
-                .control(self.protocol.error(id, &[error_json(&e, self.endpoint)]));
+                .control(error_message(self.protocol, self.endpoint, id, error));
             self.out.control(protocol::complete(id));
         }
     }
@@ -669,12 +705,18 @@ impl Connection {
     /// A request that failed before executing: parse, validation, permissions, planning.
     fn request_error(&mut self, id: &str, e: &Error) {
         let error = error_json(e, self.endpoint);
-        let msg = match (self.endpoint, self.protocol) {
-            (Endpoint::V1Alpha1, _) => protocol::error_object(id, &error),
-            (Endpoint::V1, protocol) => protocol.error(id, &[error]),
-        };
-        self.out.control(msg);
+        self.out
+            .control(error_message(self.protocol, self.endpoint, id, error));
         self.out.control(protocol::complete(id));
+    }
+}
+
+/// An `error` message: the bare legacy object on `/v1alpha1/graphql`, the protocol's errors
+/// payload otherwise.
+fn error_message(protocol: Protocol, endpoint: Endpoint, id: &str, error: Json) -> String {
+    match endpoint {
+        Endpoint::V1Alpha1 => protocol::error_object(id, &error),
+        Endpoint::V1 => protocol.error(id, &[error]),
     }
 }
 
@@ -762,6 +804,7 @@ fn subscription_fields(op: &hge_ir::Operation) -> Result<(&str, Vec<&QueryRoot>,
 /// Delivers a subscription's results to its connection.
 struct OperationSink {
     id: String,
+    generation: u64,
     protocol: Protocol,
     out: Outbox,
     events: mpsc::UnboundedSender<Event>,
@@ -776,7 +819,9 @@ impl Subscriber for OperationSink {
         }
         let msg = self.protocol.data(&self.id, &self.layout.render(fields));
         if !self.out.data(msg) && !self.overflowed.swap(true, Ordering::SeqCst) {
-            let _ = self.events.send(Event::Overflow(self.id.clone()));
+            let _ = self
+                .events
+                .send(Event::Overflow(self.id.clone(), self.generation));
         }
     }
 

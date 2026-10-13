@@ -86,15 +86,15 @@ impl Translator<'_> {
             OrderDirection::Asc => (" ASC", " > ", "max"),
             OrderDirection::Desc => (" DESC", " < ", "min"),
         };
-        let column = &s.cursor.column;
 
         self.b.push("SELECT coalesce(json_agg(");
         self.row_json(&sel.fields, &base)?;
         self.b.push(" ORDER BY ");
-        self.b.qualified(&base, column).push(dir);
+        self.stream_cursor(s, &base)?;
+        self.b.push(dir);
         self.b.push(r#"), '[]') AS "root", ("#);
         self.b.push(agg).push("(");
-        self.b.qualified(&base, column);
+        self.stream_cursor(s, &base)?;
         self.b.push(r#"))::text AS "cursor" FROM (SELECT "#);
         self.b.ident(&inner).push(".* FROM ");
         self.b
@@ -107,7 +107,8 @@ impl Translator<'_> {
             self.b.push(" AND ");
         }
         self.b.push("(");
-        self.b.qualified(&inner, column).push(cmp);
+        self.stream_cursor(s, &inner)?;
+        self.b.push(cmp);
         self.value(&s.cursor.initial_value)?;
         let cursor = self.b.params.len() - 1;
         self.b.push(")");
@@ -116,7 +117,8 @@ impl Translator<'_> {
             self.bool_exp(w, &inner)?;
         }
         self.b.push(" ORDER BY ");
-        self.b.qualified(&inner, column).push(dir);
+        self.stream_cursor(s, &inner)?;
+        self.b.push(dir);
         // A row limit from permissions caps the batch, like V2's `min(limit, batch_size)`.
         let batch = match sel.permission_limit {
             Some(l) => l.min(s.batch_size),
@@ -129,6 +131,23 @@ impl Translator<'_> {
         ))?;
         self.b.push(") ROWS WITH TIES) AS ").ident(&base);
         Ok(cursor)
+    }
+
+    /// The cursor column of rows of `alias`; NULL where it is redacted for the role.
+    fn stream_cursor(&mut self, s: &StreamSelect, alias: &str) -> Result<(), Error> {
+        match &s.cursor.redact {
+            None => {
+                self.b.qualified(alias, &s.cursor.column);
+            }
+            Some(condition) => {
+                self.b.push("(CASE WHEN ");
+                self.bool_exp(condition, alias)?;
+                self.b.push(" THEN ");
+                self.b.qualified(alias, &s.cursor.column);
+                self.b.push(" ELSE NULL END)");
+            }
+        }
+        Ok(())
     }
 }
 
@@ -222,6 +241,7 @@ mod tests {
                 ty: int4(),
                 direction: OrderDirection::Desc,
                 initial_value: Value::literal("10", int4()),
+                redact: None,
             },
         };
         let q = translate_multiplexed(&[&QueryRoot::Stream(stream)], &Session::admin()).unwrap();

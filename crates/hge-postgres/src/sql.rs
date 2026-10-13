@@ -63,24 +63,31 @@ impl SqlBuilder {
 
     /// Bind a text-format parameter cast to `ty`: `$n::"schema"."type"`.
     pub fn param(&mut self, value: Option<String>, ty: &ColumnType) -> &mut Self {
+        self.placeholder(value);
+        self.sql.push_str("::");
+        push_type(&mut self.sql, ty);
+        self
+    }
+
+    /// Bind `value` and write its untyped placeholder: `($n)`, or `(<vars>->>n-1)` when
+    /// multiplexed.
+    fn placeholder(&mut self, value: Option<String>) {
         self.params.push(value);
         let n = self.params.len();
         match &self.vars {
-            None => write!(self.sql, "(${n})::"),
-            Some(vars) => write!(self.sql, "({vars}->>{})::", n - 1),
+            None => write!(self.sql, "(${n})"),
+            Some(vars) => write!(self.sql, "({vars}->>{})", n - 1),
         }
         .expect("write to string");
-        push_type(&mut self.sql, ty);
-        self
     }
 
     /// Bind a GraphQL input value: like [`Self::param`], except that `geometry` /
     /// `geography` inputs are GeoJSON (`ST_GeomFromGeoJSON($n)::"type"`).
     pub fn input_param(&mut self, value: Option<String>, ty: &ColumnType) -> &mut Self {
         if ty.dimensions == 0 && matches!(ty.name.as_str(), "geometry" | "geography") {
-            self.params.push(value);
-            let n = self.params.len();
-            write!(self.sql, "ST_GeomFromGeoJSON((${n})::text)::").expect("write to string");
+            self.sql.push_str("ST_GeomFromGeoJSON(");
+            self.placeholder(value);
+            self.sql.push_str("::text)::");
             push_type(&mut self.sql, ty);
             return self;
         }
@@ -136,5 +143,25 @@ mod tests {
             r#"("_subs"."vars"->>0)::"pg_catalog"."int4", ("_subs"."vars"->>1)::"pg_catalog"."text""#
         );
         assert_eq!(b.params, vec![Some("1".to_owned()), None]);
+    }
+
+    #[test]
+    fn geometry_input_params() {
+        let geometry = ColumnType {
+            schema: "public".to_owned(),
+            ..ColumnType::builtin("geometry")
+        };
+        let mut b = SqlBuilder::new();
+        b.input_param(Some("{}".into()), &geometry);
+        assert_eq!(
+            b.sql,
+            r#"ST_GeomFromGeoJSON(($1)::text)::"public"."geometry""#
+        );
+        let mut b = SqlBuilder::multiplexed(r#""_subs"."vars""#);
+        b.input_param(Some("{}".into()), &geometry);
+        assert_eq!(
+            b.sql,
+            r#"ST_GeomFromGeoJSON(("_subs"."vars"->>0)::text)::"public"."geometry""#
+        );
     }
 }

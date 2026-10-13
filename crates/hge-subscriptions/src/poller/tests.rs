@@ -236,3 +236,62 @@ async fn streams_advance_their_cursor() {
     assert_eq!(next(&mut rb).await, "[7]");
     quiet(&mut ra).await;
 }
+
+/// [`Numbers`] whose second execution (the first poll) is slow.
+struct SlowFirstPoll(Numbers, AtomicUsize);
+
+impl SourceExecutor for SlowFirstPoll {
+    fn execute_query<'a>(
+        &'a self,
+        _: &'a [&'a QueryRoot],
+        _: &'a Session,
+    ) -> BoxFuture<'a, Result<Vec<String>, Error>> {
+        unimplemented!()
+    }
+
+    fn execute_mutations<'a>(
+        &'a self,
+        _: &'a [&'a Mutation],
+        _: &'a Session,
+    ) -> BoxFuture<'a, Result<Vec<String>, Error>> {
+        unimplemented!()
+    }
+
+    fn execute_multiplexed<'a>(
+        &'a self,
+        sql: &'a str,
+        cohorts: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<MultiplexedRow>, Error>> {
+        Box::pin(async move {
+            if self.1.fetch_add(1, Ordering::SeqCst) == 1 {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+            self.0.execute_multiplexed(sql, cohorts).await
+        })
+    }
+}
+
+/// A stream cohort whose polled subscribers all left mid-poll must not be re-keyed into an
+/// empty cohort that keeps its poller running forever.
+#[tokio::test]
+async fn stream_leaves_no_empty_cohort() {
+    let numbers = Numbers::default();
+    *numbers.rows.lock().unwrap() = (1..=10).collect();
+    let exec: Arc<dyn SourceExecutor> = Arc::new(SlowFirstPoll(numbers, AtomicUsize::new(0)));
+    let reg = Registry::new(PollerOptions {
+        refetch_interval: Duration::from_millis(100),
+        batch_size: 2,
+    });
+    let (s1, mut rx1) = sink();
+    let h1 = reg.subscribe(exec.clone(), stream(0, 2), s1).await.unwrap();
+    assert_eq!(next(&mut rx1).await, "[1,2]");
+    tokio::time::sleep(Duration::from_millis(150)).await; // the first poll is in flight
+    let (s2, mut rx2) = sink();
+    let h2 = reg.subscribe(exec.clone(), stream(0, 2), s2).await.unwrap();
+    assert_eq!(next(&mut rx2).await, "[1,2]");
+    drop(h1);
+    tokio::time::sleep(Duration::from_millis(180)).await; // the first poll is done
+    drop(h2);
+    assert_eq!(reg.cohort_count(), 0);
+    assert_eq!(reg.poller_count(), 0);
+}

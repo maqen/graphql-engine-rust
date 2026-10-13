@@ -93,7 +93,7 @@ impl Lowerer<'_> {
 
     /// The condition under which `column` of `table` is visible, if it is redacted for this
     /// (inherited) role.
-    fn redaction(&self, table: &TableInfo, column: &str) -> Option<&BoolExp> {
+    pub(crate) fn redaction(&self, table: &TableInfo, column: &str) -> Option<&BoolExp> {
         self.rs.select_access(table)?.redaction(column)
     }
 
