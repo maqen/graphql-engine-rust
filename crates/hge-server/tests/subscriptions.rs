@@ -204,6 +204,8 @@ async fn websockets() {
     };
     let url = db.url().to_owned();
     let server = start(&url, |_| {}).await;
+    // Before the scenarios that change the rows.
+    native_query_live_query(&server).await;
     aggregate_live_query(&server).await;
     apollo_live_queries(&server).await;
     graphql_ws_protocol(&server).await;
@@ -525,6 +527,43 @@ async fn function_live_query(server: &Server) {
     );
     for ws in [&mut one, &mut two] {
         send(ws, json!({"id": "f", "type": "stop"})).await;
+    }
+}
+
+/// Native query arguments are parameters, so each cohort sees its own rows.
+async fn native_query_live_query(server: &Server) {
+    let mut one = server.connect(None).await;
+    init(&mut one, admin()).await;
+    let mut two = server.connect(None).await;
+    init(&mut two, admin()).await;
+    for (ws, priority) in [(&mut one, 1), (&mut two, 2)] {
+        let sub = format!(
+            "subscription {{ messages_at(args: {{priority: {priority}}}, order_by: {{id: asc}}) {{ id body }} }}"
+        );
+        send(
+            ws,
+            json!({"id": "n", "type": "start", "payload": {"query": sub}}),
+        )
+        .await;
+    }
+    assert_eq!(
+        recv(&mut one).await,
+        data(
+            "n",
+            "data",
+            json!({"messages_at": [{"id": 1, "body": "one"}]})
+        )
+    );
+    assert_eq!(
+        recv(&mut two).await,
+        data(
+            "n",
+            "data",
+            json!({"messages_at": [{"id": 2, "body": "two"}, {"id": 3, "body": "three"}]})
+        )
+    );
+    for ws in [&mut one, &mut two] {
+        send(ws, json!({"id": "n", "type": "stop"})).await;
     }
 }
 

@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use deadpool_postgres::{Object, Pool};
-use hge_core::{Code, Error, QualifiedFunction, QualifiedTable, Session, SourceCatalog};
+use hge_core::{
+    Code, Error, NativeQueryCheck, QualifiedFunction, QualifiedTable, Session, SourceCatalog,
+};
 use hge_ir::{BoxFuture, MultiplexedQuery, MultiplexedRow, Mutation, QueryRoot, SourceExecutor};
 use serde_json::json;
 use tokio_postgres::types::{ToSql, Type};
@@ -61,11 +63,14 @@ impl PgSource {
         })
     }
 
-    /// Introspect the given tables and functions (and all enum types).
+    /// Introspect the given tables and functions (and all enum types), resolve the given type
+    /// names and validate the native queries.
     pub async fn introspect(
         &self,
         tables: &[QualifiedTable],
         functions: &[QualifiedFunction],
+        types: &[String],
+        native_queries: &[NativeQueryCheck],
     ) -> Result<SourceCatalog, Error> {
         let param = introspect::tables_param(tables);
         let tables_json = self
@@ -84,6 +89,14 @@ impl PgSource {
                 .await?
                 .unwrap_or_else(|| "[]".to_owned());
             catalog.functions = introspect::parse_functions(&functions_json)?;
+        }
+        if !types.is_empty() || !native_queries.is_empty() {
+            // Never return a connection to the pool inside the validation transaction: if
+            // this future is dropped or the transaction did not end cleanly, detach it.
+            let mut guard = CancelOnDrop::new(self.client().await?, &self.tls);
+            (catalog.types, catalog.native_queries) =
+                crate::native::validate(guard.client(), types, native_queries).await?;
+            guard.disarm();
         }
         Ok(catalog)
     }

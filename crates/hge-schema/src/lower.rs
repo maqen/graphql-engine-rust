@@ -5,8 +5,9 @@ use std::sync::Arc;
 use hge_core::{Code, ColumnType, Error};
 use hge_ir::{
     BoolExp, ColumnField, CompareOp, ComputedScalarField, DatabaseRootField, Field, FunctionCall,
-    JsonPathElement, Mutation, MutationRootField, NullsOrder, Operation, OrderBy, OrderByTarget,
-    OrderDirection, QueryRoot, RelationshipSelect, RootField, Select, SelectArgs, Value,
+    JsonPathElement, Mutation, MutationRootField, NativeQueryPart, NullsOrder, Operation, OrderBy,
+    OrderByTarget, OrderDirection, QueryRoot, RelationshipSelect, RootField, RowSource, Select,
+    SelectArgs, Value,
 };
 use serde_json::{Map, Value as Json};
 
@@ -15,6 +16,7 @@ use crate::build::RoleSchema;
 use crate::functions::{ComputedFieldInfo, ComputedReturn, ExposedAs, FunctionInfo};
 use crate::introspection;
 use crate::model::FieldKind;
+use crate::native::{CodePart, NativeQueryInfo};
 use crate::normalize::{NormalizedOperation, Selected, SelectedField};
 use crate::scalars;
 use crate::tables::{RelationshipInfo, TableInfo};
@@ -53,6 +55,7 @@ pub fn lower(rs: &RoleSchema, op: &NormalizedOperation<'_>) -> Result<Operation,
                 FieldKind::Mutation(m) => crate::mutation::lower::root_field(&lw, m, field)?,
                 FieldKind::Function(f) => lw.function(f, field)?,
                 FieldKind::FunctionAggregate(f) => lw.function_aggregate(f, field)?,
+                FieldKind::NativeQuery(nq) => lw.native_query(nq, field)?,
                 FieldKind::Action(action) => crate::actions::lower_action(rs, action, field)?,
                 FieldKind::AsyncActionQuery(action) => {
                     crate::actions::lower_async_query(rs, action, field)?
@@ -146,7 +149,7 @@ impl Lowerer<'_> {
             args,
             permission_filter: self.permission_filter(table),
             permission_limit: self.rs.select_access(table).and_then(|a| a.limit),
-            from_function: None,
+            from: None,
         })
     }
 
@@ -255,7 +258,7 @@ impl Lowerer<'_> {
                             ComputedReturn::Table(target) => {
                                 let target = self.table(&table.source, target)?;
                                 let mut select = self.select(target, sel, true)?;
-                                select.from_function = Some(call);
+                                select.from = Some(RowSource::Function(call));
                                 Field::ComputedTable(Box::new(select))
                             }
                         }
@@ -307,7 +310,7 @@ impl Lowerer<'_> {
     fn function(&self, f: &FunctionInfo, field: &SelectedField<'_>) -> Result<RootField, Error> {
         let table = self.table(&f.source, &f.returns)?;
         let mut select = self.select(table, field, true)?;
-        select.from_function = Some(self.function_call(f, field)?);
+        select.from = Some(RowSource::Function(self.function_call(f, field)?));
         let query = if f.returns_set {
             QueryRoot::Select(select)
         } else {
@@ -325,6 +328,44 @@ impl Lowerer<'_> {
         })
     }
 
+    /// A native query's root field: its logical model's rows, read from its code with the
+    /// field's `args` bound as parameters.
+    fn native_query(
+        &self,
+        nq: &NativeQueryInfo,
+        field: &SelectedField<'_>,
+    ) -> Result<RootField, Error> {
+        let model = self
+            .rs
+            .tables
+            .logical_model(&nq.source, &nq.returns)
+            .ok_or_else(|| Error::unexpected(format!("unknown logical model {}", nq.returns)))?;
+        let mut select = self.select(model, field, true)?;
+        let args = match field.arg("args") {
+            Some(Json::Object(o)) => Some(o),
+            _ => None,
+        };
+        let path = field.arg_path("args");
+        let mut parts = Vec::with_capacity(nq.code.len());
+        for part in &nq.code {
+            parts.push(match part {
+                CodePart::Sql(sql) => NativeQueryPart::Sql(sql.clone()),
+                CodePart::Arg(name) => {
+                    let arg = nq.arguments.get(name).ok_or_else(|| {
+                        Error::unexpected(format!("undeclared native query argument {name}"))
+                    })?;
+                    let value = args.and_then(|a| a.get(name)).unwrap_or(&Json::Null);
+                    NativeQueryPart::Arg(to_value(value, &arg.ty, &format!("{path}.{name}"))?)
+                }
+            });
+        }
+        select.from = Some(RowSource::NativeQuery(parts));
+        Ok(RootField::Database(Box::new(DatabaseRootField {
+            source: nq.source.clone(),
+            query: QueryRoot::Select(select),
+        })))
+    }
+
     /// `<function>_aggregate`: aggregates over the function's rows.
     fn function_aggregate(
         &self,
@@ -333,7 +374,7 @@ impl Lowerer<'_> {
     ) -> Result<RootField, Error> {
         let table = self.table(&f.source, &f.returns)?;
         let mut select = self.aggregate_select(table, field)?;
-        select.from_function = Some(self.function_call(f, field)?);
+        select.from = Some(RowSource::Function(self.function_call(f, field)?));
         Ok(RootField::Database(Box::new(DatabaseRootField {
             source: f.source.clone(),
             query: QueryRoot::Aggregate(select),

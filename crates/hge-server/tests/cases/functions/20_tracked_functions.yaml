@@ -71,6 +71,14 @@ cases:
       data:
         __type:
           fields:
+          - name: all_articles
+            description: null
+            args:
+            - {name: distinct_on, description: distinct select on columns}
+            - {name: limit, description: limit the number of rows returned}
+            - {name: offset, description: skip the first n rows. Use only with order_by}
+            - {name: order_by, description: sort the rows by one or more columns}
+            - {name: where, description: filter the rows returned}
           - name: article
             description: 'fetch data from the table: "article"'
             args:
@@ -91,6 +99,24 @@ cases:
             description: 'fetch data from the table: "article" using primary key columns'
             args:
             - {name: id, description: null}
+          - name: articles_above
+            description: Articles above a rating
+            args:
+            - {name: args, description: articles_aboveNative Query Arguments}
+            - {name: distinct_on, description: distinct select on columns}
+            - {name: limit, description: limit the number of rows returned}
+            - {name: offset, description: skip the first n rows. Use only with order_by}
+            - {name: order_by, description: sort the rows by one or more columns}
+            - {name: where, description: filter the rows returned}
+          - name: articles_by
+            description: null
+            args:
+            - {name: args, description: articles_byNative Query Arguments}
+            - {name: distinct_on, description: distinct select on columns}
+            - {name: limit, description: limit the number of rows returned}
+            - {name: offset, description: skip the first n rows. Use only with order_by}
+            - {name: order_by, description: sort the rows by one or more columns}
+            - {name: where, description: filter the rows returned}
           - name: author
             description: 'fetch data from the table: "author"'
             args:

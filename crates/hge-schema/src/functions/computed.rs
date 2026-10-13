@@ -391,6 +391,7 @@ mod tests {
             tables: HashMap::from([(author, cat.clone())]),
             enums: HashMap::new(),
             functions,
+            ..Default::default()
         };
         (cat, catalog)
     }

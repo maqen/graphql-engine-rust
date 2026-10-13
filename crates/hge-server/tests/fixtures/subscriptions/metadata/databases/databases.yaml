@@ -13,3 +13,16 @@
         schema: public
       configuration:
         session_argument: hasura_session
+  logical_models:
+    - name: message_body
+      fields:
+        - name: id
+          type: {scalar: integer, nullable: false}
+        - name: body
+          type: {scalar: text, nullable: false}
+  native_queries:
+    - root_field_name: messages_at
+      code: SELECT id, body FROM message WHERE priority = {{priority}}
+      arguments:
+        priority: {type: integer}
+      returns: message_body

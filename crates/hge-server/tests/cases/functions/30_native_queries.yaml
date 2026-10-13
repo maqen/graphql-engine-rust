@@ -1,0 +1,463 @@
+config:
+  fixture: functions
+  admin_internal_errors: false
+
+cases:
+  - description: a native query with an argument, ordered
+    query:
+      query: '{ articles_above(args: {min_rating: 4}, order_by: {id: asc}) { id title rating __typename } }'
+    response:
+      data:
+        articles_above:
+        - {id: 1, title: Rust tips, rating: 5, __typename: article_summary}
+        - {id: 4, title: Rust again, rating: 4, __typename: article_summary}
+
+  - description: a repeated nullable argument, a trailing comment in the code, and select arguments
+    query:
+      query: |
+        { all: articles_by(args: {}, order_by: {id: desc}, limit: 2, offset: 1) { id }
+          alice: articles_by(args: {author: "Alice"}, where: {rating: {_is_null: false}}) { id title }
+          nulled: articles_by(args: {author: null}, distinct_on: rating, order_by: [{rating: asc_nulls_first}, {id: asc}]) { rating } }
+    response:
+      data:
+        all:
+        - {id: 3}
+        - {id: 2}
+        alice:
+        - {id: 1, title: Rust tips}
+        nulled:
+        - {rating: null}
+        - {rating: 3}
+        - {rating: 4}
+        - {rating: 5}
+
+  - description: a native query without arguments takes no args
+    query:
+      query: '{ all_articles(where: {title: {_like: "%tips"}}, order_by: {id: asc}) { id title } }'
+    response:
+      data:
+        all_articles:
+        - {id: 1, title: Rust tips}
+        - {id: 3, title: Go tips}
+
+  - description: arguments through variables
+    query:
+      query: 'query ($r: Int!) { articles_above(args: {min_rating: $r}) { id } }'
+      variables: {r: 5}
+    response:
+      data:
+        articles_above:
+        - {id: 1}
+
+  - description: the logical model's select permission filters rows and columns
+    headers:
+      X-Hasura-Role: user
+    query:
+      query: '{ articles_above(args: {min_rating: 1}, order_by: {id: asc}) { id title } }'
+    response:
+      data:
+        articles_above:
+        - {id: 3, title: Go tips}
+        - {id: 4, title: Rust again}
+
+  - description: a column outside the permission is not in the schema
+    headers:
+      X-Hasura-Role: user
+    query:
+      query: '{ articles_above(args: {min_rating: 1}) { rating } }'
+    response:
+      errors:
+      - message: 'field ''rating'' not found in type: ''article_summary'''
+        extensions: {path: $.selectionSet.articles_above.selectionSet.rating, code: validation-failed}
+
+  - description: a role with only a logical model permission sees the native queries
+    headers:
+      X-Hasura-Role: reader
+    query:
+      query: '{ all_articles(order_by: {id: asc}, limit: 2) { id rating } }'
+    response:
+      data:
+        all_articles:
+        - {id: 1, rating: 5}
+        - {id: 2, rating: null}
+
+  - description: a role without a logical model permission does not see native queries
+    headers:
+      X-Hasura-Role: fan
+    query:
+      query: '{ all_articles { id } }'
+    response:
+      errors:
+      - message: 'field ''all_articles'' not found in type: ''query_root'''
+        extensions: {path: $.selectionSet.all_articles, code: validation-failed}
+
+  - description: missing args
+    query:
+      query: '{ articles_above { id } }'
+    response:
+      errors:
+      - message: missing required field 'args'
+        extensions: {path: $.selectionSet.articles_above.args.args, code: validation-failed}
+
+  - description: null for a non-null argument
+    query:
+      query: '{ articles_above(args: {min_rating: null}) { id } }'
+    response:
+      errors:
+      - message: unexpected null value for type 'Int'
+        extensions: {path: $.selectionSet.articles_above.args.args.min_rating, code: validation-failed}
+
+  - description: native query root fields and their argument types
+    headers:
+      X-Hasura-Role: anonymous
+    query:
+      query: |
+        { __schema { queryType { fields { name description args { name description type { kind name ofType { kind name ofType { kind name } } } } } } }
+          args: __type(name: "articles_above_arguments") { name description inputFields { name description type { kind name ofType { name } } } }
+          nullable: __type(name: "articles_by_arguments") { inputFields { name description type { kind name } } } }
+    response:
+      data:
+        __schema:
+          queryType:
+            fields:
+            - name: all_articles
+              description: null
+              args:
+              - name: distinct_on
+                description: distinct select on columns
+                type:
+                  kind: LIST
+                  name: null
+                  ofType:
+                    kind: NON_NULL
+                    name: null
+                    ofType: {kind: ENUM, name: article_summary_enum_name}
+              - name: limit
+                description: limit the number of rows returned
+                type: {kind: SCALAR, name: Int, ofType: null}
+              - name: offset
+                description: skip the first n rows. Use only with order_by
+                type: {kind: SCALAR, name: Int, ofType: null}
+              - name: order_by
+                description: sort the rows by one or more columns
+                type:
+                  kind: LIST
+                  name: null
+                  ofType:
+                    kind: NON_NULL
+                    name: null
+                    ofType: {kind: INPUT_OBJECT, name: article_summary_order_by}
+              - name: where
+                description: filter the rows returned
+                type: {kind: INPUT_OBJECT, name: article_summary_bool_exp_bool_exp, ofType: null}
+            - name: articles_above
+              description: Articles above a rating
+              args:
+              - name: args
+                description: articles_aboveNative Query Arguments
+                type:
+                  kind: NON_NULL
+                  name: null
+                  ofType: {kind: INPUT_OBJECT, name: articles_above_arguments, ofType: null}
+              - name: distinct_on
+                description: distinct select on columns
+                type:
+                  kind: LIST
+                  name: null
+                  ofType:
+                    kind: NON_NULL
+                    name: null
+                    ofType: {kind: ENUM, name: article_summary_enum_name}
+              - name: limit
+                description: limit the number of rows returned
+                type: {kind: SCALAR, name: Int, ofType: null}
+              - name: offset
+                description: skip the first n rows. Use only with order_by
+                type: {kind: SCALAR, name: Int, ofType: null}
+              - name: order_by
+                description: sort the rows by one or more columns
+                type:
+                  kind: LIST
+                  name: null
+                  ofType:
+                    kind: NON_NULL
+                    name: null
+                    ofType: {kind: INPUT_OBJECT, name: article_summary_order_by}
+              - name: where
+                description: filter the rows returned
+                type: {kind: INPUT_OBJECT, name: article_summary_bool_exp_bool_exp, ofType: null}
+            - name: articles_by
+              description: null
+              args:
+              - name: args
+                description: articles_byNative Query Arguments
+                type:
+                  kind: NON_NULL
+                  name: null
+                  ofType: {kind: INPUT_OBJECT, name: articles_by_arguments, ofType: null}
+              - name: distinct_on
+                description: distinct select on columns
+                type:
+                  kind: LIST
+                  name: null
+                  ofType:
+                    kind: NON_NULL
+                    name: null
+                    ofType: {kind: ENUM, name: article_summary_enum_name}
+              - name: limit
+                description: limit the number of rows returned
+                type: {kind: SCALAR, name: Int, ofType: null}
+              - name: offset
+                description: skip the first n rows. Use only with order_by
+                type: {kind: SCALAR, name: Int, ofType: null}
+              - name: order_by
+                description: sort the rows by one or more columns
+                type:
+                  kind: LIST
+                  name: null
+                  ofType:
+                    kind: NON_NULL
+                    name: null
+                    ofType: {kind: INPUT_OBJECT, name: article_summary_order_by}
+              - name: where
+                description: filter the rows returned
+                type: {kind: INPUT_OBJECT, name: article_summary_bool_exp_bool_exp, ofType: null}
+            - name: author
+              description: 'fetch data from the table: "author"'
+              args:
+              - name: limit
+                description: limit the number of rows returned
+                type: {kind: SCALAR, name: Int, ofType: null}
+              - name: offset
+                description: skip the first n rows. Use only with order_by
+                type: {kind: SCALAR, name: Int, ofType: null}
+              - name: order_by
+                description: sort the rows by one or more columns
+                type:
+                  kind: LIST
+                  name: null
+                  ofType:
+                    kind: NON_NULL
+                    name: null
+                    ofType: {kind: INPUT_OBJECT, name: author_order_by}
+              - name: where
+                description: filter the rows returned
+                type: {kind: INPUT_OBJECT, name: author_bool_exp, ofType: null}
+        args:
+          name: articles_above_arguments
+          description: articles_aboveNative Query Arguments
+          inputFields:
+          - name: min_rating
+            description: Minimum
+            type:
+              kind: NON_NULL
+              name: null
+              ofType: {name: Int}
+        nullable:
+          inputFields:
+          - name: author
+            description: Native Query argument author
+            type: {kind: SCALAR, name: String}
+
+  - description: the logical model's types
+    query:
+      query: |
+        { model: __type(name: "article_summary") { kind description fields { name description type { kind name ofType { name } } } }
+          bool_exp: __type(name: "article_summary_bool_exp_bool_exp") { description inputFields { name type { kind name ofType { kind name ofType { name } } } } }
+          order_by: __type(name: "article_summary_order_by") { description inputFields { name type { name } } }
+          columns: __type(name: "article_summary_enum_name") { description enumValues { name description } } }
+    response:
+      data:
+        model:
+          kind: OBJECT
+          description: An article
+          fields:
+          - name: id
+            description: null
+            type:
+              kind: NON_NULL
+              name: null
+              ofType: {name: Int}
+          - name: rating
+            description: null
+            type: {kind: SCALAR, name: Int, ofType: null}
+          - name: title
+            description: The title
+            type: {kind: SCALAR, name: String, ofType: null}
+        bool_exp:
+          description: Boolean expression to filter rows from the logical model for "article_summary". All fields
+            are combined with a logical 'AND'.
+          inputFields:
+          - name: _and
+            type:
+              kind: LIST
+              name: null
+              ofType:
+                kind: NON_NULL
+                name: null
+                ofType: {name: article_summary_bool_exp_bool_exp}
+          - name: _not
+            type: {kind: INPUT_OBJECT, name: article_summary_bool_exp_bool_exp, ofType: null}
+          - name: _or
+            type:
+              kind: LIST
+              name: null
+              ofType:
+                kind: NON_NULL
+                name: null
+                ofType: {name: article_summary_bool_exp_bool_exp}
+          - name: id
+            type: {kind: INPUT_OBJECT, name: Int_comparison_exp, ofType: null}
+          - name: rating
+            type: {kind: INPUT_OBJECT, name: Int_comparison_exp, ofType: null}
+          - name: title
+            type: {kind: INPUT_OBJECT, name: String_comparison_exp, ofType: null}
+        order_by:
+          description: Ordering options when selecting data from "article_summary".
+          inputFields:
+          - name: id
+            type: {name: order_by}
+          - name: rating
+            type: {name: order_by}
+          - name: title
+            type: {name: order_by}
+        columns:
+          description: null
+          enumValues:
+          - {name: id, description: column name}
+          - {name: rating, description: column name}
+          - {name: title, description: column name}
+
+  - description: native queries are on the subscription root too
+    query:
+      query: '{ __schema { subscriptionType { fields(includeDeprecated: true) { name } } } }'
+    response:
+      data:
+        __schema:
+          subscriptionType:
+            fields:
+            - {name: all_articles}
+            - {name: article}
+            - {name: article_aggregate}
+            - {name: article_by_pk}
+            - {name: article_stream}
+            - {name: articles_above}
+            - {name: articles_by}
+            - {name: author}
+            - {name: author_aggregate}
+            - {name: author_by_pk}
+            - {name: author_stream}
+            - {name: best_articles}
+            - {name: first_article}
+            - {name: first_article_aggregate}
+            - {name: my_articles}
+            - {name: my_articles_aggregate}
+            - {name: search_articles}
+            - {name: search_articles_aggregate}
+            - {name: top_rated_aggregate}
+
+  - description: invalid native queries are inconsistent, with V2's messages
+    url: /v1/metadata
+    query:
+      type: replace_metadata
+      args:
+        allow_inconsistent_metadata: true
+        metadata:
+          version: 3
+          sources:
+            - name: default
+              kind: postgres
+              configuration:
+                connection_info:
+                  database_url:
+                    from_env: HASURA_GRAPHQL_DATABASE_URL
+              tables:
+                - table: {schema: public, name: article}
+              logical_models:
+                - name: summary
+                  fields:
+                    - {name: id, type: {scalar: integer, nullable: false}}
+                    - {name: title, type: {scalar: text, nullable: true}}
+              native_queries:
+                - root_field_name: good
+                  code: SELECT {{a}} AS id, {{b}} AS title, {{a}} AS x
+                  arguments:
+                    a: {type: int4}
+                    b: {type: text, nullable: true}
+                  returns: summary
+                - {root_field_name: bad_sql, code: SELEC 1, returns: summary}
+                - {root_field_name: missing_column, code: SELECT 1 AS id, returns: summary}
+                - root_field_name: wrong_type
+                  code: SELECT 'x'::text AS id, 't' AS title
+                  returns: summary
+                - root_field_name: bad_args
+                  code: SELECT {{a}} AS idz, {{b}} AS title
+                  arguments:
+                    a: {type: int4, description: An int}
+                    b: {type: text, nullable: true}
+                  returns: summary
+    response:
+      inconsistent_objects:
+      - definition:
+          arguments: {}
+          code: SELEC 1
+          returns: summary
+          root_field_name: bad_sql
+        message:
+          arguments: []
+          error: {description: null, exec_status: FatalError, hint: null, message: syntax error at or near "SELEC",
+            status_code: '42601'}
+          prepared: false
+          statement: "PREPARE _logimo_vali_ AS WITH _cte_logimo_vali_ AS (\nSELEC 1\n\n)\nSELECT \"id\", \"title\"\nFROM _cte_logimo_vali_"
+        name: native_query bad_sql in source default
+        reason: 'Inconsistent object: Failed to validate query'
+        type: native_query
+      - definition:
+          arguments: {}
+          code: SELECT 1 AS id
+          returns: summary
+          root_field_name: missing_column
+        message:
+          arguments: []
+          error: {description: null, exec_status: FatalError, hint: null, message: column "title" does not exist,
+            status_code: '42703'}
+          prepared: false
+          statement: "PREPARE _logimo_vali_ AS WITH _cte_logimo_vali_ AS (\nSELECT 1 AS id\n\n)\nSELECT \"id\", \"title\"\nFROM _cte_logimo_vali_"
+        name: native_query missing_column in source default
+        reason: 'Inconsistent object: Failed to validate query'
+        type: native_query
+      - definition:
+          arguments: {}
+          code: SELECT 'x'::text AS id, 't' AS title
+          returns: summary
+          root_field_name: wrong_type
+        message: Return column 'id' has a type mismatch. The expected type is 'integer', but the actual type
+          is 'text'.
+        name: native_query wrong_type in source default
+        reason: 'Inconsistent object: Failed to validate query'
+        type: native_query
+      - definition:
+          arguments:
+            a: {description: An int, nullable: false, type: integer}
+            b: {nullable: true, type: text}
+          code: SELECT {{a}} AS idz, {{b}} AS title
+          returns: summary
+          root_field_name: bad_args
+        message:
+          arguments: []
+          error: {description: null, exec_status: FatalError, hint: Perhaps you meant to reference the column
+              "_cte_logimo_vali_.idz"., message: column "id" does not exist, status_code: '42703'}
+          prepared: false
+          statement: "PREPARE _logimo_vali_(integer, text) AS WITH _cte_logimo_vali_ AS (\nSELECT $1 AS idz, $2 AS title\n\n)\nSELECT \"id\", \"title\"\nFROM _cte_logimo_vali_"
+        name: native_query bad_args in source default
+        reason: 'Inconsistent object: Failed to validate query'
+        type: native_query
+      is_consistent: false
+
+  - description: the valid native query still works
+    query:
+      query: '{ good(args: {a: 7, b: "seven"}) { id title } }'
+    response:
+      data:
+        good:
+        - {id: 7, title: seven}

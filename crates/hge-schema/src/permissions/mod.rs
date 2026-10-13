@@ -56,6 +56,7 @@ pub fn resolve_permissions(
         tables
             .ordered
             .iter()
+            .chain(&tables.logical_models)
             .map(|t| {
                 let mut by_role = resolve_table(&parser, t, inconsistencies);
                 for role in &inherited {
@@ -76,7 +77,11 @@ pub fn resolve_permissions(
             .collect()
     };
     tables.by_name.clear();
-    for (table, permissions) in tables.ordered.iter_mut().zip(resolved) {
+    let all = tables
+        .ordered
+        .iter_mut()
+        .chain(tables.logical_models.iter_mut());
+    for (table, permissions) in all.zip(resolved) {
         let mut info = (**table).clone();
         info.permissions = permissions;
         *table = Arc::new(info);
@@ -197,6 +202,7 @@ fn defined_roles(metadata: &Metadata) -> HashSet<&str> {
             roles.extend(t.delete_permissions.iter().map(|p| p.role.as_str()));
         }
         roles.extend(json_roles(&source.functions));
+        roles.extend(crate::native::permission_roles(source));
     }
     roles.extend(json_roles(&metadata.actions));
     roles.extend(json_roles(&metadata.remote_schemas));

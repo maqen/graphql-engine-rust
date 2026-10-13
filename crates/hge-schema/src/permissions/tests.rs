@@ -76,6 +76,7 @@ fn catalog() -> SourceCatalog {
         tables,
         enums: HashMap::new(),
         functions: HashMap::new(),
+        ..Default::default()
     }
 }
 

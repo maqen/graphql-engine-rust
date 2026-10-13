@@ -240,7 +240,7 @@ pub fn tables_param(tables: &[QualifiedTable]) -> String {
     serde_json::to_string(tables).expect("serialisable")
 }
 
-fn type_kind(code: &str) -> TypeKind {
+pub(crate) fn type_kind(code: &str) -> TypeKind {
     match code {
         "b" => TypeKind::Base,
         "e" => TypeKind::Enum,
@@ -375,5 +375,6 @@ pub fn parse_catalog(tables_json: &str, enums_json: &str) -> Result<SourceCatalo
         tables,
         enums,
         functions: HashMap::new(),
+        ..Default::default()
     })
 }

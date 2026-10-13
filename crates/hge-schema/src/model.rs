@@ -186,6 +186,8 @@ pub enum FieldKind {
     Function(Arc<FunctionInfo>),
     /// `<function>_aggregate`
     FunctionAggregate(Arc<FunctionInfo>),
+    /// A native query's root field.
+    NativeQuery(Arc<crate::native::NativeQueryInfo>),
     /// `author(where: ...)` on the query root.
     SelectMany(Arc<TableInfo>),
     /// `author_by_pk(id: ...)` on the query root.

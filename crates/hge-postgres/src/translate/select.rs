@@ -9,8 +9,8 @@
 
 use hge_core::{Code, ColumnType, Error, QualifiedTable, Session};
 use hge_ir::{
-    BoolExp, Field, FunctionArgValue, FunctionCall, JsonPathElement, NullsOrder, OrderBy,
-    OrderByTarget, OrderDirection, Select, SelectArgs, Value,
+    BoolExp, Field, FunctionArgValue, FunctionCall, JsonPathElement, NativeQueryPart, NullsOrder,
+    OrderBy, OrderByTarget, OrderDirection, RowSource, Select, SelectArgs, Value,
 };
 
 use crate::sql::SqlBuilder;
@@ -34,7 +34,7 @@ pub type Join<'a> = Option<(&'a str, &'a [(String, String)])>;
 /// arguments and the permission filter.
 pub(crate) struct BaseQuery<'a> {
     pub table: &'a QualifiedTable,
-    pub from_function: Option<&'a FunctionCall>,
+    pub from: Option<&'a RowSource>,
     pub args: &'a SelectArgs,
     pub permission_filter: Option<&'a BoolExp>,
 }
@@ -43,7 +43,7 @@ impl<'a> From<&'a Select> for BaseQuery<'a> {
     fn from(sel: &'a Select) -> Self {
         BaseQuery {
             table: &sel.table,
-            from_function: sel.from_function.as_ref(),
+            from: sel.from.as_ref(),
             args: &sel.args,
             permission_filter: sel.permission_filter.as_ref(),
         }
@@ -164,9 +164,12 @@ impl<'s> Translator<'s> {
             }
         }
         self.b.push(" FROM ");
-        match sel.from_function {
+        match sel.from {
             // Arguments refer to the parent row (a computed field's table argument).
-            Some(call) => self.function_call(call, join.map_or(alias, |(parent, _)| parent))?,
+            Some(RowSource::Function(call)) => {
+                self.function_call(call, join.map_or(alias, |(parent, _)| parent))?
+            }
+            Some(RowSource::NativeQuery(parts)) => self.native_query(parts)?,
             None => {
                 self.b
                     .ident(&sel.table.schema)
@@ -457,6 +460,22 @@ impl<'s> Translator<'s> {
             }
         }
         self.b.push(")");
+        Ok(())
+    }
+
+    /// A native query's code as a subquery, its arguments bound as parameters. The newline
+    /// before the closing parenthesis ends a trailing `--` comment in the code.
+    fn native_query(&mut self, parts: &[NativeQueryPart]) -> Result<(), Error> {
+        self.b.push("(");
+        for part in parts {
+            match part {
+                NativeQueryPart::Sql(sql) => {
+                    self.b.push(sql);
+                }
+                NativeQueryPart::Arg(v) => self.value(v)?,
+            }
+        }
+        self.b.push("\n)");
         Ok(())
     }
 
