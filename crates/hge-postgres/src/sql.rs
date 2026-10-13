@@ -9,11 +9,23 @@ use hge_core::ColumnType;
 pub struct SqlBuilder {
     pub sql: String,
     pub params: Vec<Option<String>>,
+    /// Multiplexed subscriptions: parameters are read from this JSON array expression (the
+    /// cohort's variables) instead of being bound as `$n`.
+    vars: Option<String>,
 }
 
 impl SqlBuilder {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A builder whose parameter `n` (1-based) renders as `(<vars> ->> n-1)`, so one
+    /// statement can serve every cohort of a multiplexed subscription.
+    pub fn multiplexed(vars: &str) -> Self {
+        SqlBuilder {
+            vars: Some(vars.to_owned()),
+            ..Self::default()
+        }
     }
 
     pub fn push(&mut self, s: &str) -> &mut Self {
@@ -53,7 +65,11 @@ impl SqlBuilder {
     pub fn param(&mut self, value: Option<String>, ty: &ColumnType) -> &mut Self {
         self.params.push(value);
         let n = self.params.len();
-        write!(self.sql, "(${n})::").expect("write to string");
+        match &self.vars {
+            None => write!(self.sql, "(${n})::"),
+            Some(vars) => write!(self.sql, "({vars}->>{})::", n - 1),
+        }
+        .expect("write to string");
         push_type(&mut self.sql, ty);
         self
     }
@@ -107,5 +123,18 @@ mod tests {
         b.push(" AND ")
             .param(Some("1".into()), &ColumnType::builtin("int4").array_of());
         assert!(b.sql.ends_with(r#"($1)::"pg_catalog"."int4"[]"#));
+    }
+
+    #[test]
+    fn multiplexed_params() {
+        let mut b = SqlBuilder::multiplexed(r#""_subs"."vars""#);
+        b.param(Some("1".into()), &ColumnType::builtin("int4"))
+            .push(", ")
+            .param(None, &ColumnType::builtin("text"));
+        assert_eq!(
+            b.sql,
+            r#"("_subs"."vars"->>0)::"pg_catalog"."int4", ("_subs"."vars"->>1)::"pg_catalog"."text""#
+        );
+        assert_eq!(b.params, vec![Some("1".to_owned()), None]);
     }
 }

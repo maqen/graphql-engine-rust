@@ -154,6 +154,8 @@ pub struct Engine {
     api_settings: ApiSettings,
     /// Serialises metadata changes (API requests and schema sync) within this instance.
     metadata_lock: tokio::sync::Mutex<()>,
+    /// WebSocket connections and subscription pollers.
+    pub ws: crate::ws::WebSockets,
 }
 
 impl Engine {
@@ -167,6 +169,7 @@ impl Engine {
             read_only: config.read_only,
         };
         Engine {
+            ws: crate::ws::WebSockets::new(&config.websocket),
             config,
             auth,
             state: ArcSwap::from_pointee(state),

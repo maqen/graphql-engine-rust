@@ -1024,6 +1024,7 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "axum",
+ "base64 0.22.1",
  "bytes",
  "futures",
  "hge-actions",
@@ -1035,19 +1036,37 @@ dependencies = [
  "hge-metadata-api",
  "hge-postgres",
  "hge-schema",
+ "hge-subscriptions",
  "http",
  "indexmap",
+ "ring",
  "serde",
  "serde_json",
  "serde_yaml",
  "thiserror",
  "tokio",
  "tokio-postgres",
+ "tokio-tungstenite",
  "tokio-util",
  "tower",
  "tower-http",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "hge-subscriptions"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "hge-core",
+ "hge-ir",
+ "indexmap",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "xxhash-rust",
 ]
 
 [[package]]
@@ -1755,7 +1774,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2994,6 +3013,12 @@ dependencies = [
  "spki",
  "tls_codec",
 ]
+
+[[package]]
+name = "xxhash-rust"
+version = "0.8.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "550a2b930b62486a393c52d5c3b84bff264b28aa437ed64694d31e93b1757af7"
 
 [[package]]
 name = "yoke"

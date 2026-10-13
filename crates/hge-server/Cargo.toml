@@ -16,6 +16,7 @@ hge-postgres.workspace = true
 hge-auth.workspace = true
 hge-events.workspace = true
 hge-actions.workspace = true
+hge-subscriptions.workspace = true
 anyhow.workspace = true
 arc-swap.workspace = true
 axum.workspace = true
@@ -41,3 +42,6 @@ workspace = true
 serde_yaml.workspace = true
 tokio-postgres.workspace = true
 tower = { workspace = true, features = ["util"] }
+tokio-tungstenite.workspace = true
+ring.workspace = true
+base64.workspace = true

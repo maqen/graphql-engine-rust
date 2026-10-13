@@ -11,16 +11,18 @@ pub mod count;
 pub mod mutation;
 pub mod permissions;
 pub mod select;
+pub mod stream;
 pub mod value;
 
 use std::sync::Arc;
 
 pub use action::{ActionCall, ActionRootField};
-pub use backend::{BoxFuture, SourceExecutor};
+pub use backend::{BoxFuture, MultiplexedQuery, MultiplexedRow, SourceExecutor};
 pub use count::Count;
 pub use mutation::*;
 pub use permissions::*;
 pub use select::*;
+pub use stream::*;
 pub use value::*;
 
 /// The kind of a GraphQL operation.
@@ -67,4 +69,6 @@ pub enum QueryRoot {
     SelectOne(Select),
     /// Legacy `count` (`/v1/query`): a JSON number.
     Count(Count),
+    /// `author_stream(...)` (subscriptions only): a JSON array of the next rows.
+    Stream(StreamSelect),
 }

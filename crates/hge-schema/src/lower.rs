@@ -40,6 +40,14 @@ pub fn lower(rs: &RoleSchema, op: &NormalizedOperation<'_>) -> Result<Operation,
                     source: table.source.clone(),
                     query: QueryRoot::SelectOne(lw.select_by_pk(table, field)?),
                 })),
+                FieldKind::SelectStream(table) => {
+                    RootField::Database(Box::new(DatabaseRootField {
+                        source: table.source.clone(),
+                        query: QueryRoot::Stream(crate::subscription::lower_stream(
+                            &lw, table, field,
+                        )?),
+                    }))
+                }
                 FieldKind::Mutation(m) => crate::mutation::lower::root_field(&lw, m, field)?,
                 FieldKind::Action(action) => crate::actions::lower_action(rs, action, field)?,
                 FieldKind::AsyncActionQuery(action) => {
@@ -109,7 +117,7 @@ impl Lowerer<'_> {
         }
     }
 
-    fn select(
+    pub(crate) fn select(
         &self,
         table: &TableInfo,
         field: &SelectedField<'_>,
@@ -478,7 +486,7 @@ fn as_list(v: &Json) -> Vec<Json> {
     }
 }
 
-fn non_negative(v: Option<&Json>, path: &str) -> Result<Option<u64>, Error> {
+pub(crate) fn non_negative(v: Option<&Json>, path: &str) -> Result<Option<u64>, Error> {
     match v {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Number(n)) => {

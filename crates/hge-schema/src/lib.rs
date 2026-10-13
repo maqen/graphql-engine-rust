@@ -14,6 +14,7 @@ pub mod mutation;
 pub mod normalize;
 pub mod permissions;
 pub mod scalars;
+pub mod subscription;
 pub mod tables;
 
 use std::collections::HashMap;

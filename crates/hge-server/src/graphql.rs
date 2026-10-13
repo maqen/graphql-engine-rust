@@ -111,6 +111,19 @@ async fn run(
     client_headers: &HeaderMap,
     req: GraphQLRequest,
 ) -> Result<(String, Vec<String>), Error> {
+    let query = req.query.clone();
+    let op = plan(state, session, req)?;
+    if op.kind == OperationKind::Subscription {
+        return Err(Error::new(
+            Code::UnexpectedPayload,
+            "subscriptions are not supported over HTTP, use websockets instead",
+        ));
+    }
+    execute(state, session, client_headers, query.as_deref(), &op).await
+}
+
+/// Parse, validate and lower a request (everything that can fail before execution).
+pub fn plan(state: &AppState, session: &Session, req: GraphQLRequest) -> Result<Operation, Error> {
     let query = req.query.as_deref().ok_or_else(|| {
         Error::new(Code::BadRequest, "the key 'query' was not present").with_path("$")
     })?;
@@ -130,16 +143,28 @@ async fn run(
             "mutations are not supported over GET requests",
         ));
     }
+    Ok(op)
+}
 
+/// Execute a planned query or mutation; returns the response body (`{"data":{...}}`) and
+/// the `Set-Cookie` values of mutation actions. `query` is the request's query text, which
+/// action handlers receive.
+pub async fn execute(
+    state: &AppState,
+    session: &Session,
+    client_headers: &HeaderMap,
+    query: Option<&str>,
+    op: &Operation,
+) -> Result<(String, Vec<String>), Error> {
     let ctx = hge_actions::RequestContext {
         session,
         client_headers,
-        query: Some(query),
+        query,
     };
     let sources = StateSources(state);
     let mut set_cookies = vec![];
     let results = if op.kind == OperationKind::Mutation {
-        run_mutations(state, session, &op, &ctx, &sources, &mut set_cookies).await?
+        run_mutations(state, session, op, &ctx, &sources, &mut set_cookies).await?
     } else {
         run_concurrently(state, session, &op.root_fields, &ctx, &sources).await?
     };

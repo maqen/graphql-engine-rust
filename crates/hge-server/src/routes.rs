@@ -18,6 +18,7 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use crate::graphql::{self, GraphQLBody, GraphQLRequest};
 use crate::state::Engine;
+use crate::ws::{self, MaybeUpgrade};
 
 pub const VERSION: &str = concat!("v2.48.0-rs.", env!("CARGO_PKG_VERSION"));
 
@@ -30,7 +31,7 @@ pub fn router(engine: Arc<Engine>) -> Router {
             .route("/v1/graphql", get(graphql_get).post(graphql_post))
             .route(
                 "/v1alpha1/graphql",
-                axum::routing::post(graphql_post_v1alpha1),
+                get(graphql_ws_v1alpha1).post(graphql_post_v1alpha1),
             );
     }
     if engine.config.api_enabled("metadata") {
@@ -180,8 +181,12 @@ struct GetParams {
 async fn graphql_get(
     State(engine): State<Arc<Engine>>,
     headers: HeaderMap,
+    MaybeUpgrade(upgrade): MaybeUpgrade,
     Query(params): Query<GetParams>,
 ) -> Response {
+    if let Some(upgrade) = upgrade {
+        return ws::upgrade(engine, upgrade, headers, ws::Endpoint::V1);
+    }
     let rid = request_id(&headers);
     let variables = params
         .variables
@@ -222,6 +227,18 @@ async fn graphql_get(
     )
     .await;
     with_cookies(resp, auth.set_cookies)
+}
+
+/// `/v1alpha1/graphql` takes WebSockets on `GET`, not queries.
+async fn graphql_ws_v1alpha1(
+    State(engine): State<Arc<Engine>>,
+    headers: HeaderMap,
+    MaybeUpgrade(upgrade): MaybeUpgrade,
+) -> Response {
+    match upgrade {
+        Some(upgrade) => ws::upgrade(engine, upgrade, headers, ws::Endpoint::V1Alpha1),
+        None => StatusCode::METHOD_NOT_ALLOWED.into_response(),
+    }
 }
 
 /// Authenticate a GraphQL request, or build the error response (spec 05 §9.2).
@@ -318,10 +335,20 @@ async fn metadata_post(
     }
     // Run to completion even if the client goes away: a metadata change must not stop
     // between writing the store and installing the new schema.
+    let before = engine.state.load().resource_version;
+    let task_engine = engine.clone();
     let resp =
-        tokio::spawn(async move { hge_metadata_api::handle_metadata(&*engine, &body).await })
+        tokio::spawn(async move { hge_metadata_api::handle_metadata(&*task_engine, &body).await })
             .await
             .unwrap_or_else(|e| panic_response(&e));
+    // Like V2, subscriptions do not outlive a metadata change made on this instance.
+    if engine.config.websocket.close_on_metadata_change
+        && engine.state.load().resource_version != before
+    {
+        engine
+            .ws
+            .close_all("Server state changed, restarting the server");
+    }
     api_response(resp, rid)
 }
 

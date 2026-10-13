@@ -10,6 +10,7 @@ pub mod scheduled;
 pub mod state;
 pub mod sync;
 pub mod v1_query;
+pub mod ws;
 
 use std::sync::Arc;
 
@@ -57,8 +58,12 @@ pub async fn serve(engine: Arc<Engine>) -> std::io::Result<()> {
     let scheduler = scheduled::spawn_worker(&engine, shutdown.clone());
     let signal = {
         let shutdown = shutdown.clone();
+        let engine = engine.clone();
         async move {
             shutdown_signal().await;
+            // Upgraded connections are not tracked by the HTTP server: close them (1012, so
+            // clients reconnect to another instance) before it stops.
+            engine.ws.shutdown(std::time::Duration::from_secs(5)).await;
             shutdown.cancel();
         }
     };
