@@ -1002,6 +1002,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hge-rest"
+version = "0.1.0"
+dependencies = [
+ "async-graphql-parser",
+ "hge-core",
+ "hge-metadata",
+ "serde_json",
+]
+
+[[package]]
 name = "hge-schema"
 version = "0.1.0"
 dependencies = [
@@ -1035,6 +1045,7 @@ dependencies = [
  "hge-metadata",
  "hge-metadata-api",
  "hge-postgres",
+ "hge-rest",
  "hge-schema",
  "hge-subscriptions",
  "hge-testdb",

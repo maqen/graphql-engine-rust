@@ -18,6 +18,7 @@ hge-auth.workspace = true
 hge-events.workspace = true
 hge-actions.workspace = true
 hge-subscriptions.workspace = true
+hge-rest.workspace = true
 anyhow.workspace = true
 arc-swap.workspace = true
 axum.workspace = true

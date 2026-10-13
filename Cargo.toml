@@ -30,6 +30,7 @@ hge-events = { path = "crates/hge-events" }
 hge-actions = { path = "crates/hge-actions" }
 hge-subscriptions = { path = "crates/hge-subscriptions" }
 hge-transforms = { path = "crates/hge-transforms" }
+hge-rest = { path = "crates/hge-rest" }
 
 # external crates
 anyhow = "1"

@@ -201,6 +201,8 @@ pub struct Prepared {
     pub scheduled_triggers: Arc<hge_events::scheduled::ScheduledTriggers>,
     pub actions: Arc<ResolvedActions>,
     pub action_registry: Arc<ActionRegistry>,
+    /// RESTified endpoints (`/api/rest/*`).
+    pub rest: Arc<hge_rest::RestEndpoints>,
     pub inconsistencies: Vec<InconsistentObject>,
 }
 
@@ -319,7 +321,10 @@ pub async fn prepare(
     let (mut actions, action_issues) = resolve_actions(metadata, &tables);
     inconsistencies.extend(action_issues);
     let registry = action_registry(metadata, &mut actions, config, &mut inconsistencies);
+    let (rest, rest_issues) = hge_rest::build(metadata);
+    inconsistencies.extend(rest_issues);
     Prepared {
+        rest: Arc::new(rest),
         sources,
         tables: Arc::new(tables),
         event_triggers: Arc::new(event_triggers),
