@@ -94,6 +94,7 @@ impl Translator<'_> {
                     )));
                 }
             },
+            BoolExp::AggregationPredicate(p) => self.aggregation_predicate(p, alias)?,
         }
         Ok(())
     }

@@ -5,6 +5,7 @@
 //! (validate, normalise, lower to IR).
 
 pub mod actions;
+pub mod aggregate;
 pub mod build;
 pub mod geojson;
 pub mod introspection;

@@ -9,6 +9,7 @@ use hge_core::ColumnType;
 use indexmap::IndexMap;
 
 use crate::actions::{ActionInfo, ActionRelInfo, AsyncResultField};
+pub use crate::aggregate::AggregateFieldKind;
 use crate::tables::{RelationshipInfo, TableInfo};
 
 #[derive(Debug, Clone)]
@@ -184,6 +185,12 @@ pub enum FieldKind {
     SelectByPk(Arc<TableInfo>),
     /// `author_stream(...)` on the subscription root.
     SelectStream(Arc<TableInfo>),
+    /// `author_aggregate(where: ...)` on the query root.
+    SelectAggregate(Arc<TableInfo>),
+    /// `<rel>_aggregate(where: ...)` on a table's object type.
+    ArrayRelationshipAggregate(Arc<RelationshipInfo>),
+    /// A field of an aggregate object (`T_aggregate`, `T_aggregate_fields`).
+    Aggregate(AggregateFieldKind),
     /// The placeholder field of an empty query root.
     NoQueriesAvailable,
     /// Mutation root fields and `t_mutation_response` fields.

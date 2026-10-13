@@ -203,6 +203,7 @@ async fn websockets() {
         return;
     };
     let server = start(&url, |_| {}).await;
+    aggregate_live_query(&server).await;
     apollo_live_queries(&server).await;
     graphql_ws_protocol(&server).await;
     cohorts_and_permissions(&server).await;
@@ -217,6 +218,27 @@ async fn websockets() {
     })
     .await;
     init_timeout(&server).await;
+}
+
+/// `T_aggregate` is a subscription root field too, multiplexed like the others.
+async fn aggregate_live_query(server: &Server) {
+    let mut ws = server.connect(None).await;
+    init(&mut ws, admin()).await;
+    let sub = "subscription { message_aggregate(where: {priority: {_eq: 2}}) { aggregate { count max { id } } } }";
+    send(
+        &mut ws,
+        json!({"id": "1", "type": "start", "payload": {"query": sub}}),
+    )
+    .await;
+    assert_eq!(
+        recv(&mut ws).await,
+        data(
+            "1",
+            "data",
+            json!({"message_aggregate": {"aggregate": {"count": 2, "max": {"id": 3}}}})
+        )
+    );
+    send(&mut ws, json!({"id": "1", "type": "stop"})).await;
 }
 
 async fn apollo_live_queries(server: &Server) {

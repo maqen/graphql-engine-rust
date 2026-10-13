@@ -34,7 +34,8 @@ CREATE TABLE article (
   content text,
   author_id integer NOT NULL REFERENCES author(id),
   is_published boolean NOT NULL DEFAULT false,
-  published_on date
+  published_on date,
+  score double precision
 );
 
 CREATE TABLE other.thing (
@@ -47,10 +48,10 @@ INSERT INTO author (name, rating, big, tags, info, mood) VALUES
   ('Bob', 3.2, 1, '{}', '{"city": "Lima"}', 'sad'),
   ('Carol', NULL, NULL, NULL, NULL, NULL);
 
-INSERT INTO article (title, content, author_id, is_published, published_on) VALUES
-  ('Rust in production', 'body 1', 1, true, '2021-05-01'),
-  ('Draft notes', 'body 2', 1, false, NULL),
-  ('Go concurrency', 'body 3', 2, true, '2020-01-15'),
-  ('Lima travel', 'it''s "quoted"', 2, true, '2019-07-30');
+INSERT INTO article (title, content, author_id, is_published, published_on, score) VALUES
+  ('Rust in production', 'body 1', 1, true, '2021-05-01', 4.5),
+  ('Draft notes', 'body 2', 1, false, NULL, 2),
+  ('Go concurrency', 'body 3', 2, true, '2020-01-15', 3.5),
+  ('Lima travel', 'it''s "quoted"', 2, true, '2019-07-30', NULL);
 
 INSERT INTO other.thing VALUES ('x', 'Ex'), ('y', NULL);

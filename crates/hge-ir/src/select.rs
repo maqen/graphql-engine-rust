@@ -2,7 +2,7 @@
 
 use hge_core::{ColumnType, QualifiedTable};
 
-use crate::Value;
+use crate::{AggregateOrderBy, AggregationPredicate, RelationshipAggregate, Value};
 
 /// A selection of rows from a table, with nested fields.
 #[derive(Debug, Clone)]
@@ -34,6 +34,8 @@ pub enum Field {
     Typename(String),
     ObjectRelationship(Box<RelationshipSelect>),
     ArrayRelationship(Box<RelationshipSelect>),
+    /// `<rel>_aggregate { … }`
+    ArrayAggregate(Box<RelationshipAggregate>),
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +87,22 @@ pub enum OrderByTarget {
         filter: Option<Box<BoolExp>>,
         target: Box<OrderByTarget>,
     },
+    /// An aggregate over the rows of an array relationship (`<rel>_aggregate: {count: asc}`)
+    /// that pass the related table's permission filter.
+    ArrayAggregate {
+        table: QualifiedTable,
+        mapping: Vec<(String, String)>,
+        permission_filter: Option<Box<BoolExp>>,
+        aggregate: AggregateOrderBy,
+    },
+}
+
+impl OrderByTarget {
+    /// Whether this sorts by an array relationship's aggregate (nested object relationships
+    /// are not looked into, like V2).
+    pub fn is_array_aggregate(&self) -> bool {
+        matches!(self, OrderByTarget::ArrayAggregate { .. })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,6 +139,8 @@ pub enum BoolExp {
         table: QualifiedTable,
         exp: Box<BoolExp>,
     },
+    /// `<rel>_aggregate: {count: {predicate: …}}`
+    AggregationPredicate(Box<AggregationPredicate>),
     /// Column-to-column comparison (`_ceq`, `_cgt`, … in permissions).
     CompareColumns {
         column: String,

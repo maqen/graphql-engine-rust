@@ -10,6 +10,7 @@ use hge_ir::{
 };
 use serde_json::{Map, Value as Json};
 
+use crate::aggregate::aggregate_relationship;
 use crate::build::RoleSchema;
 use crate::introspection;
 use crate::model::FieldKind;
@@ -52,6 +53,12 @@ pub fn lower(rs: &RoleSchema, op: &NormalizedOperation<'_>) -> Result<Operation,
                 FieldKind::Action(action) => crate::actions::lower_action(rs, action, field)?,
                 FieldKind::AsyncActionQuery(action) => {
                     crate::actions::lower_async_query(rs, action, field)?
+                }
+                FieldKind::SelectAggregate(table) => {
+                    RootField::Database(Box::new(DatabaseRootField {
+                        source: table.source.clone(),
+                        query: QueryRoot::Aggregate(lw.aggregate_select(table, field)?),
+                    }))
                 }
                 other => {
                     return Err(Error::unexpected(format!(
@@ -110,7 +117,7 @@ impl Lowerer<'_> {
 
     /// The role's select filter on `table`, unless it lets every row through. Without select
     /// access (the schema should never lead here) no row is visible.
-    fn permission_filter(&self, table: &TableInfo) -> Option<BoolExp> {
+    pub(crate) fn permission_filter(&self, table: &TableInfo) -> Option<BoolExp> {
         match self.rs.select_access(table) {
             Some(a) => a.row_filter().cloned(),
             None => Some(BoolExp::always_false()),
@@ -205,6 +212,9 @@ impl Lowerer<'_> {
                             select: self.select(target, sel, true)?,
                         }))
                     }
+                    FieldKind::ArrayRelationshipAggregate(rel) => {
+                        Field::ArrayAggregate(Box::new(self.relationship_aggregate(rel, sel)?))
+                    }
                     other => {
                         return Err(Error::unexpected(format!(
                             "unexpected field kind {other:?} in table selection"
@@ -217,7 +227,7 @@ impl Lowerer<'_> {
         Ok(out)
     }
 
-    fn select_args(
+    pub(crate) fn select_args(
         &self,
         table: &TableInfo,
         field: &SelectedField<'_>,
@@ -332,6 +342,8 @@ impl Lowerer<'_> {
                                 exp: Box::new(exp),
                             });
                         }
+                    } else if let Some(rel) = aggregate_relationship(table, key) {
+                        items.push(self.aggregation_predicate(rel, value, &item_path)?);
                     } else {
                         return Err(Error::validation(format!(
                             "field '{key}' not found in type: '{}'",
@@ -349,7 +361,7 @@ impl Lowerer<'_> {
         })
     }
 
-    fn comparisons(
+    pub(crate) fn comparisons(
         &self,
         column: &str,
         ty: &ColumnType,
@@ -413,7 +425,7 @@ impl Lowerer<'_> {
         Ok(())
     }
 
-    fn order_by(
+    pub(crate) fn order_by(
         &self,
         table: &TableInfo,
         obj: &Map<String, Json>,
@@ -450,6 +462,8 @@ impl Lowerer<'_> {
                         });
                     }
                 }
+            } else if let Some(rel) = aggregate_relationship(table, key) {
+                self.aggregate_order_by(rel, value, &item_path, out)?;
             } else {
                 return Err(Error::validation(format!(
                     "field '{key}' not found in type: '{}'",
@@ -470,7 +484,7 @@ fn redacted_comparison(condition: &BoolExp, cmp: BoolExp) -> BoolExp {
     }
 }
 
-fn order_type(s: &str) -> (OrderDirection, NullsOrder) {
+pub(crate) fn order_type(s: &str) -> (OrderDirection, NullsOrder) {
     match s {
         "asc_nulls_first" => (OrderDirection::Asc, NullsOrder::First),
         "desc" | "desc_nulls_first" => (OrderDirection::Desc, NullsOrder::First),

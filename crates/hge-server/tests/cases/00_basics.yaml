@@ -152,3 +152,27 @@ cases:
     response:
       data:
         author: [{ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: 1, aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab: Alice }]
+
+  - description: error paths name the field, not its alias
+    query:
+      query: "{ a: author { b: nope } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.selectionSet.nope", code: validation-failed }
+          message: "field 'nope' not found in type: 'author'"
+
+  - description: enum errors list the values and quote what was found
+    query:
+      query: "{ author(distinct_on: [nope]) { id } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.args.distinct_on[0]", code: validation-failed }
+          message: "expected one of the values ['id', 'name', 'rating', 'big', 'tags', 'info', 'mood', 'createdAt'] for type 'author_select_column', but found 'nope'"
+
+  - description: a non-enum value for an enum type
+    query:
+      query: '{ author(order_by: {id: "asc"}) { id } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.args.order_by.id", code: validation-failed }
+          message: "expected an enum value for type 'order_by', but found a string"

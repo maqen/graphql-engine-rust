@@ -152,6 +152,7 @@ fn build_schema(
     // --- root field registration -------------------------------------------------------
     for table in &tables.ordered {
         b.add_table_select_root_fields(table, &mut query_root);
+        b.add_table_aggregate_root_field(table, &mut query_root);
     }
     for table in &tables.ordered {
         b.add_table_mutation_root_fields(table, mutation_access, &mut mutation_root);
@@ -176,6 +177,7 @@ fn build_schema(
     b.access = &subscription_access;
     for table in &tables.ordered {
         b.add_table_select_root_fields(table, &mut subscription_root);
+        b.add_table_aggregate_root_field(table, &mut subscription_root);
         b.add_table_stream_root_field(table, &mut subscription_root);
     }
     b.access = access;
@@ -445,6 +447,14 @@ impl Builder<'_> {
                 rel.name.clone(),
                 InputValueDef::new(rel.name.clone(), TypeRef::named(target.bool_exp_name())),
             );
+            if let Some(f) = self.relationship_aggregate_field(&rel, &target) {
+                obj.fields.insert(f.name.clone(), f);
+            }
+            if let Some(f) = self.relationship_aggregation_predicate(&rel, &target) {
+                bool_exp.fields.insert(f.name.clone(), f);
+            }
+            let f = self.relationship_aggregate_order_by(&rel, &target);
+            order_by.fields.insert(f.name.clone(), f);
         }
 
         self.schema
@@ -455,7 +465,7 @@ impl Builder<'_> {
         self.schema.add(TypeDef::Enum(select_column));
     }
 
-    fn ensure_order_by_enum(&mut self) {
+    pub(crate) fn ensure_order_by_enum(&mut self) {
         if self.schema.types.contains_key("order_by") {
             return;
         }
@@ -487,7 +497,7 @@ impl Builder<'_> {
     }
 
     /// `<Scalar>_comparison_exp` for a column type; returns its name.
-    fn ensure_comparison_exp(&mut self, ty: &ColumnType) -> String {
+    pub(crate) fn ensure_comparison_exp(&mut self, ty: &ColumnType) -> String {
         let name = scalars::comparison_exp_name(ty);
         if self.schema.types.contains_key(&name) {
             return name;
@@ -621,13 +631,20 @@ impl Builder<'_> {
                 description: None,
             }));
         }
-        // V2 lists types and arguments sorted by name.
+        // V2 lists types, fields, arguments, input fields (and enum values) sorted by name.
         self.schema.types.sort_keys();
         for ty in self.schema.types.values_mut() {
-            if let TypeDef::Object(obj) = ty {
-                for field in obj.fields.values_mut() {
-                    field.args.sort_keys();
+            match ty {
+                TypeDef::Object(obj) => {
+                    obj.fields.sort_keys();
+                    for field in obj.fields.values_mut() {
+                        field.args.sort_keys();
+                    }
                 }
+                TypeDef::InputObject(obj) => obj.fields.sort_keys(),
+                // Enum values keep definition order; introspection sorts them.
+                TypeDef::Enum(_) => {}
+                TypeDef::Scalar(_) => {}
             }
         }
     }

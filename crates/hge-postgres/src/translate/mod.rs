@@ -3,6 +3,7 @@
 //! All root fields of one operation on one source become a single statement returning one row
 //! with one text column per root field, each holding the field's final JSON.
 
+mod aggregate;
 mod boolexp;
 mod count;
 pub mod mutation;
@@ -36,6 +37,7 @@ pub fn translate_query(fields: &[&QueryRoot], session: &Session) -> Result<SqlBu
                     "streaming subscriptions are only supported over websockets",
                 ));
             }
+            QueryRoot::Aggregate(select) => t.select_aggregate(select, None)?,
         }
         t.b.push(")::text");
     }

@@ -472,6 +472,27 @@ const TYPE_SUFFIXES: &[&str] = &[
     "_aggregate",
     "_aggregate_fields",
     "_aggregate_order_by",
+    "_aggregate_bool_exp",
+    "_avg_fields",
+    "_avg_order_by",
+    "_max_fields",
+    "_max_order_by",
+    "_min_fields",
+    "_min_order_by",
+    "_stddev_fields",
+    "_stddev_order_by",
+    "_stddev_pop_fields",
+    "_stddev_pop_order_by",
+    "_stddev_samp_fields",
+    "_stddev_samp_order_by",
+    "_sum_fields",
+    "_sum_order_by",
+    "_var_pop_fields",
+    "_var_pop_order_by",
+    "_var_samp_fields",
+    "_var_samp_order_by",
+    "_variance_fields",
+    "_variance_order_by",
     "_mutation_response",
     "_insert_input",
     "_set_input",
@@ -513,10 +534,20 @@ pub fn drop_conflicting(tables: &mut Tables, inconsistencies: &mut Vec<Inconsist
     let mut kept = Vec::with_capacity(tables.ordered.len());
     for table in std::mem::take(&mut tables.ordered) {
         let owner = format!("table \"{}\" in source \"{}\"", table.name, table.source);
-        let type_names: Vec<String> = TYPE_SUFFIXES
+        let mut type_names: Vec<String> = TYPE_SUFFIXES
             .iter()
             .map(|s| format!("{}{s}", table.gql_name))
             .collect();
+        // Aggregation-predicate types, one set per predicate function.
+        for function in hge_ir::aggregate::PredicateFunction::ALL {
+            let pred = table.aggregate_bool_exp_function_name(function);
+            type_names.push(format!(
+                "{}_select_column_{pred}_arguments_columns",
+                table.gql_name
+            ));
+            type_names.push(format!("{pred}_arguments"));
+            type_names.push(pred);
+        }
         let rf = &table.root_fields;
         let root_names = [&rf.select, &rf.select_by_pk, &rf.select_aggregate];
         let mut problem = None;
@@ -536,12 +567,19 @@ pub fn drop_conflicting(tables: &mut Tables, inconsistencies: &mut Vec<Inconsist
             problem = Some("root field names must be distinct".to_owned());
         } else {
             let mut fields = HashSet::new();
+            // Array relationships also generate `<rel>_aggregate` fields.
+            let aggregate_names: Vec<String> = table
+                .array_relationships
+                .iter()
+                .map(|r| format!("{}_aggregate", r.name))
+                .collect();
             let names = table
                 .columns
                 .values()
                 .map(|c| &c.gql_name)
                 .chain(table.object_relationships.iter().map(|r| &r.name))
-                .chain(table.array_relationships.iter().map(|r| &r.name));
+                .chain(table.array_relationships.iter().map(|r| &r.name))
+                .chain(aggregate_names.iter());
             for n in names {
                 if !is_valid_name(n) {
                     problem = Some(format!("field \"{n}\" is not a valid GraphQL name"));
@@ -574,4 +612,78 @@ pub fn drop_conflicting(tables: &mut Tables, inconsistencies: &mut Vec<Inconsist
         kept.push(table);
     }
     tables.ordered = kept;
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use hge_core::{
+        ColumnInfo, ColumnType, InconsistentObject, QualifiedTable, SourceCatalog, TableCatalog,
+        TableKind, TableMutability,
+    };
+    use indexmap::IndexMap;
+    use serde_json::json;
+
+    fn table(name: &str) -> (QualifiedTable, TableCatalog) {
+        let qt = QualifiedTable::new("public", name);
+        let id = ColumnInfo {
+            name: "id".to_owned(),
+            ty: ColumnType::builtin("int4"),
+            nullable: false,
+            has_default: false,
+            is_identity: false,
+            is_identity_always: false,
+            is_generated: false,
+            description: None,
+        };
+        let catalog = TableCatalog {
+            name: qt.clone(),
+            kind: TableKind::Table,
+            description: None,
+            columns: IndexMap::from([("id".to_owned(), id)]),
+            primary_key: Some(vec!["id".into()]),
+            unique_constraints: vec![],
+            constraints: vec![],
+            mutability: TableMutability::ALL,
+            foreign_keys: vec![],
+        };
+        (qt, catalog)
+    }
+
+    /// Track `article` plus a table whose name is one of `article`'s generated type names;
+    /// the inconsistencies reported.
+    fn clash(other: &str) -> Vec<InconsistentObject> {
+        let tables = ["article", other].map(|n| json!({"table": {"schema": "public", "name": n}}));
+        let metadata = hge_metadata::from_json(json!({
+            "version": 3,
+            "sources": [{
+                "name": "default",
+                "kind": "postgres",
+                "configuration": {"connection_info": {"database_url": "postgres://x"}},
+                "tables": tables
+            }]
+        }))
+        .unwrap();
+        let catalog = SourceCatalog {
+            tables: HashMap::from([table("article"), table(other)]),
+            enums: HashMap::new(),
+        };
+        let catalogs = HashMap::from([("default".to_owned(), catalog)]);
+        crate::resolve_tables(&metadata, &catalogs).1
+    }
+
+    #[test]
+    fn aggregation_predicate_type_names_clash() {
+        for other in [
+            "article_aggregate_fields",
+            "article_aggregate_bool_exp_count",
+            "article_aggregate_bool_exp_corr_arguments",
+            "article_select_column_article_aggregate_bool_exp_sum_arguments_columns",
+        ] {
+            let errs = clash(other);
+            assert_eq!(errs.len(), 1, "{other}: {errs:?}");
+        }
+        assert!(clash("article_comment").is_empty());
+    }
 }

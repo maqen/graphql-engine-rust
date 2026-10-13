@@ -6,6 +6,7 @@
 //! database type, and permission filters are already merged in.
 
 pub mod action;
+pub mod aggregate;
 pub mod backend;
 pub mod count;
 pub mod mutation;
@@ -17,6 +18,7 @@ pub mod value;
 use std::sync::Arc;
 
 pub use action::{ActionCall, ActionRootField};
+pub use aggregate::*;
 pub use backend::{BoxFuture, MultiplexedQuery, MultiplexedRow, SourceExecutor};
 pub use count::Count;
 pub use mutation::*;
@@ -71,4 +73,6 @@ pub enum QueryRoot {
     Count(Count),
     /// `author_stream(...)` (subscriptions only): a JSON array of the next rows.
     Stream(StreamSelect),
+    /// `author_aggregate { … }`: a single JSON object.
+    Aggregate(AggregateSelect),
 }

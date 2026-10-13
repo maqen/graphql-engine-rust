@@ -3,3 +3,6 @@
 # Every title, but ids and word counts of published articles only.
 - role_name: pab
   role_set: [auditor, titles]
+# Every article, with word counts redacted on drafts; aggregates see the redacted values.
+- role_name: agg_mixed
+  role_set: [agg_pub, agg_all]

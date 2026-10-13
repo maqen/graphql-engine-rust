@@ -67,3 +67,44 @@ select_permissions:
         meta:
           _has_keys_any: X-Hasura-Keys
       query_root_fields: [select_by_pk]
+  # Aggregates: published articles plus the user's own, one row per select.
+  - role: agg
+    permission:
+      columns: [id, title, author_id, word_count]
+      filter:
+        _or:
+          - is_published:
+              _eq: true
+          - author_id:
+              _eq: X-Hasura-User-Id
+      limit: 1
+      allow_aggregations: true
+  # Aggregates allowed, but only the plain select root field.
+  - role: agg_noroot
+    permission:
+      columns: [id, word_count]
+      filter:
+        is_published:
+          _eq: true
+      allow_aggregations: true
+      query_root_fields: [select]
+  # Published articles, without aggregations.
+  - role: agg_off
+    permission:
+      columns: [id, word_count]
+      filter:
+        is_published:
+          _eq: true
+  # Parents of the inherited role agg_mixed: word counts of published articles only.
+  - role: agg_pub
+    permission:
+      columns: [id, author_id, word_count]
+      filter:
+        is_published:
+          _eq: true
+      allow_aggregations: true
+  - role: agg_all
+    permission:
+      columns: [id, author_id]
+      filter: {}
+      allow_aggregations: true

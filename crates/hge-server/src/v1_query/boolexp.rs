@@ -519,6 +519,15 @@ fn for_each_value(exp: &mut BoolExp, f: &mut impl FnMut(&mut Value)) {
             for_each_value(condition, f);
             for_each_value(exp, f);
         }
+        BoolExp::AggregationPredicate(p) => {
+            for exp in [&mut p.permission_filter, &mut p.filter]
+                .into_iter()
+                .flatten()
+            {
+                for_each_value(exp, f);
+            }
+            for_each_value(&mut p.predicate, f);
+        }
         BoolExp::Relationship { exp, .. } | BoolExp::Exists { exp, .. } => for_each_value(exp, f),
         BoolExp::CompareColumns { .. } => {}
         BoolExp::Compare { op, .. } => match op {

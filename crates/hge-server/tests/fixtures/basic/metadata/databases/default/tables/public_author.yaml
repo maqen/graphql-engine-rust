@@ -17,3 +17,12 @@ select_permissions:
         - name
       filter: {}
       limit: 2
+  - role: reader
+    permission:
+      columns:
+        - id
+        - name
+        - rating
+      filter: {}
+      limit: 2
+      allow_aggregations: true

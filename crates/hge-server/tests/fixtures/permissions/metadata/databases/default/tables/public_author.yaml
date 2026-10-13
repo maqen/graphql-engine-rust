@@ -31,3 +31,30 @@ select_permissions:
       filter:
         is_active:
           $eq: true
+  - role: agg
+    permission:
+      columns: [id, name]
+      filter:
+        id:
+          _in: X-Hasura-Author-Ids
+      allow_aggregations: true
+  - role: agg_noroot
+    permission:
+      columns: [id, name]
+      filter: {}
+      allow_aggregations: true
+  - role: agg_off
+    permission:
+      columns: [id, name]
+      filter: {}
+      allow_aggregations: true
+  - role: agg_pub
+    permission:
+      columns: [id, name]
+      filter: {}
+      allow_aggregations: true
+  - role: agg_all
+    permission:
+      columns: [id, name]
+      filter: {}
+      allow_aggregations: true
