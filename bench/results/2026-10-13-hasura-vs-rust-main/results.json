@@ -1,0 +1,1719 @@
+{
+  "label": "2026-10-13-hasura-vs-rust-main",
+  "started_at": "2026-10-13T21:33:38+00:00",
+  "machine": {
+    "cpus": 4,
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "os": "Linux 6.18.44-fc-v114"
+  },
+  "config": {
+    "duration": "10s",
+    "warmup": "3s",
+    "concurrency": [
+      32,
+      128
+    ],
+    "engine_limits": "cpuset=0,1, mem=2g",
+    "accept_encoding": "gzip"
+  },
+  "engines": [
+    {
+      "name": "hasura",
+      "url": "http://localhost:8080",
+      "service": "hasura",
+      "image": "mirror.gcr.io/hasura/graphql-engine:v2.51.0-ce.cli-migrations-v3",
+      "image_size_mb": 603.0,
+      "load_url": "http://172.18.0.4:8080",
+      "idle_mem_mb": 221.5,
+      "startup": {
+        "runs_s": [
+          5.081,
+          5.361,
+          5.565
+        ],
+        "median_s": 5.361
+      }
+    },
+    {
+      "name": "rust",
+      "url": "http://localhost:8081",
+      "service": "rust-engine",
+      "image": "graphql-engine-rust:main-7154861",
+      "image_size_mb": 151.5,
+      "load_url": "http://172.18.0.5:8080",
+      "idle_mem_mb": 7.9,
+      "startup": {
+        "runs_s": [
+          1.012,
+          0.938,
+          0.969
+        ],
+        "median_s": 0.969
+      }
+    }
+  ],
+  "cases": [
+    {
+      "case": "01_simple_select",
+      "description": "Flat select with order_by + limit (admin)",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 1540.1,
+          "p50_ms": 19.88,
+          "p95_ms": 28.99,
+          "p99_ms": 37.16,
+          "max_ms": 78.72,
+          "requests": 15437,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 401,
+          "expected_bytes": 401,
+          "peak_mem_mb": 147.7,
+          "mean_cpu_cores": 1.36,
+          "samples": 20
+        },
+        "rust": {
+          "rps": 10928.2,
+          "p50_ms": 2.78,
+          "p95_ms": 4.63,
+          "p99_ms": 6.47,
+          "max_ms": 31.24,
+          "requests": 109341,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 401,
+          "expected_bytes": 401,
+          "peak_mem_mb": 10.6,
+          "mean_cpu_cores": 1.56,
+          "samples": 19
+        }
+      }
+    },
+    {
+      "case": "01_simple_select",
+      "description": "Flat select with order_by + limit (admin)",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 10060.4,
+          "p50_ms": 12.18,
+          "p95_ms": 19.28,
+          "p99_ms": 24.99,
+          "max_ms": 51.74,
+          "requests": 100739,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 401,
+          "expected_bytes": 401,
+          "peak_mem_mb": 16.1,
+          "mean_cpu_cores": 1.48,
+          "samples": 20
+        },
+        "hasura": {
+          "rps": 1454.7,
+          "p50_ms": 86.09,
+          "p95_ms": 112.7,
+          "p99_ms": 129.23,
+          "max_ms": 150.83,
+          "requests": 14608,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 401,
+          "expected_bytes": 401,
+          "peak_mem_mb": 147.9,
+          "mean_cpu_cores": 1.41,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "02_select_by_pk",
+      "description": "Primary-key lookup with variables",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 1373.3,
+          "p50_ms": 22.85,
+          "p95_ms": 34.5,
+          "p99_ms": 40.67,
+          "max_ms": 74.47,
+          "requests": 13758,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 128,
+          "expected_bytes": 128,
+          "peak_mem_mb": 145.1,
+          "mean_cpu_cores": 1.36,
+          "samples": 20
+        },
+        "rust": {
+          "rps": 9725.3,
+          "p50_ms": 3.06,
+          "p95_ms": 5.31,
+          "p99_ms": 7.87,
+          "max_ms": 48.61,
+          "requests": 97309,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 128,
+          "expected_bytes": 128,
+          "peak_mem_mb": 16.3,
+          "mean_cpu_cores": 1.51,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "02_select_by_pk",
+      "description": "Primary-key lookup with variables",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 9221.2,
+          "p50_ms": 13.3,
+          "p95_ms": 20.73,
+          "p99_ms": 25.11,
+          "max_ms": 73.23,
+          "requests": 92314,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 128,
+          "expected_bytes": 128,
+          "peak_mem_mb": 16.2,
+          "mean_cpu_cores": 1.54,
+          "samples": 20
+        },
+        "hasura": {
+          "rps": 1380.2,
+          "p50_ms": 92.42,
+          "p95_ms": 127.78,
+          "p99_ms": 142.71,
+          "max_ms": 186.99,
+          "requests": 13855,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 128,
+          "expected_bytes": 128,
+          "peak_mem_mb": 146.2,
+          "mean_cpu_cores": 1.44,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "03_filter_paginate",
+      "description": "Compound where, order_by on two columns, limit/offset",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 972.5,
+          "p50_ms": 31.56,
+          "p95_ms": 45.74,
+          "p99_ms": 55.87,
+          "max_ms": 119.23,
+          "requests": 9743,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 308,
+          "expected_bytes": 308,
+          "peak_mem_mb": 146.8,
+          "mean_cpu_cores": 1.24,
+          "samples": 19
+        },
+        "rust": {
+          "rps": 3609.6,
+          "p50_ms": 7.42,
+          "p95_ms": 20.94,
+          "p99_ms": 33.05,
+          "max_ms": 88.21,
+          "requests": 36134,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 336,
+          "expected_bytes": 336,
+          "peak_mem_mb": 16.2,
+          "mean_cpu_cores": 0.89,
+          "samples": 19
+        }
+      }
+    },
+    {
+      "case": "03_filter_paginate",
+      "description": "Compound where, order_by on two columns, limit/offset",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 3568.0,
+          "p50_ms": 32.44,
+          "p95_ms": 62.42,
+          "p99_ms": 81.94,
+          "max_ms": 146.27,
+          "requests": 35822,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 336,
+          "expected_bytes": 336,
+          "peak_mem_mb": 17.1,
+          "mean_cpu_cores": 1.02,
+          "samples": 20
+        },
+        "hasura": {
+          "rps": 854.9,
+          "p50_ms": 148.76,
+          "p95_ms": 188.29,
+          "p99_ms": 210.73,
+          "max_ms": 351.81,
+          "requests": 8601,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 308,
+          "expected_bytes": 308,
+          "peak_mem_mb": 147.6,
+          "mean_cpu_cores": 1.33,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "04_object_relationships",
+      "description": "Two levels of object relationships",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 929.3,
+          "p50_ms": 33.41,
+          "p95_ms": 49.62,
+          "p99_ms": 58.99,
+          "max_ms": 127.73,
+          "requests": 9315,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 877,
+          "expected_bytes": 877,
+          "peak_mem_mb": 147.3,
+          "mean_cpu_cores": 1.29,
+          "samples": 20
+        },
+        "rust": {
+          "rps": 2461.3,
+          "p50_ms": 10.95,
+          "p95_ms": 29.77,
+          "p99_ms": 43.5,
+          "max_ms": 102.24,
+          "requests": 24642,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 1123,
+          "expected_bytes": 1123,
+          "peak_mem_mb": 16.1,
+          "mean_cpu_cores": 0.72,
+          "samples": 19
+        }
+      }
+    },
+    {
+      "case": "04_object_relationships",
+      "description": "Two levels of object relationships",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 2491.0,
+          "p50_ms": 46.07,
+          "p95_ms": 84.81,
+          "p99_ms": 102.46,
+          "max_ms": 210.28,
+          "requests": 25043,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 1123,
+          "expected_bytes": 1123,
+          "peak_mem_mb": 17.8,
+          "mean_cpu_cores": 0.78,
+          "samples": 20
+        },
+        "hasura": {
+          "rps": 782.4,
+          "p50_ms": 161.17,
+          "p95_ms": 201.62,
+          "p99_ms": 224.71,
+          "max_ms": 281.61,
+          "requests": 7897,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 877,
+          "expected_bytes": 877,
+          "peak_mem_mb": 149.9,
+          "mean_cpu_cores": 1.35,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "05_array_relationships",
+      "description": "Array relationships with nested limit/order",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 883.0,
+          "p50_ms": 35.58,
+          "p95_ms": 52.4,
+          "p99_ms": 65.83,
+          "max_ms": 186.71,
+          "requests": 8852,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 1231,
+          "expected_bytes": 1231,
+          "peak_mem_mb": 149.3,
+          "mean_cpu_cores": 1.37,
+          "samples": 19
+        },
+        "rust": {
+          "rps": 2421.9,
+          "p50_ms": 10.2,
+          "p95_ms": 34.22,
+          "p99_ms": 49.46,
+          "max_ms": 104.01,
+          "requests": 24251,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 1418,
+          "expected_bytes": 1418,
+          "peak_mem_mb": 15.8,
+          "mean_cpu_cores": 0.74,
+          "samples": 19
+        }
+      }
+    },
+    {
+      "case": "05_array_relationships",
+      "description": "Array relationships with nested limit/order",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 2525.3,
+          "p50_ms": 46.08,
+          "p95_ms": 82.57,
+          "p99_ms": 99.71,
+          "max_ms": 158.44,
+          "requests": 25378,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 1418,
+          "expected_bytes": 1418,
+          "peak_mem_mb": 18.2,
+          "mean_cpu_cores": 0.78,
+          "samples": 19
+        },
+        "hasura": {
+          "rps": 904.0,
+          "p50_ms": 143.37,
+          "p95_ms": 189.89,
+          "p99_ms": 347.0,
+          "max_ms": 1629.19,
+          "requests": 9109,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 1231,
+          "expected_bytes": 1231,
+          "peak_mem_mb": 153.7,
+          "mean_cpu_cores": 1.41,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "06_deep_nesting",
+      "description": "Five levels deep, mixing object and array relationships",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 660.6,
+          "p50_ms": 46.91,
+          "p95_ms": 66.37,
+          "p99_ms": 74.46,
+          "max_ms": 128.7,
+          "requests": 6629,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 1191,
+          "expected_bytes": 1191,
+          "peak_mem_mb": 152.1,
+          "mean_cpu_cores": 1.27,
+          "samples": 20
+        },
+        "rust": {
+          "rps": 1528.3,
+          "p50_ms": 16.76,
+          "p95_ms": 50.2,
+          "p99_ms": 71.9,
+          "max_ms": 228.91,
+          "requests": 15319,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 1412,
+          "expected_bytes": 1412,
+          "peak_mem_mb": 16.3,
+          "mean_cpu_cores": 0.6,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "06_deep_nesting",
+      "description": "Five levels deep, mixing object and array relationships",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 1570.1,
+          "p50_ms": 73.46,
+          "p95_ms": 130.11,
+          "p99_ms": 203.34,
+          "max_ms": 431.71,
+          "requests": 15816,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 1412,
+          "expected_bytes": 1412,
+          "peak_mem_mb": 19.8,
+          "mean_cpu_cores": 0.65,
+          "samples": 20
+        },
+        "hasura": {
+          "rps": 610.5,
+          "p50_ms": 212.12,
+          "p95_ms": 249.66,
+          "p99_ms": 284.25,
+          "max_ms": 692.81,
+          "requests": 6182,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 1191,
+          "expected_bytes": 1191,
+          "peak_mem_mb": 150.7,
+          "mean_cpu_cores": 1.3,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "07_aggregate",
+      "description": "Root aggregate with count/sum/avg/min/max and nodes",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 607.9,
+          "p50_ms": 51.41,
+          "p95_ms": 88.04,
+          "p99_ms": 109.5,
+          "max_ms": 207.38,
+          "requests": 6097,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 342,
+          "expected_bytes": 342,
+          "peak_mem_mb": 146.7,
+          "mean_cpu_cores": 1.06,
+          "samples": 20
+        },
+        "rust": {
+          "rps": 644.8,
+          "p50_ms": 49.08,
+          "p95_ms": 90.22,
+          "p99_ms": 113.48,
+          "max_ms": 155.06,
+          "requests": 6464,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 342,
+          "expected_bytes": 342,
+          "peak_mem_mb": 17.9,
+          "mean_cpu_cores": 0.23,
+          "samples": 19
+        }
+      }
+    },
+    {
+      "case": "07_aggregate",
+      "description": "Root aggregate with count/sum/avg/min/max and nodes",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 655.0,
+          "p50_ms": 193.18,
+          "p95_ms": 272.36,
+          "p99_ms": 314.3,
+          "max_ms": 392.3,
+          "requests": 6686,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 342,
+          "expected_bytes": 342,
+          "peak_mem_mb": 20.1,
+          "mean_cpu_cores": 0.22,
+          "samples": 20
+        },
+        "hasura": {
+          "rps": 480.0,
+          "p50_ms": 271.73,
+          "p95_ms": 366.68,
+          "p99_ms": 609.82,
+          "max_ms": 1287.02,
+          "requests": 4892,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 342,
+          "expected_bytes": 342,
+          "peak_mem_mb": 150.4,
+          "mean_cpu_cores": 1.1,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "08_nested_aggregate",
+      "description": "Aggregates over array relationships",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 718.1,
+          "p50_ms": 44.13,
+          "p95_ms": 60.86,
+          "p99_ms": 72.93,
+          "max_ms": 153.68,
+          "requests": 7203,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 511,
+          "expected_bytes": 511,
+          "peak_mem_mb": 149.1,
+          "mean_cpu_cores": 1.32,
+          "samples": 19
+        },
+        "rust": {
+          "rps": 2249.8,
+          "p50_ms": 11.6,
+          "p95_ms": 33.45,
+          "p99_ms": 48.47,
+          "max_ms": 133.07,
+          "requests": 22530,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 522,
+          "expected_bytes": 522,
+          "peak_mem_mb": 18.1,
+          "mean_cpu_cores": 0.7,
+          "samples": 19
+        }
+      }
+    },
+    {
+      "case": "08_nested_aggregate",
+      "description": "Aggregates over array relationships",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 2175.1,
+          "p50_ms": 53.08,
+          "p95_ms": 97.16,
+          "p99_ms": 117.82,
+          "max_ms": 193.61,
+          "requests": 21860,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 522,
+          "expected_bytes": 522,
+          "peak_mem_mb": 20.0,
+          "mean_cpu_cores": 0.76,
+          "samples": 19
+        },
+        "hasura": {
+          "rps": 775.7,
+          "p50_ms": 164.56,
+          "p95_ms": 255.7,
+          "p99_ms": 335.9,
+          "max_ms": 737.71,
+          "requests": 7832,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 511,
+          "expected_bytes": 511,
+          "peak_mem_mb": 152.1,
+          "mean_cpu_cores": 1.34,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "09_user_permissions",
+      "description": "Row-level permissions via session variable and relationship filters (role user)",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 567.5,
+          "p50_ms": 54.88,
+          "p95_ms": 79.17,
+          "p99_ms": 93.08,
+          "max_ms": 176.77,
+          "requests": 5690,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 304,
+          "expected_bytes": 304,
+          "peak_mem_mb": 149.2,
+          "mean_cpu_cores": 1.33,
+          "samples": 20
+        },
+        "rust": {
+          "rps": 4018.1,
+          "p50_ms": 7.45,
+          "p95_ms": 14.43,
+          "p99_ms": 21.67,
+          "max_ms": 62.2,
+          "requests": 40212,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 316,
+          "expected_bytes": 316,
+          "peak_mem_mb": 17.1,
+          "mean_cpu_cores": 1.3,
+          "samples": 19
+        }
+      }
+    },
+    {
+      "case": "09_user_permissions",
+      "description": "Row-level permissions via session variable and relationship filters (role user)",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 4194.2,
+          "p50_ms": 29.56,
+          "p95_ms": 43.53,
+          "p99_ms": 54.63,
+          "max_ms": 92.5,
+          "requests": 42031,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 316,
+          "expected_bytes": 316,
+          "peak_mem_mb": 20.1,
+          "mean_cpu_cores": 1.29,
+          "samples": 19
+        },
+        "hasura": {
+          "rps": 541.2,
+          "p50_ms": 231.26,
+          "p95_ms": 292.14,
+          "p99_ms": 461.13,
+          "max_ms": 484.69,
+          "requests": 5496,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 304,
+          "expected_bytes": 304,
+          "peak_mem_mb": 155.1,
+          "mean_cpu_cores": 1.39,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "10_user_aggregate",
+      "description": "Aggregates under row-level permissions (role user)",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 752.8,
+          "p50_ms": 40.84,
+          "p95_ms": 58.1,
+          "p99_ms": 69.46,
+          "max_ms": 97.61,
+          "requests": 7553,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 270,
+          "expected_bytes": 270,
+          "peak_mem_mb": 146.3,
+          "mean_cpu_cores": 1.33,
+          "samples": 20
+        },
+        "rust": {
+          "rps": 6677.4,
+          "p50_ms": 4.51,
+          "p95_ms": 8.11,
+          "p99_ms": 11.57,
+          "max_ms": 88.57,
+          "requests": 66821,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 270,
+          "expected_bytes": 270,
+          "peak_mem_mb": 19.1,
+          "mean_cpu_cores": 1.33,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "10_user_aggregate",
+      "description": "Aggregates under row-level permissions (role user)",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 6437.6,
+          "p50_ms": 19.14,
+          "p95_ms": 29.55,
+          "p99_ms": 37.84,
+          "max_ms": 77.8,
+          "requests": 64487,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 270,
+          "expected_bytes": 270,
+          "peak_mem_mb": 19.4,
+          "mean_cpu_cores": 1.4,
+          "samples": 20
+        },
+        "hasura": {
+          "rps": 714.0,
+          "p50_ms": 180.7,
+          "p95_ms": 220.81,
+          "p99_ms": 234.99,
+          "max_ms": 274.25,
+          "requests": 7218,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 270,
+          "expected_bytes": 270,
+          "peak_mem_mb": 150.1,
+          "mean_cpu_cores": 1.43,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "11_computed_view",
+      "description": "Computed field, tracked view with custom column names, manual relationship",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 173.2,
+          "p50_ms": 194.75,
+          "p95_ms": 295.2,
+          "p99_ms": 358.75,
+          "max_ms": 432.6,
+          "requests": 1746,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 265,
+          "expected_bytes": 265,
+          "peak_mem_mb": 156.2,
+          "mean_cpu_cores": 0.39,
+          "samples": 19
+        },
+        "rust": {
+          "rps": 181.0,
+          "p50_ms": 178.36,
+          "p95_ms": 273.04,
+          "p99_ms": 323.37,
+          "max_ms": 399.85,
+          "requests": 1830,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 268,
+          "expected_bytes": 268,
+          "peak_mem_mb": 17.3,
+          "mean_cpu_cores": 0.1,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "11_computed_view",
+      "description": "Computed field, tracked view with custom column names, manual relationship",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 178.3,
+          "p50_ms": 709.89,
+          "p95_ms": 854.1,
+          "p99_ms": 937.3,
+          "max_ms": 1079.14,
+          "requests": 1895,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 268,
+          "expected_bytes": 268,
+          "peak_mem_mb": 19.3,
+          "mean_cpu_cores": 0.11,
+          "samples": 21
+        },
+        "hasura": {
+          "rps": 166.0,
+          "p50_ms": 659.67,
+          "p95_ms": 1686.95,
+          "p99_ms": 2312.01,
+          "max_ms": 3535.51,
+          "requests": 1755,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 265,
+          "expected_bytes": 265,
+          "peak_mem_mb": 165.5,
+          "mean_cpu_cores": 0.62,
+          "samples": 21
+        }
+      }
+    },
+    {
+      "case": "12_variables_fragments",
+      "description": "Variables, fragments, aliases, __typename, @include/@skip",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 730.8,
+          "p50_ms": 42.72,
+          "p95_ms": 59.46,
+          "p99_ms": 71.15,
+          "max_ms": 134.52,
+          "requests": 7322,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 625,
+          "expected_bytes": 625,
+          "peak_mem_mb": 149.3,
+          "mean_cpu_cores": 1.37,
+          "samples": 19
+        },
+        "rust": {
+          "rps": 6829.2,
+          "p50_ms": 4.42,
+          "p95_ms": 7.57,
+          "p99_ms": 10.62,
+          "max_ms": 45.74,
+          "requests": 68337,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 625,
+          "expected_bytes": 625,
+          "peak_mem_mb": 16.8,
+          "mean_cpu_cores": 1.49,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "12_variables_fragments",
+      "description": "Variables, fragments, aliases, __typename, @include/@skip",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 7125.0,
+          "p50_ms": 17.36,
+          "p95_ms": 26.29,
+          "p99_ms": 33.02,
+          "max_ms": 55.95,
+          "requests": 71354,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 625,
+          "expected_bytes": 625,
+          "peak_mem_mb": 18.2,
+          "mean_cpu_cores": 1.46,
+          "samples": 20
+        },
+        "hasura": {
+          "rps": 771.1,
+          "p50_ms": 164.52,
+          "p95_ms": 194.9,
+          "p99_ms": 248.15,
+          "max_ms": 676.45,
+          "requests": 7806,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 625,
+          "expected_bytes": 625,
+          "peak_mem_mb": 147.3,
+          "mean_cpu_cores": 1.45,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "13_action",
+      "description": "Synchronous action with an action relationship to a table (throughput bounded by the Python handler)",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 634.8,
+          "p50_ms": 48.87,
+          "p95_ms": 64.46,
+          "p99_ms": 78.0,
+          "max_ms": 1069.03,
+          "requests": 6373,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 147,
+          "expected_bytes": 147,
+          "peak_mem_mb": 145.4,
+          "mean_cpu_cores": 1.24,
+          "samples": 20
+        },
+        "rust": {
+          "rps": 704.0,
+          "p50_ms": 44.29,
+          "p95_ms": 49.02,
+          "p99_ms": 51.69,
+          "max_ms": 60.7,
+          "requests": 7069,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 147,
+          "expected_bytes": 147,
+          "peak_mem_mb": 17.7,
+          "mean_cpu_cores": 0.47,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "13_action",
+      "description": "Synchronous action with an action relationship to a table (throughput bounded by the Python handler)",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 2467.1,
+          "p50_ms": 50.37,
+          "p95_ms": 65.22,
+          "p99_ms": 79.51,
+          "max_ms": 141.2,
+          "requests": 24827,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 147,
+          "expected_bytes": 147,
+          "peak_mem_mb": 29.1,
+          "mean_cpu_cores": 1.23,
+          "samples": 20
+        },
+        "hasura": {
+          "rps": 611.3,
+          "p50_ms": 158.53,
+          "p95_ms": 242.37,
+          "p99_ms": 1336.07,
+          "max_ms": 8217.65,
+          "requests": 6708,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 147,
+          "expected_bytes": 147,
+          "peak_mem_mb": 143.8,
+          "mean_cpu_cores": 1.32,
+          "samples": 21
+        }
+      }
+    },
+    {
+      "case": "14_jsonb_ilike",
+      "description": "jsonb _contains / _has_key and text _ilike operators",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 202.4,
+          "p50_ms": 163.22,
+          "p95_ms": 270.91,
+          "p99_ms": 321.71,
+          "max_ms": 482.74,
+          "requests": 2042,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 232,
+          "expected_bytes": 232,
+          "peak_mem_mb": 149.4,
+          "mean_cpu_cores": 0.45,
+          "samples": 20
+        },
+        "rust": {
+          "rps": 237.1,
+          "p50_ms": 136.71,
+          "p95_ms": 205.65,
+          "p99_ms": 239.63,
+          "max_ms": 277.15,
+          "requests": 2388,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 249,
+          "expected_bytes": 249,
+          "peak_mem_mb": 27.0,
+          "mean_cpu_cores": 0.13,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "14_jsonb_ilike",
+      "description": "jsonb _contains / _has_key and text _ilike operators",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 244.4,
+          "p50_ms": 515.87,
+          "p95_ms": 656.39,
+          "p99_ms": 712.74,
+          "max_ms": 762.11,
+          "requests": 2552,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 249,
+          "expected_bytes": 249,
+          "peak_mem_mb": 29.3,
+          "mean_cpu_cores": 0.13,
+          "samples": 20
+        },
+        "hasura": {
+          "rps": 194.8,
+          "p50_ms": 575.37,
+          "p95_ms": 1407.41,
+          "p99_ms": 2013.15,
+          "max_ms": 3023.46,
+          "requests": 2050,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 232,
+          "expected_bytes": 232,
+          "peak_mem_mb": 158.3,
+          "mean_cpu_cores": 0.7,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "15_distinct_on",
+      "description": "distinct_on with matching order_by",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 117.5,
+          "p50_ms": 291.31,
+          "p95_ms": 399.13,
+          "p99_ms": 439.52,
+          "max_ms": 501.08,
+          "requests": 1196,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 305,
+          "expected_bytes": 305,
+          "peak_mem_mb": 153.6,
+          "mean_cpu_cores": 0.21,
+          "samples": 20
+        },
+        "rust": {
+          "rps": 117.9,
+          "p50_ms": 271.21,
+          "p95_ms": 387.85,
+          "p99_ms": 458.4,
+          "max_ms": 574.78,
+          "requests": 1196,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 322,
+          "expected_bytes": 322,
+          "peak_mem_mb": 29.3,
+          "mean_cpu_cores": 0.07,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "15_distinct_on",
+      "description": "distinct_on with matching order_by",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 121.0,
+          "p50_ms": 1036.93,
+          "p95_ms": 1255.08,
+          "p99_ms": 1383.5,
+          "max_ms": 1458.87,
+          "requests": 1307,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 322,
+          "expected_bytes": 322,
+          "peak_mem_mb": 29.4,
+          "mean_cpu_cores": 0.07,
+          "samples": 21
+        },
+        "hasura": {
+          "rps": 114.9,
+          "p50_ms": 934.61,
+          "p95_ms": 2428.73,
+          "p99_ms": 3507.73,
+          "max_ms": 5692.53,
+          "requests": 1244,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 305,
+          "expected_bytes": 305,
+          "peak_mem_mb": 155.2,
+          "mean_cpu_cores": 0.3,
+          "samples": 21
+        }
+      }
+    },
+    {
+      "case": "16_large_result",
+      "description": "1000 rows with an object relationship (serialization throughput)",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 420.3,
+          "p50_ms": 72.77,
+          "p95_ms": 133.56,
+          "p99_ms": 170.45,
+          "max_ms": 245.89,
+          "requests": 4223,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 16477,
+          "expected_bytes": 16477,
+          "peak_mem_mb": 213.6,
+          "mean_cpu_cores": 1.34,
+          "samples": 19
+        },
+        "rust": {
+          "rps": 552.1,
+          "p50_ms": 56.43,
+          "p95_ms": 107.41,
+          "p99_ms": 137.82,
+          "max_ms": 193.1,
+          "requests": 5541,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 25432,
+          "expected_bytes": 25432,
+          "peak_mem_mb": 42.6,
+          "mean_cpu_cores": 0.58,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "16_large_result",
+      "description": "1000 rows with an object relationship (serialization throughput)",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 580.0,
+          "p50_ms": 216.03,
+          "p95_ms": 310.25,
+          "p99_ms": 364.63,
+          "max_ms": 436.8,
+          "requests": 5906,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 25432,
+          "expected_bytes": 25432,
+          "peak_mem_mb": 40.4,
+          "mean_cpu_cores": 0.56,
+          "samples": 20
+        },
+        "hasura": {
+          "rps": 374.6,
+          "p50_ms": 342.35,
+          "p95_ms": 400.73,
+          "p99_ms": 471.77,
+          "max_ms": 768.23,
+          "requests": 3851,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 16477,
+          "expected_bytes": 16477,
+          "peak_mem_mb": 242.7,
+          "mean_cpu_cores": 1.31,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "17_relationship_filter_order",
+      "description": "where/order_by across relationships and aggregate order_by",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 668.5,
+          "p50_ms": 45.86,
+          "p95_ms": 64.01,
+          "p99_ms": 75.48,
+          "max_ms": 179.61,
+          "requests": 6705,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 178,
+          "expected_bytes": 178,
+          "peak_mem_mb": 162.0,
+          "mean_cpu_cores": 1.12,
+          "samples": 19
+        },
+        "rust": {
+          "rps": 1621.9,
+          "p50_ms": 17.1,
+          "p95_ms": 42.38,
+          "p99_ms": 60.45,
+          "max_ms": 162.4,
+          "requests": 16262,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 185,
+          "expected_bytes": 185,
+          "peak_mem_mb": 35.6,
+          "mean_cpu_cores": 0.51,
+          "samples": 19
+        }
+      }
+    },
+    {
+      "case": "17_relationship_filter_order",
+      "description": "where/order_by across relationships and aggregate order_by",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 1569.4,
+          "p50_ms": 76.58,
+          "p95_ms": 127.77,
+          "p99_ms": 160.83,
+          "max_ms": 233.97,
+          "requests": 15811,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 185,
+          "expected_bytes": 185,
+          "peak_mem_mb": 28.9,
+          "mean_cpu_cores": 0.51,
+          "samples": 20
+        },
+        "hasura": {
+          "rps": 613.9,
+          "p50_ms": 208.28,
+          "p95_ms": 257.58,
+          "p99_ms": 269.1,
+          "max_ms": 301.69,
+          "requests": 6223,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 178,
+          "expected_bytes": 178,
+          "peak_mem_mb": 156.4,
+          "mean_cpu_cores": 1.23,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "18_introspection",
+      "description": "Full schema introspection for role user (schema parity)",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 107.9,
+          "p50_ms": 295.09,
+          "p95_ms": 373.77,
+          "p99_ms": 740.64,
+          "max_ms": 870.12,
+          "requests": 1104,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 12082,
+          "expected_bytes": 12082,
+          "peak_mem_mb": 162.3,
+          "mean_cpu_cores": 1.57,
+          "samples": 20
+        },
+        "rust": {
+          "rps": 313.5,
+          "p50_ms": 100.02,
+          "p95_ms": 152.67,
+          "p99_ms": 180.25,
+          "max_ms": 247.95,
+          "requests": 3167,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 21581,
+          "expected_bytes": 21581,
+          "peak_mem_mb": 26.8,
+          "mean_cpu_cores": 1.8,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "18_introspection",
+      "description": "Full schema introspection for role user (schema parity)",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 302.7,
+          "p50_ms": 423.82,
+          "p95_ms": 565.97,
+          "p99_ms": 627.14,
+          "max_ms": 756.33,
+          "requests": 3153,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 21581,
+          "expected_bytes": 21581,
+          "peak_mem_mb": 29.0,
+          "mean_cpu_cores": 1.8,
+          "samples": 20
+        },
+        "hasura": {
+          "rps": 109.8,
+          "p50_ms": 1143.86,
+          "p95_ms": 1404.5,
+          "p99_ms": 3557.21,
+          "max_ms": 3743.7,
+          "requests": 1238,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 12082,
+          "expected_bytes": 12082,
+          "peak_mem_mb": 204.8,
+          "mean_cpu_cores": 1.59,
+          "samples": 22
+        }
+      }
+    },
+    {
+      "case": "19_mutation_update",
+      "description": "Permissioned update (idempotent: sets constant values; every request locks the same row)",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 335.9,
+          "p50_ms": 58.68,
+          "p95_ms": 306.34,
+          "p99_ms": 488.33,
+          "max_ms": 772.35,
+          "requests": 3387,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 172,
+          "expected_bytes": 172,
+          "peak_mem_mb": 156.9,
+          "mean_cpu_cores": 0.81,
+          "samples": 20,
+          "event_drain_s": 0.0
+        },
+        "rust": {
+          "rps": 682.8,
+          "p50_ms": 28.67,
+          "p95_ms": 154.92,
+          "p99_ms": 251.34,
+          "max_ms": 513.6,
+          "requests": 6853,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 172,
+          "expected_bytes": 172,
+          "peak_mem_mb": 27.1,
+          "mean_cpu_cores": 0.39,
+          "samples": 20,
+          "event_drain_s": 0.0
+        }
+      }
+    },
+    {
+      "case": "19_mutation_update",
+      "description": "Permissioned update (idempotent: sets constant values; every request locks the same row)",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 592.2,
+          "p50_ms": 189.2,
+          "p95_ms": 395.64,
+          "p99_ms": 537.95,
+          "max_ms": 1192.78,
+          "requests": 6040,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 172,
+          "expected_bytes": 172,
+          "peak_mem_mb": 29.1,
+          "mean_cpu_cores": 0.34,
+          "samples": 20,
+          "event_drain_s": 0.0
+        },
+        "hasura": {
+          "rps": 252.1,
+          "p50_ms": 405.13,
+          "p95_ms": 1291.43,
+          "p99_ms": 1880.37,
+          "max_ms": 3391.46,
+          "requests": 2628,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 172,
+          "expected_bytes": 172,
+          "peak_mem_mb": 161.5,
+          "mean_cpu_cores": 0.82,
+          "samples": 20,
+          "event_drain_s": 0.0
+        }
+      }
+    },
+    {
+      "case": "20_mutation_insert_delete",
+      "description": "Insert with column preset + event trigger, then delete in the same transaction (net zero rows)",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 312.3,
+          "p50_ms": 77.75,
+          "p95_ms": 198.39,
+          "p99_ms": 220.34,
+          "max_ms": 254.84,
+          "requests": 3136,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 145,
+          "expected_bytes": 145,
+          "peak_mem_mb": 154.6,
+          "mean_cpu_cores": 1.3,
+          "samples": 20,
+          "event_drain_s": 5.0
+        },
+        "rust": {
+          "rps": 905.9,
+          "p50_ms": 33.17,
+          "p95_ms": 62.2,
+          "p99_ms": 76.03,
+          "max_ms": 146.35,
+          "requests": 9077,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 145,
+          "expected_bytes": 145,
+          "peak_mem_mb": 31.3,
+          "mean_cpu_cores": 0.8,
+          "samples": 19,
+          "event_drain_s": 0.5
+        }
+      }
+    },
+    {
+      "case": "20_mutation_insert_delete",
+      "description": "Insert with column preset + event trigger, then delete in the same transaction (net zero rows)",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 1231.7,
+          "p50_ms": 101.09,
+          "p95_ms": 131.11,
+          "p99_ms": 147.92,
+          "max_ms": 174.16,
+          "requests": 12469,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 145,
+          "expected_bytes": 145,
+          "peak_mem_mb": 29.9,
+          "mean_cpu_cores": 0.86,
+          "samples": 20,
+          "event_drain_s": 5.1
+        },
+        "hasura": {
+          "rps": 317.9,
+          "p50_ms": 336.2,
+          "p95_ms": 741.57,
+          "p99_ms": 786.17,
+          "max_ms": 827.14,
+          "requests": 3325,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 145,
+          "expected_bytes": 145,
+          "peak_mem_mb": 162.2,
+          "mean_cpu_cores": 1.29,
+          "samples": 20,
+          "event_drain_s": 1.5
+        }
+      }
+    },
+    {
+      "case": "21_rest_endpoint",
+      "description": "REST endpoint backed by a query collection",
+      "concurrency": 32,
+      "engines": {
+        "hasura": {
+          "rps": 1486.5,
+          "p50_ms": 20.85,
+          "p95_ms": 29.49,
+          "p99_ms": 37.67,
+          "max_ms": 75.54,
+          "requests": 14895,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 180,
+          "expected_bytes": 180,
+          "peak_mem_mb": 155.7,
+          "mean_cpu_cores": 1.33,
+          "samples": 20
+        },
+        "rust": {
+          "rps": 8577.3,
+          "p50_ms": 3.52,
+          "p95_ms": 6.05,
+          "p99_ms": 9.31,
+          "max_ms": 39.93,
+          "requests": 85820,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 180,
+          "expected_bytes": 180,
+          "peak_mem_mb": 29.9,
+          "mean_cpu_cores": 1.33,
+          "samples": 20
+        }
+      }
+    },
+    {
+      "case": "21_rest_endpoint",
+      "description": "REST endpoint backed by a query collection",
+      "concurrency": 128,
+      "engines": {
+        "rust": {
+          "rps": 9108.6,
+          "p50_ms": 13.57,
+          "p95_ms": 21.3,
+          "p99_ms": 26.86,
+          "max_ms": 77.47,
+          "requests": 91203,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 180,
+          "expected_bytes": 180,
+          "peak_mem_mb": 29.9,
+          "mean_cpu_cores": 1.34,
+          "samples": 20
+        },
+        "hasura": {
+          "rps": 1628.4,
+          "p50_ms": 76.03,
+          "p95_ms": 106.6,
+          "p99_ms": 149.34,
+          "max_ms": 684.32,
+          "requests": 16373,
+          "errors": 0,
+          "non_200": 0,
+          "transport_errors": 0,
+          "bytes_per_request": 180,
+          "expected_bytes": 180,
+          "peak_mem_mb": 155.3,
+          "mean_cpu_cores": 1.39,
+          "samples": 20
+        }
+      }
+    }
+  ],
+  "startup_only": [
+    {
+      "name": "hasura-serve",
+      "service": "hasura-serve",
+      "image": "mirror.gcr.io/hasura/graphql-engine:v2.51.0-ce.cli-migrations-v3",
+      "image_size_mb": 603.0,
+      "startup": {
+        "runs_s": [
+          0.901,
+          0.839,
+          0.835
+        ],
+        "median_s": 0.839
+      }
+    }
+  ]
+}
