@@ -723,6 +723,17 @@ impl<'s, 'd> Context<'s, 'd> {
                 ))
                 .with_path(path.to_owned())),
             },
+            // A float literal is a type mismatch for Int in V2; out-of-range integer literals
+            // and variables get the parse error from `coerce_scalar`.
+            Some(TypeDef::Scalar(_))
+                if matches!(value, GqlValue::Number(n) if n.is_f64())
+                    && scalars::builtin_kind(name) == Some(BuiltinScalar::Int) =>
+            {
+                Err(Error::validation(format!(
+                    "expected a 32-bit integer for type '{name}', but found a float"
+                ))
+                .with_path(path.to_owned()))
+            }
             Some(TypeDef::Scalar(_)) => {
                 let json = value
                     .clone()

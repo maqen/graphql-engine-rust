@@ -114,6 +114,9 @@ pub struct Error {
     /// Replaces the whole `extensions` object of the GraphQL error (an action handler's
     /// `extensions`).
     pub extensions: Option<Box<Value>>,
+    /// The HTTP status where it isn't the code's (an action handler's 4xx), for endpoints
+    /// that report one (`/v1alpha1/graphql`).
+    pub status: Option<u16>,
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -126,7 +129,14 @@ impl Error {
             path: "$".to_owned(),
             internal: None,
             extensions: None,
+            status: None,
         }
+    }
+
+    /// Report this error with HTTP `status` where the endpoint reports one.
+    pub fn with_status(mut self, status: u16) -> Self {
+        self.status = Some(status);
+        self
     }
 
     pub fn validation(message: impl Into<String>) -> Self {

@@ -140,7 +140,8 @@ impl Endpoint {
         match self {
             Endpoint::V1 => StatusCode::OK,
             Endpoint::V1Alpha1 => {
-                StatusCode::from_u16(err.code.http_status()).unwrap_or(StatusCode::BAD_REQUEST)
+                StatusCode::from_u16(err.status.unwrap_or_else(|| err.code.http_status()))
+                    .unwrap_or(StatusCode::BAD_REQUEST)
             }
         }
     }
