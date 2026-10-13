@@ -15,6 +15,7 @@ hge-metadata-api.workspace = true
 hge-postgres.workspace = true
 hge-auth.workspace = true
 hge-events.workspace = true
+hge-actions.workspace = true
 anyhow.workspace = true
 arc-swap.workspace = true
 axum.workspace = true

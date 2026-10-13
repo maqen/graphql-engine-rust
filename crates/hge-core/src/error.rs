@@ -107,6 +107,9 @@ pub struct Error {
     pub path: String,
     /// Extra details only shown in dev mode / to admins (`extensions.internal`).
     pub internal: Option<Box<Value>>,
+    /// Replaces the whole `extensions` object of the GraphQL error (an action handler's
+    /// `extensions`).
+    pub extensions: Option<Box<Value>>,
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -118,6 +121,7 @@ impl Error {
             message: message.into(),
             path: "$".to_owned(),
             internal: None,
+            extensions: None,
         }
     }
 
@@ -139,8 +143,16 @@ impl Error {
         self
     }
 
+    pub fn with_extensions(mut self, extensions: Value) -> Self {
+        self.extensions = Some(Box::new(extensions));
+        self
+    }
+
     /// The GraphQL error object (`{"extensions": {...}, "message": ...}`).
     pub fn to_graphql_json(&self, include_internal: bool) -> Value {
+        if let Some(ext) = &self.extensions {
+            return json!({ "message": self.message, "extensions": ext });
+        }
         let mut ext = Map::new();
         ext.insert("path".into(), Value::String(self.path.clone()));
         ext.insert("code".into(), Value::String(self.code.as_str().into()));

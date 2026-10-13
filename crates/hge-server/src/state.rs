@@ -5,13 +5,14 @@ use std::future::Future;
 use std::sync::{Arc, RwLock};
 
 use arc_swap::ArcSwap;
+use hge_actions::ActionRegistry;
 use hge_auth::Authenticator;
 use hge_core::{InconsistentObject, RoleName, SourceCatalog};
 use hge_metadata::Metadata;
 use hge_metadata::store::MetadataStore;
 use hge_metadata_api::{ApiSettings, Installed, PrepareOptions, Runtime};
 use hge_postgres::PgSource;
-use hge_schema::{RoleSchema, SchemaOptions, Tables, build_role_schema};
+use hge_schema::{ResolvedActions, RoleSchema, SchemaOptions, Tables, build_role_schema};
 
 use crate::config::ServerConfig;
 use crate::load::{self, Prepared};
@@ -22,6 +23,8 @@ pub struct AppState {
     /// The metadata's `resource_version` in the store.
     pub resource_version: i64,
     pub tables: Arc<Tables>,
+    pub actions: Arc<ResolvedActions>,
+    pub action_registry: Arc<ActionRegistry>,
     pub sources: HashMap<String, Arc<PgSource>>,
     pub inconsistencies: Vec<InconsistentObject>,
     pub options: SchemaOptions,
@@ -52,6 +55,16 @@ fn known_roles(metadata: &Metadata) -> HashSet<RoleName> {
                 .chain(t.update_permissions.iter().map(|p| &p.role))
                 .chain(t.delete_permissions.iter().map(|p| &p.role));
             roles.extend(names.map(RoleName::new));
+        }
+    }
+    for action in &metadata.actions {
+        if let Some(perms) = action.get("permissions").and_then(|p| p.as_array()) {
+            roles.extend(
+                perms
+                    .iter()
+                    .filter_map(|p| p.get("role").and_then(|r| r.as_str()))
+                    .map(RoleName::new),
+            );
         }
     }
     for r in &metadata.inherited_roles {
@@ -94,6 +107,8 @@ impl AppState {
             metadata: Arc::new(metadata),
             resource_version,
             tables: prepared.tables.clone(),
+            actions: prepared.actions.clone(),
+            action_registry: prepared.action_registry.clone(),
             sources: prepared
                 .sources
                 .iter()
@@ -119,7 +134,7 @@ impl AppState {
         }
         // Unknown roles have no permissions; build for a name no permission can use.
         let build_as = key.clone().unwrap_or_else(|| RoleName::new(""));
-        let mut built = build_role_schema(&self.tables, &build_as, &self.options);
+        let mut built = build_role_schema(&self.tables, &self.actions, &build_as, &self.options);
         built.schema.introspection_enabled = !self.introspection_disabled.contains(&build_as);
         let built = Arc::new(built);
         let mut schemas = self.schemas.write().expect("lock");

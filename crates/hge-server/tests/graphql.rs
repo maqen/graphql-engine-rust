@@ -79,12 +79,22 @@ async fn setup_database(url: &str, fixture: &Path) {
     client.batch_execute(&sql).await.expect("apply schema.sql");
 }
 
+/// Directories under `tests/cases/` whose cases have their own runner (`tests/<name>.rs`).
+const OWN_RUNNER: &[&str] = &["actions"];
+
 /// Every `*.yaml` under `tests/cases/`, including subdirectories (`cases/auth/…`).
 fn case_files() -> Vec<PathBuf> {
     fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
         for entry in std::fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
             if path.is_dir() {
+                if dir == Path::new(CASES)
+                    && path
+                        .file_name()
+                        .is_some_and(|n| OWN_RUNNER.iter().any(|r| n == *r))
+                {
+                    continue;
+                }
                 walk(&path, out);
             } else if path.extension().is_some_and(|e| e == "yaml") {
                 out.push(path);

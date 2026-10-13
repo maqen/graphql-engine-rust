@@ -3,12 +3,13 @@
 //! Root-field registration is a short list of calls in [`build_role_schema`]; workstreams add
 //! their root fields (mutations, functions, actions, remote schemas) there.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use hge_core::{ColumnType, QualifiedTable, RoleName};
 use indexmap::IndexMap;
 
+use crate::actions::ResolvedActions;
 use crate::introspection;
 use crate::model::*;
 use crate::permissions::{SelectAccess, select_access};
@@ -43,18 +44,84 @@ impl RoleSchema {
 
 pub const QUERY_ROOT: &str = "query_root";
 
+pub use crate::mutation::MUTATION_ROOT;
+
 pub fn build_role_schema(
     tables: &Arc<Tables>,
+    actions: &ResolvedActions,
     role: &RoleName,
     options: &SchemaOptions,
 ) -> RoleSchema {
+    let access = role_access(tables, role);
+    let mutation_access = crate::mutation::access::access_map(tables, role);
+    let schema = build_schema(tables, &access, &mutation_access, Some(actions), role);
+    RoleSchema {
+        role: role.clone(),
+        schema,
+        tables: tables.clone(),
+        access,
+        mutation_access,
+        options: options.clone(),
+    }
+}
+
+fn role_access(
+    tables: &Tables,
+    role: &RoleName,
+) -> HashMap<(Arc<str>, QualifiedTable), SelectAccess> {
     let mut access = HashMap::new();
     for t in &tables.ordered {
         if let Some(a) = select_access(t, role) {
             access.insert((t.source.clone(), t.name.clone()), a);
         }
     }
+    access
+}
 
+/// The root fields and types the tracked tables contribute to the admin schema (a superset
+/// of every role's), so that actions and custom types can be checked for name conflicts.
+pub(crate) struct TableSchemaNames {
+    pub query_fields: HashSet<String>,
+    pub mutation_fields: HashSet<String>,
+    /// Type name → whether it is a scalar.
+    pub types: HashMap<String, bool>,
+}
+
+pub(crate) fn table_schema_names(tables: &Tables) -> TableSchemaNames {
+    let role = RoleName::admin();
+    let access = role_access(tables, &role);
+    let mutation_access = crate::mutation::access::access_map(tables, &role);
+    let schema = build_schema(tables, &access, &mutation_access, None, &role);
+    let fields = |root: &str| -> HashSet<String> {
+        match schema.types.get(root) {
+            Some(TypeDef::Object(o)) => o
+                .fields
+                .values()
+                .filter(|f| !matches!(f.kind, FieldKind::NoQueriesAvailable))
+                .map(|f| f.name.clone())
+                .collect(),
+            _ => HashSet::new(),
+        }
+    };
+    TableSchemaNames {
+        query_fields: fields(QUERY_ROOT),
+        mutation_fields: fields(MUTATION_ROOT),
+        types: schema
+            .types
+            .iter()
+            .filter(|(name, _)| !matches!(name.as_str(), QUERY_ROOT | MUTATION_ROOT))
+            .map(|(name, ty)| (name.clone(), matches!(ty, TypeDef::Scalar(_))))
+            .collect(),
+    }
+}
+
+fn build_schema(
+    tables: &Tables,
+    access: &HashMap<(Arc<str>, QualifiedTable), SelectAccess>,
+    mutation_access: &HashMap<(Arc<str>, QualifiedTable), crate::mutation::MutationAccess>,
+    actions: Option<&ResolvedActions>,
+    role: &RoleName,
+) -> Schema {
     let mut b = Builder {
         schema: Schema {
             types: IndexMap::new(),
@@ -65,7 +132,7 @@ pub fn build_role_schema(
             introspection_enabled: true,
         },
         tables,
-        access: &access,
+        access,
         scalars: BTreeSet::new(),
     };
     for name in BUILTIN_SCALARS {
@@ -74,28 +141,28 @@ pub fn build_role_schema(
     introspection::add_introspection_types(&mut b.schema);
 
     let mut query_root = ObjectDef::new(QUERY_ROOT, None);
+    let mut mutation_root = ObjectDef::new(MUTATION_ROOT, Some("mutation root".to_owned()));
 
     // --- root field registration -------------------------------------------------------
     for table in &tables.ordered {
         b.add_table_select_root_fields(table, &mut query_root);
     }
+    for table in &tables.ordered {
+        b.add_table_mutation_root_fields(table, mutation_access, &mut mutation_root);
+    }
+    // Actions come last; `resolve_actions` has dropped those whose names conflict with
+    // table root fields or types.
+    if let Some(actions) = actions {
+        crate::actions::add_root_fields(&mut b, actions, role, &mut query_root, &mut mutation_root);
+    }
     // ------------------------------------------------------------------------------------
 
-    let mutation_access = crate::mutation::access::access_map(tables, role);
-    let mut mutation_root = ObjectDef::new(
-        crate::mutation::MUTATION_ROOT,
-        Some("mutation root".to_owned()),
-    );
-    for table in &tables.ordered {
-        b.add_table_mutation_root_fields(table, &mutation_access, &mut mutation_root);
-    }
     if !mutation_root.fields.is_empty() {
         // V2 lists fields sorted by name.
         mutation_root.fields.sort_keys();
-        b.schema.mutation_type = Some(crate::mutation::MUTATION_ROOT.to_owned());
+        b.schema.mutation_type = Some(MUTATION_ROOT.to_owned());
         b.schema.add(TypeDef::Object(mutation_root));
     }
-
     if query_root.fields.is_empty() {
         query_root = query_root.field(FieldDef::new(
             "no_queries_available",
@@ -105,15 +172,7 @@ pub fn build_role_schema(
     }
     b.schema.add(TypeDef::Object(query_root));
     b.finish();
-
-    RoleSchema {
-        role: role.clone(),
-        schema: b.schema,
-        tables: tables.clone(),
-        access,
-        mutation_access,
-        options: options.clone(),
-    }
+    b.schema
 }
 
 pub(crate) struct Builder<'a> {
@@ -192,7 +251,7 @@ impl Builder<'_> {
     }
 
     /// `distinct_on`, `limit`, `offset`, `order_by`, `where`.
-    fn with_select_args(&mut self, field: FieldDef, table: &TableInfo) -> FieldDef {
+    pub(crate) fn with_select_args(&mut self, field: FieldDef, table: &TableInfo) -> FieldDef {
         field
             .arg(
                 InputValueDef::new(

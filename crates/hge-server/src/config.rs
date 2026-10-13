@@ -1,5 +1,6 @@
 //! Server configuration (the typed form of V2's `graphql-engine serve` flags / env vars).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub use hge_events::EventingConfig;
@@ -54,6 +55,11 @@ pub struct ServerConfig {
     pub read_only: bool,
     /// `HASURA_GRAPHQL_SCHEMA_SYNC_POLL_INTERVAL` in milliseconds (0 disables).
     pub schema_sync_poll_interval_ms: u64,
+    /// `HASURA_GRAPHQL_CONFIGURED_HEADER_PRECEDENCE`
+    pub configured_header_precedence: bool,
+    /// Values that take precedence over the process environment for `{{VAR}}` and
+    /// `value_from_env` lookups in action metadata (tests, embedding).
+    pub env_overrides: HashMap<String, String>,
 }
 
 impl Default for ServerConfig {
@@ -87,6 +93,8 @@ impl Default for ServerConfig {
             },
             read_only: false,
             schema_sync_poll_interval_ms: 1000,
+            configured_header_precedence: false,
+            env_overrides: HashMap::new(),
         }
     }
 }

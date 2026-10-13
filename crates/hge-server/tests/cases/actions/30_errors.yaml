@@ -1,0 +1,134 @@
+cases:
+  - description: 4xx with message only
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ respond(status: 400, body: {message: "nope"}) { label } }'
+    response:
+      errors:
+        - extensions: { path: '$', code: unexpected }
+          message: nope
+
+  - description: 4xx with message and code
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ respond(status: 422, body: {message: "bad email", code: "invalid-email"}) { label } }'
+    response:
+      errors:
+        - extensions: { path: '$', code: invalid-email }
+          message: bad email
+
+  - description: 4xx extensions replace the extensions object
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ respond(status: 400, body: {message: "m", code: "c", extensions: {foo: "bar", code: "x"}}) { label } }'
+    response:
+      errors:
+        - extensions: { foo: bar, code: x }
+          message: m
+
+  - description: 4xx without a message
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ respond(status: 400, body: {error: "x"}) { label } }'
+    response:
+      errors:
+        - extensions: { path: '$', code: parse-failed }
+          message: "the key 'message' was not present"
+
+  - description: 5xx is an internal error
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ respond(status: 500, body: {message: "boom"}) { label } }'
+    response:
+      errors:
+        - extensions: { path: '$', code: unexpected }
+          message: internal error
+
+  - description: invalid JSON from the handler
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ respond(status: 200, body: "raw:not json") { label } }'
+    response:
+      errors:
+        - extensions: { path: '$', code: unexpected }
+          message: not a valid json response from webhook
+
+  - description: missing non-null field in the response
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ respond(status: 200, body: {authorId: 1}) { label } }'
+    response:
+      errors:
+        - extensions: { path: '$', code: unexpected }
+          message: 'field "label" expected in webhook response, but not found'
+
+  - description: null for a non-null field
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ respond(status: 200, body: {label: null}) { label } }'
+    response:
+      errors:
+        - extensions: { path: '$', code: unexpected }
+          message: 'expecting not null value for field "label"'
+
+  - description: array where an object is expected
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ respond(status: 200, body: [1]) { label } }'
+    response:
+      errors:
+        - extensions: { path: '$', code: unexpected }
+          message: got array for the action webhook response, expecting AuthorInfo
+
+  - description: null output for a nullable type; missing nullable fields are null
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ a: respond(status: 200, body: null) { label } b: respond(status: 201, body: {label: "x"}) { label authorId address { city } } }'
+    response:
+      data:
+        a: null
+        b: { label: x, authorId: null, address: null }
+
+  - description: list of scalars with a null element
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ respondScalar(body: ["a", null]) }'
+    response:
+      errors:
+        - extensions: { path: '$', code: unexpected }
+          message: got null for the action webhook response
+
+  - description: list of scalars with a wrong element type
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ respondScalar(body: ["a", 1]) }'
+    response:
+      errors:
+        - extensions: { path: '$', code: unexpected }
+          message: got scalar String for the action webhook response, expecting String
+
+  - description: scalar where a list is expected
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ respondScalar(body: "a") }'
+    response:
+      errors:
+        - extensions: { path: '$', code: unexpected }
+          message: expecting array for the action webhook response
+
+  - description: handler timeout
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ slow }'
+    response:
+      errors:
+        - extensions: { path: '$', code: unexpected }
+          message: http exception when calling webhook
+
+  - description: a 4xx from a mutation action
+    query:
+      query: 'mutation { login(username: "ann", password: "wrong") { token } }'
+    response:
+      errors:
+        - extensions: { path: '$', code: invalid-credentials }
+          message: invalid credentials
