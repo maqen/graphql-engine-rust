@@ -1,6 +1,7 @@
 //! The HTTP server: routes, request pipeline, state management.
 
 pub mod config;
+pub mod events;
 pub mod graphql;
 pub mod load;
 pub mod migrations;
@@ -23,14 +24,29 @@ pub async fn build_engine(config: ServerConfig) -> Result<Arc<Engine>, hge_core:
     Ok(Arc::new(Engine::new(config, state)))
 }
 
-/// Serve until ctrl-c / SIGTERM.
+/// Serve until ctrl-c / SIGTERM, running the event trigger worker alongside.
 pub async fn serve(engine: Arc<Engine>) -> std::io::Result<()> {
     let addr = format!("{}:{}", engine.config.host, engine.config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!(target: "startup", %addr, "server listening");
-    axum::serve(listener, routes::router(engine))
-        .with_graceful_shutdown(shutdown_signal())
-        .await
+    let shutdown = tokio_util::sync::CancellationToken::new();
+    let worker = events::spawn_worker(&engine, shutdown.clone());
+    let signal = {
+        let shutdown = shutdown.clone();
+        async move {
+            shutdown_signal().await;
+            shutdown.cancel();
+        }
+    };
+    let served = axum::serve(listener, routes::router(engine))
+        .with_graceful_shutdown(signal)
+        .await;
+    // Also stop the worker when the server exits for another reason.
+    shutdown.cancel();
+    if let Some(worker) = worker {
+        let _ = worker.await;
+    }
+    served
 }
 
 async fn shutdown_signal() {

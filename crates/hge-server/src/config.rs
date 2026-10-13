@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+pub use hge_events::EventingConfig;
+
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub host: String,
@@ -38,6 +40,8 @@ pub struct ServerConfig {
     pub use_prepared_statements: bool,
     /// `HASURA_GRAPHQL_PRESERVE_401_ERRORS`
     pub preserve_401_errors: bool,
+    /// Event trigger processing (`HASURA_GRAPHQL_EVENTS_*`, `DISABLE_EVENTING`, …).
+    pub events: hge_events::EventingConfig,
 }
 
 impl Default for ServerConfig {
@@ -61,6 +65,10 @@ impl Default for ServerConfig {
             pg_connections: 50,
             use_prepared_statements: true,
             preserve_401_errors: false,
+            events: hge_events::EventingConfig {
+                user_agent: format!("hasura-graphql-engine/{}", crate::routes::VERSION),
+                ..hge_events::EventingConfig::default()
+            },
         }
     }
 }
