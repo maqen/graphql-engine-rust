@@ -2,7 +2,7 @@
 //! and columns are renamed in the metadata, dropped ones are removed, and objects depending
 //! on dropped ones block the SQL unless `cascade` is set.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use hge_core::{Code, QualifiedTable};
 use hge_metadata::{
@@ -19,6 +19,8 @@ pub struct TableSnapshot {
     pub table: QualifiedTable,
     /// attnum → column name
     pub columns: BTreeMap<i16, String>,
+    /// attnum → column type (`format_type`)
+    pub column_types: BTreeMap<i16, String>,
     /// Foreign keys from this table: (referenced table oid, attnums of the local columns).
     pub foreign_keys: Vec<(u32, Vec<i16>)>,
 }
@@ -70,8 +72,11 @@ pub fn apply(
     let Some(src) = metadata.source_mut(source) else {
         return Ok(());
     };
+    let rels = Rels::new(&src.tables, before);
     let mut dependents = vec![];
     let mut dropped_tables = vec![];
+    // Columns whose type changed: what uses them blocks the change, like a drop.
+    let mut retyped = vec![];
     for b in before {
         let a = after.iter().find(|a| a.oid == b.oid);
         // Relationships defined through a foreign key that is gone (dropped with its own
@@ -107,12 +112,32 @@ pub fn apply(
             Some(a) => {
                 for (attnum, old) in &b.columns {
                     if !a.columns.contains_key(attnum) {
-                        dependents.extend(column_dependents(&src.tables, &b.table, old));
+                        dependents.extend(column_dependents(&src.tables, &rels, &b.table, old));
+                    } else if a.column_types.get(attnum) != b.column_types.get(attnum) {
+                        let deps = column_dependents(&src.tables, &rels, &b.table, old);
+                        if !deps.is_empty() {
+                            retyped.push((b.table.clone(), old.clone(), deps));
+                        }
                     }
                 }
             }
         }
     }
+    if !cascade && let Some((table, column, deps)) = retyped.first() {
+        let mut deps = deps.clone();
+        deps.sort();
+        deps.dedup();
+        let list: Vec<String> = deps.iter().map(|d| d.report(source)).collect();
+        return Err(ApiError::bad(
+            Code::DependencyError,
+            format!(
+                "cannot change type of column \"{column}\" in table \"{}\" because of the following dependencies: {}",
+                table.v2_text(),
+                list.join(", ")
+            ),
+        ));
+    }
+    dependents.extend(retyped.into_iter().flat_map(|(_, _, deps)| deps));
     // Objects of dropped tables go with them.
     dependents.retain(|d| match d {
         Dependent::Relationship { table, .. } | Dependent::Permission { table, .. } => {
@@ -155,10 +180,10 @@ pub fn apply(
             })
             .collect();
         for (i, (old, _)) in columns.iter().enumerate() {
-            rename_column(&mut src.tables, &b.table, old, &temporary(i));
+            rename_column(&mut src.tables, &rels, &b.table, old, &temporary(i));
         }
         for (i, (_, new)) in columns.iter().enumerate() {
-            rename_column(&mut src.tables, &b.table, &temporary(i), new);
+            rename_column(&mut src.tables, &rels, &b.table, &temporary(i), new);
         }
     }
     let tables: Vec<_> = renamed.iter().filter(|(b, a)| a.table != b.table).collect();
@@ -229,39 +254,156 @@ fn table_dependents(tables: &[TableEntry], dropped: &QualifiedTable) -> Vec<Depe
 }
 
 /// Does a boolean expression mention `column` at this table's level?
-fn bool_exp_mentions(exp: &Value, column: &str) -> bool {
-    let Value::Object(obj) = exp else {
-        return false;
-    };
-    obj.iter().any(|(k, v)| match k.as_str() {
-        "_and" | "_or" => v
-            .as_array()
-            .is_some_and(|items| items.iter().any(|i| bool_exp_mentions(i, column))),
-        "_not" => bool_exp_mentions(v, column),
-        "_exists" => false,
-        key => key == column,
-    })
+/// Relationship targets, `(table, relationship) → remote table`, resolved before anything is
+/// renamed (forward foreign keys through the snapshot, the other forms from metadata).
+struct Rels(HashMap<(QualifiedTable, String), QualifiedTable>);
+
+impl Rels {
+    fn new(tables: &[TableEntry], before: &[TableSnapshot]) -> Self {
+        let mut map = HashMap::new();
+        let forward = |table: &QualifiedTable, columns: &[String]| -> Option<QualifiedTable> {
+            let snap = before.iter().find(|s| s.table == *table)?;
+            let (ref_oid, _) = snap.foreign_keys.iter().find(|(_, attnums)| {
+                attnums.len() == columns.len()
+                    && attnums
+                        .iter()
+                        .all(|n| snap.columns.get(n).is_some_and(|c| columns.contains(c)))
+            })?;
+            before
+                .iter()
+                .find(|s| s.oid == *ref_oid)
+                .map(|s| s.table.clone())
+        };
+        for t in tables {
+            for r in &t.object_relationships {
+                let target = match &r.using {
+                    ObjectRelUsing::ForeignKey {
+                        foreign_key_constraint_on: ObjectFkOn::Column(c),
+                    } => forward(&t.table, std::slice::from_ref(c)),
+                    ObjectRelUsing::ForeignKey {
+                        foreign_key_constraint_on: ObjectFkOn::Columns(cs),
+                    } => forward(&t.table, cs),
+                    ObjectRelUsing::ForeignKey {
+                        foreign_key_constraint_on: ObjectFkOn::Remote(fk),
+                    } => Some(fk.table.clone()),
+                    ObjectRelUsing::Manual {
+                        manual_configuration: m,
+                    } => Some(m.remote_table.clone()),
+                };
+                if let Some(target) = target {
+                    map.insert((t.table.clone(), r.name.clone()), target);
+                }
+            }
+            for r in &t.array_relationships {
+                map.insert(
+                    (t.table.clone(), r.name.clone()),
+                    arr_rel_target(&r.using).clone(),
+                );
+            }
+        }
+        Rels(map)
+    }
 }
 
-fn rename_in_bool_exp(exp: &mut Value, old: &str, new: &str) {
+/// Visit every column key of a boolean expression on `table`, following relationships and
+/// `_exists` into other tables. `f(table, column)` returns a new name to rename the key.
+fn visit_bool_exp(
+    exp: &mut Value,
+    table: &QualifiedTable,
+    rels: &Rels,
+    f: &mut dyn FnMut(&QualifiedTable, &str) -> Option<String>,
+) {
     let Value::Object(obj) = exp else {
         return;
     };
     let entries: Vec<(String, Value)> = std::mem::take(obj).into_iter().collect();
     for (k, mut v) in entries {
-        match k.as_str() {
+        let key = match k.as_str() {
             "_and" | "_or" => {
                 if let Value::Array(items) = &mut v {
                     for i in items {
-                        rename_in_bool_exp(i, old, new);
+                        visit_bool_exp(i, table, rels, f);
                     }
                 }
+                k
             }
-            "_not" => rename_in_bool_exp(&mut v, old, new),
-            _ => {}
+            "_not" => {
+                visit_bool_exp(&mut v, table, rels, f);
+                k
+            }
+            "_exists" => {
+                let remote = v
+                    .get("_table")
+                    .and_then(|t| serde_json::from_value::<QualifiedTable>(t.clone()).ok());
+                if let (Some(remote), Some(w)) = (remote, v.get_mut("_where")) {
+                    visit_bool_exp(w, &remote, rels, f);
+                }
+                k
+            }
+            _ => match rels.0.get(&(table.clone(), k.clone())) {
+                Some(remote) => {
+                    visit_bool_exp(&mut v, remote, rels, f);
+                    k
+                }
+                None => f(table, &k).unwrap_or(k),
+            },
+        };
+        obj.insert(key, v);
+    }
+}
+
+/// Does a boolean expression on `context` use `column` of `table`?
+fn bool_exp_mentions(
+    exp: &Value,
+    context: &QualifiedTable,
+    rels: &Rels,
+    table: &QualifiedTable,
+    column: &str,
+) -> bool {
+    let mut found = false;
+    visit_bool_exp(&mut exp.clone(), context, rels, &mut |t, c| {
+        found |= t == table && c == column;
+        None
+    });
+    found
+}
+
+fn rename_in_bool_exp(
+    exp: &mut Value,
+    context: &QualifiedTable,
+    rels: &Rels,
+    table: &QualifiedTable,
+    old: &str,
+    new: &str,
+) {
+    visit_bool_exp(exp, context, rels, &mut |t, c| {
+        (t == table && c == old).then(|| new.to_owned())
+    });
+}
+
+/// Point `_exists` clauses at a renamed table.
+fn rename_exists_table(exp: &mut Value, old: &QualifiedTable, new: &QualifiedTable) {
+    match exp {
+        Value::Object(obj) => {
+            if let Some(Value::Object(ex)) = obj.get_mut("_exists")
+                && let Some(t) = ex.get_mut("_table")
+                && serde_json::from_value::<QualifiedTable>(t.clone())
+                    .ok()
+                    .as_ref()
+                    == Some(old)
+            {
+                *t = serde_json::to_value(new).unwrap_or_default();
+            }
+            for v in obj.values_mut() {
+                rename_exists_table(v, old, new);
+            }
         }
-        let k = if k == old { new.to_owned() } else { k };
-        obj.insert(k, v);
+        Value::Array(items) => {
+            for v in items {
+                rename_exists_table(v, old, new);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -280,52 +422,51 @@ fn rename_columns(cols: &mut Columns, old: &str, new: &str) {
 /// Permissions and relationships that use `column` of `table`.
 fn column_dependents(
     tables: &[TableEntry],
+    rels: &Rels,
     table: &QualifiedTable,
     column: &str,
 ) -> Vec<Dependent> {
     let mut out = vec![];
     for t in tables {
         let own = t.table == *table;
-        if own {
-            let perm = |role: &str, kind: &'static str| Dependent::Permission {
-                table: t.table.clone(),
-                role: role.to_owned(),
-                kind,
-            };
-            for p in &t.select_permissions {
-                if columns_mention(&p.permission.columns, column)
-                    || bool_exp_mentions(&p.permission.filter, column)
-                {
-                    out.push(perm(&p.role, "select"));
-                }
+        // Columns and presets name the table's own columns; boolean expressions can reach
+        // `table` from any table through relationships and `_exists`.
+        let exp = |e: &Value| bool_exp_mentions(e, &t.table, rels, table, column);
+        let perm = |role: &str, kind: &'static str| Dependent::Permission {
+            table: t.table.clone(),
+            role: role.to_owned(),
+            kind,
+        };
+        for p in &t.select_permissions {
+            if (own && columns_mention(&p.permission.columns, column)) || exp(&p.permission.filter)
+            {
+                out.push(perm(&p.role, "select"));
             }
-            for p in &t.insert_permissions {
-                if p.permission
-                    .columns
-                    .as_ref()
-                    .is_some_and(|c| columns_mention(c, column))
-                    || bool_exp_mentions(&p.permission.check, column)
-                    || p.permission.set.contains_key(column)
-                {
-                    out.push(perm(&p.role, "insert"));
-                }
+        }
+        for p in &t.insert_permissions {
+            let cols = p
+                .permission
+                .columns
+                .as_ref()
+                .is_some_and(|c| columns_mention(c, column));
+            if (own && (cols || p.permission.set.contains_key(column))) || exp(&p.permission.check)
+            {
+                out.push(perm(&p.role, "insert"));
             }
-            for p in &t.update_permissions {
-                if columns_mention(&p.permission.columns, column)
-                    || bool_exp_mentions(&p.permission.filter, column)
-                    || p.permission
-                        .check
-                        .as_ref()
-                        .is_some_and(|c| bool_exp_mentions(c, column))
-                    || p.permission.set.contains_key(column)
-                {
-                    out.push(perm(&p.role, "update"));
-                }
+        }
+        for p in &t.update_permissions {
+            if (own
+                && (columns_mention(&p.permission.columns, column)
+                    || p.permission.set.contains_key(column)))
+                || exp(&p.permission.filter)
+                || p.permission.check.as_ref().is_some_and(exp)
+            {
+                out.push(perm(&p.role, "update"));
             }
-            for p in &t.delete_permissions {
-                if bool_exp_mentions(&p.permission.filter, column) {
-                    out.push(perm(&p.role, "delete"));
-                }
+        }
+        for p in &t.delete_permissions {
+            if exp(&p.permission.filter) {
+                out.push(perm(&p.role, "delete"));
             }
         }
         for r in &t.object_relationships {
@@ -476,9 +617,17 @@ fn rename_mapping(
     }
 }
 
-fn rename_column(tables: &mut [TableEntry], table: &QualifiedTable, old: &str, new: &str) {
+fn rename_column(
+    tables: &mut [TableEntry],
+    rels: &Rels,
+    table: &QualifiedTable,
+    old: &str,
+    new: &str,
+) {
     for t in tables.iter_mut() {
         let own = t.table == *table;
+        let context = t.table.clone();
+        let exp = |e: &mut Value| rename_in_bool_exp(e, &context, rels, table, old, new);
         if own {
             let cfg = &mut t.configuration;
             if let Some(i) = cfg.column_config.get_index_of(old) {
@@ -495,28 +644,34 @@ fn rename_column(tables: &mut [TableEntry], table: &QualifiedTable, old: &str, n
                     .expect("index exists");
                 cfg.custom_column_names.shift_insert(i, new.to_owned(), v);
             }
-            for p in &mut t.select_permissions {
+        }
+        for p in &mut t.select_permissions {
+            if own {
                 rename_columns(&mut p.permission.columns, old, new);
-                rename_in_bool_exp(&mut p.permission.filter, old, new);
             }
-            for p in &mut t.insert_permissions {
+            exp(&mut p.permission.filter);
+        }
+        for p in &mut t.insert_permissions {
+            if own {
                 if let Some(columns) = &mut p.permission.columns {
                     rename_columns(columns, old, new);
                 }
-                rename_in_bool_exp(&mut p.permission.check, old, new);
                 rename_key(&mut p.permission.set, old, new);
             }
-            for p in &mut t.update_permissions {
+            exp(&mut p.permission.check);
+        }
+        for p in &mut t.update_permissions {
+            if own {
                 rename_columns(&mut p.permission.columns, old, new);
-                rename_in_bool_exp(&mut p.permission.filter, old, new);
-                if let Some(c) = &mut p.permission.check {
-                    rename_in_bool_exp(c, old, new);
-                }
                 rename_key(&mut p.permission.set, old, new);
             }
-            for p in &mut t.delete_permissions {
-                rename_in_bool_exp(&mut p.permission.filter, old, new);
+            exp(&mut p.permission.filter);
+            if let Some(c) = &mut p.permission.check {
+                exp(c);
             }
+        }
+        for p in &mut t.delete_permissions {
+            exp(&mut p.permission.filter);
         }
         for r in &mut t.object_relationships {
             match &mut r.using {
@@ -567,6 +722,26 @@ fn rename_table(tables: &mut [TableEntry], old: &QualifiedTable, new: &Qualified
     for t in tables.iter_mut() {
         if t.table == *old {
             t.table = new.clone();
+        }
+        for e in t
+            .select_permissions
+            .iter_mut()
+            .map(|p| &mut p.permission.filter)
+            .chain(
+                t.insert_permissions
+                    .iter_mut()
+                    .map(|p| &mut p.permission.check),
+            )
+            .chain(t.update_permissions.iter_mut().flat_map(|p| {
+                std::iter::once(&mut p.permission.filter).chain(p.permission.check.as_mut())
+            }))
+            .chain(
+                t.delete_permissions
+                    .iter_mut()
+                    .map(|p| &mut p.permission.filter),
+            )
+        {
+            rename_exists_table(e, old, new);
         }
         for r in &mut t.object_relationships {
             match &mut r.using {
@@ -638,8 +813,67 @@ mod tests {
             oid,
             table: QualifiedTable::public(name),
             columns: cols.iter().map(|(n, c)| (*n, (*c).to_owned())).collect(),
+            column_types: cols
+                .iter()
+                .map(|(n, _)| (*n, "integer".to_owned()))
+                .collect(),
             foreign_keys: vec![],
         }
+    }
+
+    #[test]
+    fn renames_follow_relationships() {
+        // article.user filter goes through `author` (forward fk) to author.id.
+        let mut m = hge_metadata::from_json(json!({
+            "version": 3,
+            "sources": [{"name": "default", "configuration": {}, "tables": [
+                {"table": "author"},
+                {"table": "article",
+                 "object_relationships": [{"name": "author", "using": {"foreign_key_constraint_on": "author_id"}}],
+                 "select_permissions": [{"role": "user", "permission": {"columns": ["id"],
+                    "filter": {"author": {"id": "X-Hasura-User-Id"}, "id": {"_gt": 0},
+                               "_exists": {"_table": "author", "_where": {"id": {"_eq": 1}}}}}}]}
+            ]}]
+        }))
+        .unwrap();
+        let mut article = snap(2, "article", &[(1, "id"), (2, "author_id")]);
+        article.foreign_keys = vec![(1, vec![2])];
+        let before = [snap(1, "author", &[(1, "id")]), article.clone()];
+        let after = [snap(1, "writer", &[(1, "author_id")]), article];
+        apply(&mut m, "default", &before, &after, false).unwrap();
+        let filter = &m.sources[0].tables[1].select_permissions[0]
+            .permission
+            .filter;
+        assert_eq!(
+            filter,
+            &json!({"author": {"author_id": "X-Hasura-User-Id"}, "id": {"_gt": 0},
+                    "_exists": {"_table": {"schema": "public", "name": "writer"}, "_where": {"author_id": {"_eq": 1}}}})
+        );
+    }
+
+    #[test]
+    fn type_changes_of_used_columns_need_cascade() {
+        let before = [
+            snap(1, "author", &[(1, "id"), (2, "name")]),
+            snap(2, "article", &[(1, "id"), (2, "author_id")]),
+        ];
+        let mut author = snap(1, "author", &[(1, "id"), (2, "name")]);
+        author.column_types.insert(1, "text".into());
+        let after = [author, before[1].clone()];
+        let err = apply(&mut md(), "default", &before, &after, false).unwrap_err();
+        assert_eq!(
+            err.error.message,
+            "cannot change type of column \"id\" in table \"author\" because of the following dependencies: permission author.user.select in source \"default\""
+        );
+        // Unused columns may change freely.
+        let mut author = snap(1, "author", &[(1, "id"), (2, "name")]);
+        author.column_types.insert(2, "varchar".into());
+        let after = [author, before[1].clone()];
+        let mut m = md();
+        m.sources[0].tables[0].select_permissions[0]
+            .permission
+            .columns = Columns::List(vec!["id".into()]);
+        apply(&mut m, "default", &before, &after, false).unwrap();
     }
 
     #[test]

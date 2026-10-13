@@ -301,7 +301,7 @@ pub async fn run_checked<R: Runtime>(ctx: &mut Ctx<'_, R>, args: &RunSql) -> Api
 
 const SNAPSHOT_SQL: &str = r#"
 SELECT c.oid::int8, n.nspname::text, c.relname::text,
-  coalesce((SELECT json_agg(json_build_array(a.attnum, a.attname) ORDER BY a.attnum)
+  coalesce((SELECT json_agg(json_build_array(a.attnum, a.attname, format_type(a.atttypid, a.atttypmod)) ORDER BY a.attnum)
               FROM pg_catalog.pg_attribute a
              WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped), '[]')::text,
   coalesce((SELECT json_agg(json_build_array(con.confrelid::int8, con.conkey) ORDER BY con.conname)
@@ -349,14 +349,15 @@ async fn snapshot_oids(client: &impl GenericClient, oids: &[u32]) -> ApiResult<V
 
 fn row_snapshot(row: &tokio_postgres::Row) -> ApiResult<TableSnapshot> {
     let oid: i64 = row.get(0);
-    let cols: Vec<(i16, String)> = serde_json::from_str(row.get(3))
+    let cols: Vec<(i16, String, String)> = serde_json::from_str(row.get(3))
         .map_err(|e| ApiError::from(hge_core::Error::unexpected(e.to_string())))?;
     let fks: Vec<(i64, Vec<i16>)> = serde_json::from_str(row.get(4))
         .map_err(|e| ApiError::from(hge_core::Error::unexpected(e.to_string())))?;
     Ok(TableSnapshot {
         oid: oid as u32,
         table: QualifiedTable::new(row.get::<_, String>(1), row.get::<_, String>(2)),
-        columns: cols.into_iter().collect(),
+        columns: cols.iter().map(|(n, c, _)| (*n, c.clone())).collect(),
+        column_types: cols.into_iter().map(|(n, _, t)| (n, t)).collect(),
         foreign_keys: fks.into_iter().map(|(r, cols)| (r as u32, cols)).collect(),
     })
 }
