@@ -15,7 +15,7 @@ pub mod boolexp;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use hge_core::{ADMIN_ROLE, RoleName};
+use hge_core::{ADMIN_ROLE, InconsistentObject, RoleName};
 use hge_ir::{
     BoolExp, DeletePermission, InsertPermission, RootFields, SelectPermission, TablePermissions,
     UpdatePermission,
@@ -43,7 +43,7 @@ pub fn select_access(table: &TableInfo, role: &RoleName) -> Option<SelectAccess>
 
 /// Resolve the permissions of every table. Call after all tables of all sources are resolved
 /// (relationships and `_exists` refer to other tables).
-pub fn resolve_permissions(tables: &mut Tables, inconsistencies: &mut Vec<String>) {
+pub fn resolve_permissions(tables: &mut Tables, inconsistencies: &mut Vec<InconsistentObject>) {
     let resolved: Vec<_> = {
         let parser = Parser { tables };
         tables
@@ -66,15 +66,22 @@ pub fn resolve_permissions(tables: &mut Tables, inconsistencies: &mut Vec<String
 fn resolve_table(
     parser: &Parser<'_>,
     table: &TableInfo,
-    inconsistencies: &mut Vec<String>,
+    inconsistencies: &mut Vec<InconsistentObject>,
 ) -> HashMap<RoleName, Arc<TablePermissions>> {
     let entry = &table.entry;
     let mut by_role: IndexMap<&str, TablePermissions> = IndexMap::new();
-    let mut report = |kind: &str, role: &str, e: PermError| {
-        inconsistencies.push(format!(
-            "{kind} permission of role \"{role}\" on table \"{}\" in source \"{}\": {e}",
-            table.display_name(),
-            table.source
+    let mut report = |kind: &str, perm: &dyn erased::Definition, e: PermError| {
+        let role = perm.role();
+        inconsistencies.push(InconsistentObject::table_object(
+            &format!("{kind}_permission"),
+            role,
+            &table.source,
+            &table.name,
+            format!(
+                "in table \"{}\": in permission for role \"{role}\": {e}",
+                table.name.v2_text()
+            ),
+            perm.definition(),
         ));
     };
 
@@ -82,52 +89,52 @@ fn resolve_table(
         if p.role == ADMIN_ROLE {
             report(
                 "select",
-                &p.role,
+                p,
                 "cannot define permission for admin role".into(),
             );
             continue;
         }
         match select_permission(parser, table, &p.role, &p.permission) {
             Ok(perm) => set_once(&mut by_role.entry(&p.role).or_default().select, perm)
-                .unwrap_or_else(|e| report("select", &p.role, e)),
-            Err(e) => report("select", &p.role, e),
+                .unwrap_or_else(|e| report("select", p, e)),
+            Err(e) => report("select", p, e),
         }
     }
     for p in &entry.insert_permissions {
         if p.role == ADMIN_ROLE {
             report(
                 "insert",
-                &p.role,
+                p,
                 "cannot define permission for admin role".into(),
             );
             continue;
         }
         match insert_permission(parser, table, &p.permission) {
             Ok(perm) => set_once(&mut by_role.entry(&p.role).or_default().insert, perm)
-                .unwrap_or_else(|e| report("insert", &p.role, e)),
-            Err(e) => report("insert", &p.role, e),
+                .unwrap_or_else(|e| report("insert", p, e)),
+            Err(e) => report("insert", p, e),
         }
     }
     for p in &entry.update_permissions {
         if p.role == ADMIN_ROLE {
             report(
                 "update",
-                &p.role,
+                p,
                 "cannot define permission for admin role".into(),
             );
             continue;
         }
         match update_permission(parser, table, &p.permission) {
             Ok(perm) => set_once(&mut by_role.entry(&p.role).or_default().update, perm)
-                .unwrap_or_else(|e| report("update", &p.role, e)),
-            Err(e) => report("update", &p.role, e),
+                .unwrap_or_else(|e| report("update", p, e)),
+            Err(e) => report("update", p, e),
         }
     }
     for p in &entry.delete_permissions {
         if p.role == ADMIN_ROLE {
             report(
                 "delete",
-                &p.role,
+                p,
                 "cannot define permission for admin role".into(),
             );
             continue;
@@ -140,8 +147,8 @@ fn resolve_table(
                     backend_only: p.permission.backend_only,
                 },
             )
-            .unwrap_or_else(|e| report("delete", &p.role, e)),
-            Err(e) => report("delete", &p.role, e),
+            .unwrap_or_else(|e| report("delete", p, e)),
+            Err(e) => report("delete", p, e),
         }
     }
 
@@ -151,6 +158,31 @@ fn resolve_table(
         .collect();
     out.insert(RoleName::admin(), Arc::new(admin_permissions(table)));
     out
+}
+
+mod erased {
+    use hge_metadata::Permission as PermissionEntry;
+
+    /// A permission entry of any kind, as its inconsistency definition.
+    pub trait Definition {
+        fn role(&self) -> &str;
+        fn definition(&self) -> serde_json::Value;
+    }
+
+    impl<P: serde::Serialize> Definition for PermissionEntry<P> {
+        fn role(&self) -> &str {
+            &self.role
+        }
+
+        /// V2's definitions always carry `comment`.
+        fn definition(&self) -> serde_json::Value {
+            let mut def = serde_json::to_value(self).unwrap_or_default();
+            if let Some(obj) = def.as_object_mut() {
+                obj.entry("comment").or_insert(serde_json::Value::Null);
+            }
+            def
+        }
+    }
 }
 
 /// Keep the first permission of a kind for a role; later duplicates are inconsistent.

@@ -33,6 +33,11 @@ pub fn router(engine: Arc<Engine>) -> Router {
                 axum::routing::post(graphql_post_v1alpha1),
             );
     }
+    if engine.config.api_enabled("metadata") {
+        router = router
+            .route("/v1/metadata", axum::routing::post(metadata_post))
+            .route("/v2/query", axum::routing::post(query_post));
+    }
     let mut router = router
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
         .layer(compression());
@@ -250,4 +255,69 @@ fn with_cookies(mut resp: Response, cookies: Vec<HeaderValue>) -> Response {
 async fn run(engine: &Engine, session: &Session, body: GraphQLBody, rid: String) -> Response {
     let out = graphql::execute_body(engine, session, body).await;
     json_response(StatusCode::OK, out, Some(rid))
+}
+
+/// Admin-only APIs (`/v1/metadata`, `/v2/query`): resolve the session and insist on `admin`.
+async fn require_admin(engine: &Engine, headers: &HeaderMap) -> Result<(), Box<Response>> {
+    let api_error = |status: u16, err: &Error| {
+        let status = StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST);
+        Box::new(json_response(
+            status,
+            err.to_api_json(false).to_string(),
+            None,
+        ))
+    };
+    match engine.auth.authenticate(headers, None).await {
+        Ok(auth) if auth.session.role.is_admin() => Ok(()),
+        Ok(_) => Err(api_error(
+            400,
+            &Error::new(Code::AccessDenied, "restricted access : admin only").with_path("$.args"),
+        )),
+        Err(e) => Err(api_error(e.status.as_u16(), &e.error)),
+    }
+}
+
+fn api_response(resp: hge_metadata_api::ApiResponse, rid: String) -> Response {
+    let status = StatusCode::from_u16(resp.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    json_response(status, resp.body.to_string(), Some(rid))
+}
+
+async fn metadata_post(
+    State(engine): State<Arc<Engine>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let rid = request_id(&headers);
+    if let Err(resp) = require_admin(&engine, &headers).await {
+        return *resp;
+    }
+    // Run to completion even if the client goes away: a metadata change must not stop
+    // between writing the store and installing the new schema.
+    let resp =
+        tokio::spawn(async move { hge_metadata_api::handle_metadata(&*engine, &body).await })
+            .await
+            .unwrap_or_else(|e| panic_response(&e));
+    api_response(resp, rid)
+}
+
+/// A handler that panicked inside its own task.
+fn panic_response(e: &tokio::task::JoinError) -> hge_metadata_api::ApiResponse {
+    tracing::error!("metadata request failed: {e}");
+    hge_metadata_api::ApiError::new(500, Code::Unexpected, "internal error").to_response()
+}
+
+async fn query_post(
+    State(engine): State<Arc<Engine>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let rid = request_id(&headers);
+    if let Err(resp) = require_admin(&engine, &headers).await {
+        return *resp;
+    }
+    // See `metadata_post`: run_sql commits DDL before the metadata catches up.
+    let resp = tokio::spawn(async move { hge_metadata_api::handle_query(&*engine, &body).await })
+        .await
+        .unwrap_or_else(|e| panic_response(&e));
+    api_response(resp, rid)
 }

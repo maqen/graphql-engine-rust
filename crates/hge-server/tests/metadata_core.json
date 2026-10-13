@@ -1,0 +1,2302 @@
+{
+ "description": "Recorded from hasura/graphql-engine:v2.51.0-ce on a fresh database; replayed in order. Steps marked todo are known differences and must keep failing until fixed.",
+ "steps": [
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "DROP TABLE IF EXISTS article; DROP TABLE IF EXISTS author; DROP TABLE IF EXISTS gone; CREATE TABLE author(id serial primary key, name text, bio text); CREATE TABLE article(id serial primary key, title text, author_id int references author(id)); INSERT INTO author(name) VALUES ('a'),(NULL);"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "clear_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "replace_metadata",
+    "args": {
+     "version": 3,
+     "sources": [
+      {
+       "name": "default",
+       "kind": "postgres",
+       "tables": [
+        {
+         "table": {
+          "schema": "public",
+          "name": "author"
+         },
+         "array_relationships": [
+          {
+           "name": "articles",
+           "using": {
+            "foreign_key_constraint_on": {
+             "table": {
+              "schema": "public",
+              "name": "article"
+             },
+             "column": "author_id"
+            }
+           }
+          }
+         ],
+         "select_permissions": [
+          {
+           "role": "user",
+           "permission": {
+            "columns": [
+             "id",
+             "name"
+            ],
+            "filter": {
+             "id": {
+              "_eq": "X-Hasura-User-Id"
+             }
+            }
+           }
+          }
+         ],
+         "update_permissions": [
+          {
+           "role": "user",
+           "permission": {
+            "columns": [
+             "name"
+            ],
+            "filter": {}
+           }
+          }
+         ]
+        },
+        {
+         "table": {
+          "schema": "public",
+          "name": "article"
+         },
+         "object_relationships": [
+          {
+           "name": "author",
+           "using": {
+            "foreign_key_constraint_on": "author_id"
+           }
+          }
+         ]
+        }
+       ],
+       "configuration": {
+        "connection_info": {
+         "database_url": {
+          "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+         },
+         "isolation_level": "read-committed",
+         "pool_settings": {
+          "connection_lifetime": 600,
+          "idle_timeout": 180,
+          "max_connections": 50,
+          "retries": 1
+         },
+         "use_prepared_statements": true
+        }
+       }
+      }
+     ]
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "version": 3,
+    "sources": [
+     {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+       {
+        "table": {
+         "name": "article",
+         "schema": "public"
+        },
+        "object_relationships": [
+         {
+          "name": "author",
+          "using": {
+           "foreign_key_constraint_on": "author_id"
+          }
+         }
+        ]
+       },
+       {
+        "table": {
+         "name": "author",
+         "schema": "public"
+        },
+        "array_relationships": [
+         {
+          "name": "articles",
+          "using": {
+           "foreign_key_constraint_on": {
+            "column": "author_id",
+            "table": {
+             "name": "article",
+             "schema": "public"
+            }
+           }
+          }
+         }
+        ],
+        "select_permissions": [
+         {
+          "role": "user",
+          "permission": {
+           "columns": [
+            "id",
+            "name"
+           ],
+           "filter": {
+            "id": {
+             "_eq": "X-Hasura-User-Id"
+            }
+           }
+          }
+         }
+        ],
+        "update_permissions": [
+         {
+          "role": "user",
+          "permission": {
+           "columns": [
+            "name"
+           ],
+           "filter": {},
+           "check": null
+          }
+         }
+        ]
+       }
+      ],
+      "configuration": {
+       "connection_info": {
+        "database_url": {
+         "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+        },
+        "isolation_level": "read-committed",
+        "pool_settings": {
+         "connection_lifetime": 600,
+         "idle_timeout": 180,
+         "max_connections": 50,
+         "retries": 1
+        },
+        "use_prepared_statements": true
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_inconsistent_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "inconsistent_objects": [],
+    "is_consistent": true
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "SELECT id, name, true AS t, '{1,2}'::int[] AS arr, '{\"a\":1}'::jsonb AS j FROM author ORDER BY id"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "TuplesOk",
+    "result": [
+     [
+      "id",
+      "name",
+      "t",
+      "arr",
+      "j"
+     ],
+     [
+      "1",
+      "a",
+      "t",
+      "{1,2}",
+      "{\"a\": 1}"
+     ],
+     [
+      "2",
+      "NULL",
+      "t",
+      "{1,2}",
+      "{\"a\": 1}"
+     ]
+    ]
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "SELECT 1 AS x WHERE false"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "TuplesOk",
+    "result": [
+     [
+      "x"
+     ]
+    ]
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "SELECT 1; SELECT 2 AS two"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "TuplesOk",
+    "result": [
+     [
+      "two"
+     ],
+     [
+      "2"
+     ]
+    ]
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "CREATE TABLE IF NOT EXISTS gone(id int)"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "INSERT INTO gone VALUES (1)"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "SELECT * FROM nope"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "query execution failed",
+    "path": "$",
+    "code": "postgres-error",
+    "internal": {
+     "arguments": [],
+     "error": {
+      "description": null,
+      "exec_status": "FatalError",
+      "hint": null,
+      "message": "relation \"nope\" does not exist",
+      "status_code": "42P01"
+     },
+     "prepared": false,
+     "statement": "SELECT * FROM nope"
+    }
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "select 1",
+     "read_only": true
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "TuplesOk",
+    "result": [
+     [
+      "?column?"
+     ],
+     [
+      "1"
+     ]
+    ]
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "insert into gone values (2)",
+     "read_only": true
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "query execution failed",
+    "path": "$",
+    "code": "postgres-error",
+    "internal": {
+     "arguments": [],
+     "error": {
+      "description": null,
+      "exec_status": "FatalError",
+      "hint": null,
+      "message": "cannot execute INSERT in a read-only transaction",
+      "status_code": "25006"
+     },
+     "prepared": false,
+     "statement": "insert into gone values (2)"
+    }
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "foo",
+    "args": {}
+   },
+   "status": 400,
+   "response": {
+    "error": "Unrecognised RQLQuery type: foo",
+    "path": "$",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {}
+   },
+   "status": 400,
+   "response": {
+    "error": "key \"sql\" not found",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "bulk",
+    "args": [
+     {
+      "type": "run_sql",
+      "args": {
+       "sql": "select 1"
+      }
+     },
+     {
+      "type": "run_sql",
+      "args": {
+       "sql": "select x from nope"
+      }
+     }
+    ]
+   },
+   "status": 400,
+   "response": {
+    "error": "query execution failed",
+    "path": "$[1]",
+    "code": "postgres-error",
+    "internal": {
+     "arguments": [],
+     "error": {
+      "description": null,
+      "exec_status": "FatalError",
+      "hint": null,
+      "message": "relation \"nope\" does not exist",
+      "status_code": "42P01"
+     },
+     "prepared": false,
+     "statement": "select x from nope"
+    }
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "replace_metadata",
+    "args": {
+     "allow_inconsistent_metadata": true,
+     "metadata": {
+      "version": 3,
+      "sources": [
+       {
+        "name": "default",
+        "kind": "postgres",
+        "tables": [
+         {
+          "table": {
+           "schema": "public",
+           "name": "author"
+          },
+          "array_relationships": [
+           {
+            "name": "articles",
+            "using": {
+             "foreign_key_constraint_on": {
+              "table": {
+               "schema": "public",
+               "name": "article"
+              },
+              "column": "author_id"
+             }
+            }
+           }
+          ],
+          "select_permissions": [
+           {
+            "role": "user",
+            "permission": {
+             "columns": [
+              "id",
+              "name"
+             ],
+             "filter": {
+              "id": {
+               "_eq": "X-Hasura-User-Id"
+              }
+             }
+            }
+           }
+          ],
+          "update_permissions": [
+           {
+            "role": "user",
+            "permission": {
+             "columns": [
+              "name"
+             ],
+             "filter": {}
+            }
+           }
+          ]
+         },
+         {
+          "table": {
+           "schema": "public",
+           "name": "article"
+          },
+          "object_relationships": [
+           {
+            "name": "author",
+            "using": {
+             "foreign_key_constraint_on": "author_id"
+            }
+           }
+          ]
+         },
+         {
+          "table": {
+           "schema": "public",
+           "name": "foobar"
+          }
+         }
+        ],
+        "configuration": {
+         "connection_info": {
+          "database_url": {
+           "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "pool_settings": {
+           "connection_lifetime": 600,
+           "idle_timeout": 180,
+           "max_connections": 50,
+           "retries": 1
+          },
+          "use_prepared_statements": true
+         }
+        }
+       }
+      ]
+     }
+    }
+   },
+   "status": 200,
+   "response": {
+    "inconsistent_objects": [
+     {
+      "definition": {
+       "name": "foobar",
+       "schema": "public"
+      },
+      "name": "table foobar in source default",
+      "reason": "Inconsistent object: no such table/view exists in source: \"foobar\"",
+      "type": "table"
+     }
+    ],
+    "is_consistent": false
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_inconsistent_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "inconsistent_objects": [
+     {
+      "definition": {
+       "name": "foobar",
+       "schema": "public"
+      },
+      "name": "table foobar in source default",
+      "reason": "Inconsistent object: no such table/view exists in source: \"foobar\"",
+      "type": "table"
+     }
+    ],
+    "is_consistent": false
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "reload_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "inconsistent_objects": [
+     {
+      "definition": {
+       "name": "foobar",
+       "schema": "public"
+      },
+      "name": "table foobar in source default",
+      "reason": "Inconsistent object: no such table/view exists in source: \"foobar\"",
+      "type": "table"
+     }
+    ],
+    "is_consistent": false,
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "drop_inconsistent_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_inconsistent_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "inconsistent_objects": [],
+    "is_consistent": true
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "replace_metadata",
+    "args": {
+     "version": 3,
+     "sources": [
+      {
+       "name": "default",
+       "kind": "postgres",
+       "tables": [
+        {
+         "table": {
+          "schema": "public",
+          "name": "author"
+         },
+         "array_relationships": [
+          {
+           "name": "articles",
+           "using": {
+            "foreign_key_constraint_on": {
+             "table": {
+              "schema": "public",
+              "name": "article"
+             },
+             "column": "author_id"
+            }
+           }
+          }
+         ],
+         "select_permissions": [
+          {
+           "role": "user",
+           "permission": {
+            "columns": [
+             "id",
+             "name"
+            ],
+            "filter": {
+             "id": {
+              "_eq": "X-Hasura-User-Id"
+             }
+            }
+           }
+          }
+         ],
+         "update_permissions": [
+          {
+           "role": "user",
+           "permission": {
+            "columns": [
+             "name"
+            ],
+            "filter": {}
+           }
+          }
+         ]
+        },
+        {
+         "table": "foobar"
+        }
+       ],
+       "configuration": {
+        "connection_info": {
+         "database_url": {
+          "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+         },
+         "isolation_level": "read-committed",
+         "pool_settings": {
+          "connection_lifetime": 600,
+          "idle_timeout": 180,
+          "max_connections": 50,
+          "retries": 1
+         },
+         "use_prepared_statements": true
+        }
+       }
+      }
+     ]
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "cannot continue due to inconsistent metadata",
+    "path": "$.args",
+    "code": "unexpected",
+    "internal": [
+     {
+      "definition": {
+       "name": "foobar",
+       "schema": "public"
+      },
+      "name": "table foobar in source default",
+      "reason": "Inconsistent object: no such table/view exists in source: \"foobar\"",
+      "type": "table"
+     },
+     {
+      "definition": {
+       "comment": null,
+       "name": "articles",
+       "source": "default",
+       "table": {
+        "name": "author",
+        "schema": "public"
+       },
+       "using": {
+        "foreign_key_constraint_on": {
+         "column": "author_id",
+         "table": {
+          "name": "article",
+          "schema": "public"
+         }
+        }
+       }
+      },
+      "name": "array_relation articles in table author in source default",
+      "reason": "Inconsistent object: in table \"author\": in relationship \"articles\": table \"article\" does not exist in source: default",
+      "type": "array_relation"
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "replace_metadata",
+    "args": {
+     "metadata": {
+      "version": 3,
+      "sources": [
+       {
+        "name": "default",
+        "kind": "postgres",
+        "tables": [
+         {
+          "table": {
+           "schema": "public",
+           "name": "author"
+          },
+          "array_relationships": [
+           {
+            "name": "articles",
+            "using": {
+             "foreign_key_constraint_on": {
+              "table": {
+               "schema": "public",
+               "name": "article"
+              },
+              "column": "author_id"
+             }
+            }
+           }
+          ],
+          "select_permissions": [
+           {
+            "role": "user",
+            "permission": {
+             "columns": [
+              "id",
+              "name"
+             ],
+             "filter": {
+              "id": {
+               "_eq": "X-Hasura-User-Id"
+              }
+             }
+            }
+           }
+          ],
+          "update_permissions": [
+           {
+            "role": "user",
+            "permission": {
+             "columns": [
+              "name"
+             ],
+             "filter": {}
+            }
+           }
+          ]
+         },
+         {
+          "table": {
+           "schema": "public",
+           "name": "article"
+          },
+          "object_relationships": [
+           {
+            "name": "author",
+            "using": {
+             "foreign_key_constraint_on": "author_id"
+            }
+           }
+          ]
+         }
+        ],
+        "configuration": {
+         "connection_info": {
+          "database_url": {
+           "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "pool_settings": {
+           "connection_lifetime": 600,
+           "idle_timeout": 180,
+           "max_connections": 50,
+           "retries": 1
+          },
+          "use_prepared_statements": true
+         }
+        }
+       }
+      ]
+     }
+    }
+   },
+   "status": 200,
+   "response": {
+    "inconsistent_objects": [],
+    "is_consistent": true
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {},
+    "version": 2
+   },
+   "status": 200,
+   "response": {
+    "resource_version": 8,
+    "metadata": {
+     "version": 3,
+     "sources": [
+      {
+       "name": "default",
+       "kind": "postgres",
+       "tables": [
+        {
+         "table": {
+          "name": "article",
+          "schema": "public"
+         },
+         "object_relationships": [
+          {
+           "name": "author",
+           "using": {
+            "foreign_key_constraint_on": "author_id"
+           }
+          }
+         ]
+        },
+        {
+         "table": {
+          "name": "author",
+          "schema": "public"
+         },
+         "array_relationships": [
+          {
+           "name": "articles",
+           "using": {
+            "foreign_key_constraint_on": {
+             "column": "author_id",
+             "table": {
+              "name": "article",
+              "schema": "public"
+             }
+            }
+           }
+          }
+         ],
+         "select_permissions": [
+          {
+           "role": "user",
+           "permission": {
+            "columns": [
+             "id",
+             "name"
+            ],
+            "filter": {
+             "id": {
+              "_eq": "X-Hasura-User-Id"
+             }
+            }
+           }
+          }
+         ],
+         "update_permissions": [
+          {
+           "role": "user",
+           "permission": {
+            "columns": [
+             "name"
+            ],
+            "filter": {},
+            "check": null
+           }
+          }
+         ]
+        }
+       ],
+       "configuration": {
+        "connection_info": {
+         "database_url": {
+          "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+         },
+         "isolation_level": "read-committed",
+         "pool_settings": {
+          "connection_lifetime": 600,
+          "idle_timeout": 180,
+          "max_connections": 50,
+          "retries": 1
+         },
+         "use_prepared_statements": true
+        }
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "reload_metadata",
+    "args": {
+     "reload_sources": [
+      "nope"
+     ]
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Source with name \"nope\" not found in metadata",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "reload_metadata",
+    "args": []
+   },
+   "status": 400,
+   "response": {
+    "error": "parsing ReloadMetadata failed, expected Object, but encountered Array",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "set_catalog_state",
+    "args": {
+     "type": "cli",
+     "state": {
+      "migrations": {
+       "default": {
+        "1": false
+       }
+      },
+      "settings": {
+       "migration_mode": "true"
+      },
+      "isStateCopyCompleted": true
+     }
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_catalog_state",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "id": "c179313d-c239-441d-84cc-6d675a6e4a71",
+    "cli_state": {
+     "isStateCopyCompleted": true,
+     "migrations": {
+      "default": {
+       "1": false
+      }
+     },
+     "settings": {
+      "migration_mode": "true"
+     }
+    },
+    "console_state": {}
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "set_catalog_state",
+    "args": {
+     "type": "bad",
+     "state": {}
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "parsing Hasura.RQL.Types.Metadata.Common.CatalogStateType failed, expected one of the tags [\"cli\",\"console\"], but found tag \"bad\"",
+    "path": "$.args.type",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "bulk",
+    "args": [
+     {
+      "type": "export_metadata",
+      "args": {}
+     },
+     {
+      "type": "get_inconsistent_metadata",
+      "args": {}
+     }
+    ]
+   },
+   "status": 200,
+   "response": [
+    {
+     "version": 3,
+     "sources": [
+      {
+       "name": "default",
+       "kind": "postgres",
+       "tables": [
+        {
+         "table": {
+          "name": "article",
+          "schema": "public"
+         },
+         "object_relationships": [
+          {
+           "name": "author",
+           "using": {
+            "foreign_key_constraint_on": "author_id"
+           }
+          }
+         ]
+        },
+        {
+         "table": {
+          "name": "author",
+          "schema": "public"
+         },
+         "array_relationships": [
+          {
+           "name": "articles",
+           "using": {
+            "foreign_key_constraint_on": {
+             "column": "author_id",
+             "table": {
+              "name": "article",
+              "schema": "public"
+             }
+            }
+           }
+          }
+         ],
+         "select_permissions": [
+          {
+           "role": "user",
+           "permission": {
+            "columns": [
+             "id",
+             "name"
+            ],
+            "filter": {
+             "id": {
+              "_eq": "X-Hasura-User-Id"
+             }
+            }
+           }
+          }
+         ],
+         "update_permissions": [
+          {
+           "role": "user",
+           "permission": {
+            "columns": [
+             "name"
+            ],
+            "filter": {},
+            "check": null
+           }
+          }
+         ]
+        }
+       ],
+       "configuration": {
+        "connection_info": {
+         "database_url": {
+          "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+         },
+         "isolation_level": "read-committed",
+         "pool_settings": {
+          "connection_lifetime": 600,
+          "idle_timeout": 180,
+          "max_connections": 50,
+          "retries": 1
+         },
+         "use_prepared_statements": true
+        }
+       }
+      }
+     ]
+    },
+    {
+     "inconsistent_objects": [],
+     "is_consistent": true
+    }
+   ]
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "bulk",
+    "args": [
+     {
+      "type": "get_inconsistent_metadata",
+      "args": {}
+     },
+     {
+      "type": "nope_cmd",
+      "args": {}
+     }
+    ]
+   },
+   "status": 400,
+   "response": {
+    "error": "unknown metadata command \"cmd\" for backend nope",
+    "path": "$.args[1]",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "bulk_keep_going",
+    "args": [
+     {
+      "type": "get_inconsistent_metadata",
+      "args": {}
+     },
+     {
+      "type": "bogus",
+      "args": {}
+     }
+    ]
+   },
+   "status": 400,
+   "response": {
+    "error": "unknown metadata command \"\" for backend bogus",
+    "path": "$.args[1]",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "foo",
+    "args": {}
+   },
+   "status": 400,
+   "response": {
+    "error": "unknown metadata command \"\" for backend foo",
+    "path": "$",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_foo",
+    "args": {}
+   },
+   "status": 400,
+   "response": {
+    "error": "unknown metadata command \"foo\" for backend postgres",
+    "path": "$",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {},
+    "version": 3
+   },
+   "status": 400,
+   "response": {
+    "error": "expected 1 or 2, encountered 3",
+    "path": "$.version",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "args": {}
+   },
+   "status": 400,
+   "response": {
+    "error": "key \"type\" not found",
+    "path": "$",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata"
+   },
+   "status": 400,
+   "response": {
+    "error": "key \"args\" not found",
+    "path": "$",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_track_table",
+    "args": {
+     "table": "nope"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Inconsistent object: no such table/view exists in source: \"nope\"",
+    "path": "$.args",
+    "code": "invalid-configuration",
+    "internal": [
+     {
+      "definition": {
+       "name": "nope",
+       "schema": "public"
+      },
+      "name": "table nope in source default",
+      "reason": "Inconsistent object: no such table/view exists in source: \"nope\"",
+      "type": "table"
+     }
+    ]
+   },
+   "todo": "pg_track_table is not implemented yet"
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "replace_metadata",
+    "args": {
+     "version": 3,
+     "sources": [
+      {
+       "name": "default",
+       "tables": [
+        {
+         "table": "author",
+         "bogus": 1
+        }
+       ],
+       "configuration": {}
+      }
+     ]
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "unexpected keys when parsing TableMetadata: [\"bogus\"]",
+    "path": "$.args.sources[0].tables[0]",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "ALTER TABLE author RENAME COLUMN name TO full_name"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "version": 3,
+    "sources": [
+     {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+       {
+        "table": {
+         "name": "article",
+         "schema": "public"
+        },
+        "object_relationships": [
+         {
+          "name": "author",
+          "using": {
+           "foreign_key_constraint_on": "author_id"
+          }
+         }
+        ]
+       },
+       {
+        "table": {
+         "name": "author",
+         "schema": "public"
+        },
+        "array_relationships": [
+         {
+          "name": "articles",
+          "using": {
+           "foreign_key_constraint_on": {
+            "column": "author_id",
+            "table": {
+             "name": "article",
+             "schema": "public"
+            }
+           }
+          }
+         }
+        ],
+        "select_permissions": [
+         {
+          "role": "user",
+          "permission": {
+           "columns": [
+            "id",
+            "full_name"
+           ],
+           "filter": {
+            "id": {
+             "_eq": "X-Hasura-User-Id"
+            }
+           }
+          }
+         }
+        ],
+        "update_permissions": [
+         {
+          "role": "user",
+          "permission": {
+           "columns": [
+            "full_name"
+           ],
+           "filter": {},
+           "check": null
+          }
+         }
+        ]
+       }
+      ],
+      "configuration": {
+       "connection_info": {
+        "database_url": {
+         "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+        },
+        "isolation_level": "read-committed",
+        "pool_settings": {
+         "connection_lifetime": 600,
+         "idle_timeout": 180,
+         "max_connections": 50,
+         "retries": 1
+        },
+        "use_prepared_statements": true
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "ALTER TABLE author RENAME TO writer"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "version": 3,
+    "sources": [
+     {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+       {
+        "table": {
+         "name": "article",
+         "schema": "public"
+        },
+        "object_relationships": [
+         {
+          "name": "author",
+          "using": {
+           "foreign_key_constraint_on": "author_id"
+          }
+         }
+        ]
+       },
+       {
+        "table": {
+         "name": "writer",
+         "schema": "public"
+        },
+        "array_relationships": [
+         {
+          "name": "articles",
+          "using": {
+           "foreign_key_constraint_on": {
+            "column": "author_id",
+            "table": {
+             "name": "article",
+             "schema": "public"
+            }
+           }
+          }
+         }
+        ],
+        "select_permissions": [
+         {
+          "role": "user",
+          "permission": {
+           "columns": [
+            "id",
+            "full_name"
+           ],
+           "filter": {
+            "id": {
+             "_eq": "X-Hasura-User-Id"
+            }
+           }
+          }
+         }
+        ],
+        "update_permissions": [
+         {
+          "role": "user",
+          "permission": {
+           "columns": [
+            "full_name"
+           ],
+           "filter": {},
+           "check": null
+          }
+         }
+        ]
+       }
+      ],
+      "configuration": {
+       "connection_info": {
+        "database_url": {
+         "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+        },
+        "isolation_level": "read-committed",
+        "pool_settings": {
+         "connection_lifetime": 600,
+         "idle_timeout": 180,
+         "max_connections": 50,
+         "retries": 1
+        },
+        "use_prepared_statements": true
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "DROP TABLE article"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "cannot drop due to the following dependent objects: relationship writer.articles in source \"default\"",
+    "path": "$",
+    "code": "dependency-error"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "DROP TABLE article",
+     "cascade": true
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "version": 3,
+    "sources": [
+     {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+       {
+        "table": {
+         "name": "writer",
+         "schema": "public"
+        },
+        "select_permissions": [
+         {
+          "role": "user",
+          "permission": {
+           "columns": [
+            "id",
+            "full_name"
+           ],
+           "filter": {
+            "id": {
+             "_eq": "X-Hasura-User-Id"
+            }
+           }
+          }
+         }
+        ],
+        "update_permissions": [
+         {
+          "role": "user",
+          "permission": {
+           "columns": [
+            "full_name"
+           ],
+           "filter": {},
+           "check": null
+          }
+         }
+        ]
+       }
+      ],
+      "configuration": {
+       "connection_info": {
+        "database_url": {
+         "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+        },
+        "isolation_level": "read-committed",
+        "pool_settings": {
+         "connection_lifetime": 600,
+         "idle_timeout": 180,
+         "max_connections": 50,
+         "retries": 1
+        },
+        "use_prepared_statements": true
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "ALTER TABLE writer DROP COLUMN full_name"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "cannot drop due to the following dependent objects: permission writer.user.select in source \"default\", permission writer.user.update in source \"default\"",
+    "path": "$",
+    "code": "dependency-error"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "ALTER TABLE writer DROP COLUMN full_name",
+     "cascade": true
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "version": 3,
+    "sources": [
+     {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+       {
+        "table": {
+         "name": "writer",
+         "schema": "public"
+        }
+       }
+      ],
+      "configuration": {
+       "connection_info": {
+        "database_url": {
+         "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+        },
+        "isolation_level": "read-committed",
+        "pool_settings": {
+         "connection_lifetime": 600,
+         "idle_timeout": 180,
+         "max_connections": 50,
+         "retries": 1
+        },
+        "use_prepared_statements": true
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "ALTER TABLE writer RENAME TO author; ALTER TABLE author ADD COLUMN name text"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "replace_metadata",
+    "args": {
+     "version": 3,
+     "sources": [
+      {
+       "name": "default",
+       "kind": "postgres",
+       "tables": [],
+       "configuration": {
+        "connection_info": {
+         "database_url": {
+          "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+         },
+         "isolation_level": "read-committed",
+         "pool_settings": {
+          "connection_lifetime": 600,
+          "idle_timeout": 180,
+          "max_connections": 50,
+          "retries": 1
+         },
+         "use_prepared_statements": true
+        }
+       }
+      }
+     ]
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "version": 3,
+    "sources": [
+     {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [],
+      "configuration": {
+       "connection_info": {
+        "database_url": {
+         "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+        },
+        "isolation_level": "read-committed",
+        "pool_settings": {
+         "connection_lifetime": 600,
+         "idle_timeout": 180,
+         "max_connections": 50,
+         "retries": 1
+        },
+        "use_prepared_statements": true
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "CREATE TABLE article(id serial primary key, title text, author_id int references author(id))"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "replace_metadata",
+    "args": {
+     "version": 3,
+     "sources": [
+      {
+       "name": "default",
+       "kind": "postgres",
+       "tables": [
+        {
+         "table": {
+          "schema": "public",
+          "name": "author"
+         },
+         "array_relationships": [
+          {
+           "name": "articles",
+           "using": {
+            "foreign_key_constraint_on": {
+             "table": {
+              "schema": "public",
+              "name": "article"
+             },
+             "column": "author_id"
+            }
+           }
+          }
+         ],
+         "select_permissions": [
+          {
+           "role": "user",
+           "permission": {
+            "columns": [
+             "id",
+             "name"
+            ],
+            "filter": {
+             "id": {
+              "_eq": "X-Hasura-User-Id"
+             }
+            }
+           }
+          }
+         ],
+         "update_permissions": [
+          {
+           "role": "user",
+           "permission": {
+            "columns": [
+             "name"
+            ],
+            "filter": {}
+           }
+          }
+         ]
+        },
+        {
+         "table": {
+          "schema": "public",
+          "name": "article"
+         },
+         "object_relationships": [
+          {
+           "name": "author",
+           "using": {
+            "foreign_key_constraint_on": "author_id"
+           }
+          }
+         ]
+        }
+       ],
+       "configuration": {
+        "connection_info": {
+         "database_url": {
+          "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+         },
+         "isolation_level": "read-committed",
+         "pool_settings": {
+          "connection_lifetime": 600,
+          "idle_timeout": 180,
+          "max_connections": 50,
+          "retries": 1
+         },
+         "use_prepared_statements": true
+        }
+       }
+      }
+     ]
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "DROP TABLE author CASCADE"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "cannot drop due to the following dependent objects: relationship article.author in source \"default\"",
+    "path": "$",
+    "code": "dependency-error"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "ALTER TABLE article DROP CONSTRAINT article_author_id_fkey"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "cannot drop due to the following dependent objects: relationship article.author in source \"default\", relationship author.articles in source \"default\"",
+    "path": "$",
+    "code": "dependency-error"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "DROP TABLE author CASCADE",
+     "cascade": true
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "version": 3,
+    "sources": [
+     {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+       {
+        "table": {
+         "name": "article",
+         "schema": "public"
+        }
+       }
+      ],
+      "configuration": {
+       "connection_info": {
+        "database_url": {
+         "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+        },
+        "isolation_level": "read-committed",
+        "pool_settings": {
+         "connection_lifetime": 600,
+         "idle_timeout": 180,
+         "max_connections": 50,
+         "retries": 1
+        },
+        "use_prepared_statements": true
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "replace_metadata",
+    "args": {
+     "allow_inconsistent_metadata": true,
+     "metadata": {
+      "version": 3,
+      "sources": [
+       {
+        "name": "default",
+        "kind": "postgres",
+        "tables": [
+         {
+          "table": "article",
+          "select_permissions": [
+           {
+            "role": "admin",
+            "permission": {
+             "columns": [
+              "id"
+             ],
+             "filter": {}
+            }
+           }
+          ],
+          "insert_permissions": [
+           {
+            "role": "u2",
+            "comment": "hi",
+            "permission": {
+             "columns": [
+              "id"
+             ],
+             "check": {
+              "id": {
+               "_foo": 1
+              }
+             }
+            }
+           }
+          ]
+         }
+        ],
+        "configuration": {
+         "connection_info": {
+          "database_url": {
+           "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "pool_settings": {
+           "connection_lifetime": 600,
+           "idle_timeout": 180,
+           "max_connections": 50,
+           "retries": 1
+          },
+          "use_prepared_statements": true
+         }
+        }
+       }
+      ]
+     }
+    }
+   },
+   "status": 200,
+   "response": {
+    "inconsistent_objects": [
+     {
+      "definition": {
+       "comment": "hi",
+       "permission": {
+        "backend_only": false,
+        "check": {
+         "id": {
+          "_foo": 1
+         }
+        },
+        "columns": [
+         "id"
+        ]
+       },
+       "role": "u2",
+       "source": "default",
+       "table": {
+        "name": "article",
+        "schema": "public"
+       }
+      },
+      "name": "insert_permission u2 in table article in source default",
+      "reason": "Inconsistent object: in table \"article\": in permission for role \"u2\": Unknown operator: _foo",
+      "type": "insert_permission"
+     },
+     {
+      "definition": {
+       "comment": null,
+       "permission": {
+        "allow_aggregations": false,
+        "columns": [
+         "id"
+        ],
+        "computed_fields": [],
+        "filter": {}
+       },
+       "role": "admin",
+       "source": "default",
+       "table": {
+        "name": "article",
+        "schema": "public"
+       }
+      },
+      "name": "select_permission admin in table article in source default",
+      "reason": "Inconsistent object: in table \"article\": in permission for role \"admin\": cannot define permission for admin role",
+      "type": "select_permission"
+     }
+    ],
+    "is_consistent": false
+   },
+   "todo": "inconsistency order and permission defaults in definitions differ"
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "replace_metadata",
+    "args": {
+     "version": 3,
+     "sources": [
+      {
+       "name": "default",
+       "kind": "postgres",
+       "tables": [],
+       "configuration": {
+        "connection_info": {
+         "database_url": {
+          "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+         },
+         "isolation_level": "read-committed",
+         "pool_settings": {
+          "connection_lifetime": 600,
+          "idle_timeout": 180,
+          "max_connections": 50,
+          "retries": 1
+         },
+         "use_prepared_statements": true
+        }
+       }
+      }
+     ]
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {},
+    "version": 2
+   },
+   "status": 200,
+   "response": {
+    "resource_version": 18,
+    "metadata": {
+     "version": 3,
+     "sources": [
+      {
+       "name": "default",
+       "kind": "postgres",
+       "tables": [],
+       "configuration": {
+        "connection_info": {
+         "database_url": {
+          "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+         },
+         "isolation_level": "read-committed",
+         "pool_settings": {
+          "connection_lifetime": 600,
+          "idle_timeout": 180,
+          "max_connections": 50,
+          "retries": 1
+         },
+         "use_prepared_statements": true
+        }
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "replace_metadata",
+    "args": {
+     "version": 3,
+     "sources": [
+      {
+       "name": "default",
+       "kind": "postgres",
+       "tables": [],
+       "configuration": {
+        "connection_info": {
+         "database_url": {
+          "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+         },
+         "isolation_level": "read-committed",
+         "pool_settings": {
+          "connection_lifetime": 600,
+          "idle_timeout": 180,
+          "max_connections": 50,
+          "retries": 1
+         },
+         "use_prepared_statements": true
+        }
+       }
+      }
+     ]
+    },
+    "resource_version": 1
+   },
+   "status": 409,
+   "response": {
+    "error": "metadata resource version referenced (1) did not match current version",
+    "path": "$",
+    "code": "conflict"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "bulk",
+    "args": [
+     {
+      "type": "export_metadata",
+      "args": {}
+     }
+    ],
+    "resource_version": 1
+   },
+   "status": 200,
+   "response": [
+    {
+     "version": 3,
+     "sources": [
+      {
+       "name": "default",
+       "kind": "postgres",
+       "tables": [],
+       "configuration": {
+        "connection_info": {
+         "database_url": {
+          "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+         },
+         "isolation_level": "read-committed",
+         "pool_settings": {
+          "connection_lifetime": 600,
+          "idle_timeout": 180,
+          "max_connections": 50,
+          "retries": 1
+         },
+         "use_prepared_statements": true
+        }
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "clear_metadata",
+    "args": {},
+    "resource_version": 1
+   },
+   "status": 409,
+   "response": {
+    "error": "metadata resource version referenced (1) did not match current version",
+    "path": "$",
+    "code": "conflict"
+   }
+  }
+ ]
+}

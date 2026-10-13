@@ -7,32 +7,49 @@ pub mod load;
 pub mod migrations;
 pub mod routes;
 pub mod state;
+pub mod sync;
 
 use std::sync::Arc;
+
+use hge_metadata::store::{MemoryStore, MetadataStore};
+use hge_metadata_api::{PgCatalog, Reload};
 
 pub use config::ServerConfig;
 pub use state::{AppState, Engine};
 
-/// Load metadata, connect sources and build the engine.
+/// Initialise the metadata catalog, load metadata, connect sources and build the engine.
 pub async fn build_engine(config: ServerConfig) -> Result<Arc<Engine>, hge_core::Error> {
     // Auth first: its configuration errors are fatal before anything connects (as in V2).
     let auth = hge_auth::Authenticator::new(config.auth_config())
         .await
         .map_err(|e| hge_core::Error::new(hge_core::Code::InvalidConfiguration, e))?;
-    let (metadata, origin) = load::load_metadata(&config).await?;
-    tracing::info!(target: "startup", ?origin, "metadata source selected");
+    let store: Arc<dyn MetadataStore> = match config.catalog_url() {
+        Some(url) => {
+            let catalog = PgCatalog::connect(url)?;
+            let outcome = catalog.init().await?;
+            tracing::info!(target: "startup", ?outcome, "metadata catalog ready");
+            Arc::new(catalog)
+        }
+        None => Arc::new(MemoryStore::default()),
+    };
+    let (metadata, resource_version, origin) = load::load_metadata(&config, store.as_ref()).await?;
+    tracing::info!(target: "startup", ?origin, resource_version, "metadata source selected");
     if let Some(dir) = &config.migrations_dir {
         migrations::apply(dir, &metadata, &config).await?;
     }
-    let state = load::build_state(metadata, &config).await;
-    Ok(Arc::new(Engine::new(config, auth, state)))
+    let prepared = load::prepare(&metadata, &config, None, &Reload::All, Default::default()).await;
+    load::log_prepared(&prepared);
+    let options = load::schema_options(&config);
+    let state = AppState::new(metadata, prepared, resource_version, options);
+    Ok(Arc::new(Engine::new(config, auth, store, state)))
 }
 
-/// Serve until ctrl-c / SIGTERM, running the event trigger worker alongside.
+/// Serve until ctrl-c / SIGTERM, running schema sync and the event trigger worker alongside.
 pub async fn serve(engine: Arc<Engine>) -> std::io::Result<()> {
     let addr = format!("{}:{}", engine.config.host, engine.config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!(target: "startup", %addr, "server listening");
+    sync::spawn(engine.clone());
     let shutdown = tokio_util::sync::CancellationToken::new();
     let worker = events::spawn_worker(&engine, shutdown.clone());
     let signal = {

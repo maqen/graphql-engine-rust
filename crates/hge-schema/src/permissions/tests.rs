@@ -106,7 +106,8 @@ fn resolve(author: serde_json::Value, article: serde_json::Value) -> (Tables, Ve
     }))
     .unwrap();
     let catalogs = HashMap::from([("default".to_owned(), catalog())]);
-    crate::resolve_tables(&metadata, &catalogs)
+    let (tables, issues) = crate::resolve_tables(&metadata, &catalogs);
+    (tables, issues.into_iter().map(|o| o.reason).collect())
 }
 
 fn author(tables: &Tables) -> &crate::TableInfo {

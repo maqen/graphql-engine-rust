@@ -211,13 +211,11 @@ v1-query/TestRelationships/test_object_relationship_manual
 v1-query/TestRelationships/test_object_relationship_one_to_one
 v1-query/TestRunSQL/test_select_query
 v1-query/TestRunSQL/test_select_query_read_only
-v1-query/TestRunSQL/test_select_query_v2
 v1-query/TestRunSQL/test_set_timezone
 v1-query/TestRunSQL/test_sql_alter_test_bool_col
 v1-query/TestRunSQL/test_sql_alter_test_id
 v1-query/TestRunSQL/test_sql_no_tx
 v1-query/TestRunSQL/test_sql_query_as_user_error
-v1-query/TestRunSQL/test_sql_query_as_user_error_v2
 v1-query/TestRunSQL/test_sql_rename_columns_article
 v1-query/TestRunSQL/test_sql_rename_columns_author
 v1-query/TestRunSQL/test_sql_rename_table

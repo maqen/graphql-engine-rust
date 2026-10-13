@@ -25,6 +25,15 @@ impl QualifiedTable {
     pub fn public(name: impl Into<String>) -> Self {
         Self::new("public", name)
     }
+
+    /// V2's text form: `name` for tables in `public`, else `schema.name`.
+    pub fn v2_text(&self) -> String {
+        if self.schema == "public" {
+            self.name.clone()
+        } else {
+            format!("{}.{}", self.schema, self.name)
+        }
+    }
 }
 
 impl fmt::Display for QualifiedTable {

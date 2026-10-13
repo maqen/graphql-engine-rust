@@ -147,6 +147,17 @@ struct ServeArgs {
     #[arg(long, env = "HASURA_GRAPHQL_PRESERVE_401_ERRORS", value_parser = parse_bool, default_value = "false")]
     preserve_401_errors: bool,
 
+    #[arg(long = "read-only-mode", env = "HASURA_GRAPHQL_ENABLE_READ_ONLY_MODE", value_parser = parse_bool, default_value = "false")]
+    read_only_mode: bool,
+
+    /// Milliseconds between checks for metadata changed by other instances (0 disables).
+    #[arg(
+        long,
+        env = "HASURA_GRAPHQL_SCHEMA_SYNC_POLL_INTERVAL",
+        default_value = "1000"
+    )]
+    schema_sync_poll_interval: f64,
+
     /// Accepted for compatibility; the console is not served.
     #[arg(long, env = "HASURA_GRAPHQL_ENABLE_CONSOLE", value_parser = parse_bool, default_value = "false")]
     enable_console: bool,
@@ -293,6 +304,14 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
         use_prepared_statements: args.use_prepared_statements,
         preserve_401_errors: args.preserve_401_errors,
         events: hge_events_config(args),
+        read_only: args.read_only_mode,
+        schema_sync_poll_interval_ms: if args.schema_sync_poll_interval >= 0.0 {
+            args.schema_sync_poll_interval as u64
+        } else {
+            anyhow::bail!(
+                "HASURA_GRAPHQL_SCHEMA_SYNC_POLL_INTERVAL: Only expecting a non negative numeric"
+            )
+        },
     })
 }
 

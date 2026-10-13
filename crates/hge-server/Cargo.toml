@@ -11,6 +11,7 @@ hge-core.workspace = true
 hge-ir.workspace = true
 hge-schema.workspace = true
 hge-metadata.workspace = true
+hge-metadata-api.workspace = true
 hge-postgres.workspace = true
 hge-auth.workspace = true
 hge-events.workspace = true
@@ -30,6 +31,7 @@ tower-http.workspace = true
 tracing.workspace = true
 async-trait.workspace = true
 futures.workspace = true
+uuid.workspace = true
 
 [lints]
 workspace = true
