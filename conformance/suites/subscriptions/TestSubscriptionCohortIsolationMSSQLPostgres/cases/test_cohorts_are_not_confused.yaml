@@ -1,0 +1,110 @@
+upstream:
+  file: test_subscriptions.py
+  class: TestSubscriptionCohortIsolationMSSQLPostgres
+  method: test_cohorts_are_not_confused
+  by_hand: true
+steps:
+- ws_connect:
+    protocol: graphql-ws
+- ws_send:
+    message:
+      type: connection_init
+      payload:
+        headers:
+          X-Hasura-Admin-Secret: '{{HASURA_GRAPHQL_ADMIN_SECRET}}'
+- ws_expect:
+    message:
+      type: connection_ack
+- ws_send:
+    message:
+      id: cohort-1
+      type: start
+      payload:
+        query: |
+          subscription ($id: Int!) {
+            hge_tests_cohort_isolation_probe(where: {id: {_eq: $id}}) {
+              id
+              val
+            }
+          }
+        variables:
+          id: 1
+- ws_send:
+    message:
+      id: cohort-2
+      type: start
+      payload:
+        query: |
+          subscription ($id: Int!) {
+            hge_tests_cohort_isolation_probe(where: {id: {_eq: $id}}) {
+              id
+              val
+            }
+          }
+        variables:
+          id: 2
+- ws_expect:
+    message:
+      id: cohort-1
+      type: data
+      payload:
+        data:
+          hge_tests_cohort_isolation_probe:
+          - id: 1
+            val: row-1
+- ws_expect:
+    message:
+      id: cohort-2
+      type: data
+      payload:
+        data:
+          hge_tests_cohort_isolation_probe:
+          - id: 2
+            val: row-2
+- url: /v2/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: update hge_tests.cohort_isolation_probe set val = 'updated-1' where id = 1
+  response:
+    result_type: CommandOk
+    result: null
+- ws_expect:
+    message:
+      id: cohort-1
+      type: data
+      payload:
+        data:
+          hge_tests_cohort_isolation_probe:
+          - id: 1
+            val: updated-1
+- ws_expect_silence:
+    id: cohort-2
+    ms: 3000
+- url: /v2/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: update hge_tests.cohort_isolation_probe set val = 'updated-2' where id = 2
+  response:
+    result_type: CommandOk
+    result: null
+- ws_expect:
+    message:
+      id: cohort-2
+      type: data
+      payload:
+        data:
+          hge_tests_cohort_isolation_probe:
+          - id: 2
+            val: updated-2
+- ws_send:
+    message:
+      id: cohort-1
+      type: stop
+- ws_send:
+    message:
+      id: cohort-2
+      type: stop

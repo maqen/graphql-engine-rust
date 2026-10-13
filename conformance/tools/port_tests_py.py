@@ -46,6 +46,23 @@ IMAGE = "hasura/graphql-engine:v2.51.0-ce"
 ADMIN_SECRET = "conformance-admin-secret"
 SRC_DB = "conf_port_src"
 
+# Classes whose tests are custom Python (websocket protocol, subscriptions). Their setup is
+# snapshotted like any other class; their cases are written by hand in the suite directory
+# (marked `upstream: {by_hand: true}`), recorded with `hge-conformance hasura --record`, and
+# kept when this tool regenerates the suite.
+HAND_PORTED = {
+    "test_subscriptions.py::TestSubscriptionBasic",
+    "test_subscriptions.py::TestSubscriptionBasicGraphQLWS",
+    "test_subscriptions.py::TestSubscriptionLiveQueries",
+    "test_subscriptions.py::TestSubscriptionLiveQueriesForGraphQLWS",
+    "test_subscriptions.py::TestStreamingSubscription",
+    "test_subscriptions.py::TestStreamingSubscriptionWithTies",
+    "test_subscriptions.py::TestSubscriptionUDFWithSessionArg",
+    "test_subscriptions.py::TestSubscriptionCohortIsolationMSSQLPostgres",
+}
+# Fixtures that only open websocket connections, which hand-ported cases do themselves.
+WS_FIXTURES = {"ws_conn_init", "ws_conn_init_graphql_ws"}
+
 SUPPORTED_FIXTURES = {
     "per_class_tests_db_state",
     "per_method_tests_db_state",
@@ -198,7 +215,7 @@ def discover(upstream):
         for node in tree.body:
             if isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
                 try:
-                    info = class_info(node, aliases, classes)
+                    info = class_info(node, aliases, classes, f"{test_file}::{node.name}" in HAND_PORTED)
                     yield test_file, node.name, info
                 except Skip as e:
                     yield test_file, node.name, str(e)
@@ -216,7 +233,7 @@ def expand_decorator(d, aliases):
     return d
 
 
-def class_info(node, aliases, classes):
+def class_info(node, aliases, classes, hand_ported=False):
     fixtures = set()
     env = {}
     admin_secret = False
@@ -256,7 +273,7 @@ def class_info(node, aliases, classes):
             raise Skip(f"needs {name}")
     if backends is not None and "postgres" not in backends:
         raise Skip(f"backend {','.join(backends)}")
-    unsupported = fixtures - SUPPORTED_FIXTURES
+    unsupported = fixtures - SUPPORTED_FIXTURES - (WS_FIXTURES if hand_ported else set())
     if unsupported:
         raise Skip(f"needs fixture {', '.join(sorted(unsupported))}")
     if not fixtures & {"per_class_tests_db_state", "per_method_tests_db_state", "per_class_db_schema_for_mutation_tests"}:
@@ -576,7 +593,12 @@ def port_class(hge, pg_url, up, out_root, test_file, cls, info, coverage):
         cov["skipped"] = f"snapshot does not apply: {str(e)[:300]}"
         return
     cases = {}
+    hand = hand_cases(suite_dir)
+    hand_methods = {method for method, _ in hand.values()}
     for name, t in info["tests"].items():
+        if isinstance(t, str) and name in hand_methods:
+            cov["tests"][name] = "ported by hand"
+            continue
         if isinstance(t, str):
             cov["tests"][name] = f"skipped: {t}"
             continue
@@ -600,7 +622,7 @@ def port_class(hge, pg_url, up, out_root, test_file, cls, info, coverage):
         cases[name] = case
         cov["tests"][name] = "ported"
     shutil.rmtree(suite_dir, ignore_errors=True)
-    if not cases:
+    if not cases and not hand and f"{test_file}::{cls}" not in HAND_PORTED:
         return
     os.makedirs(os.path.join(suite_dir, "cases"), exist_ok=True)
     suite = {
@@ -623,6 +645,35 @@ def port_class(hge, pg_url, up, out_root, test_file, cls, info, coverage):
     for name, case in cases.items():
         with open(os.path.join(suite_dir, "cases", f"{name}.yaml"), "w") as f:
             dump_yaml(case, f)
+    for file_name, (_, text) in hand.items():
+        with open(os.path.join(suite_dir, "cases", file_name), "w") as f:
+            f.write(text)
+
+
+def hand_cases(suite_dir):
+    """Hand-written cases of a suite: {file name: (upstream method, text)}."""
+    out = {}
+    cases_dir = os.path.join(suite_dir, "cases")
+    if not os.path.isdir(cases_dir):
+        return out
+    for file_name in sorted(os.listdir(cases_dir)):
+        with open(os.path.join(cases_dir, file_name)) as f:
+            text = f.read()
+        up = (yaml.safe_load(text) or {}).get("upstream") or {}
+        if up.get("by_hand"):
+            out[file_name] = (up.get("method", file_name), text)
+    return out
+
+
+def hand_coverage(out_root):
+    """(file, class) -> {method: 'ported by hand'} for hand-written suites the tool does not own."""
+    out = {}
+    for area in sorted(os.listdir(out_root)) if os.path.isdir(out_root) else []:
+        for suite in sorted(os.listdir(os.path.join(out_root, area))):
+            for _, text in hand_cases(os.path.join(out_root, area, suite)).values():
+                up = yaml.safe_load(text)["upstream"]
+                out.setdefault((up["file"], up["class"]), {})[up["method"]] = "ported by hand"
+    return out
 
 
 class Dumper(yaml.SafeDumper):
@@ -682,12 +733,23 @@ def main():
         finally:
             hge.stop()
 
+    # Hand-written suites for classes this tool cannot snapshot (no database fixture).
+    hand = hand_coverage(args.out)
+    for c in coverage:
+        tests = hand.get((c["file"], c["class"]))
+        if tests and "skipped" in c:
+            del c["skipped"]
+            c["tests"] = tests
+    if args.only and os.path.exists(args.coverage):
+        # Keep the other classes' entries.
+        with open(args.coverage) as f:
+            old = yaml.safe_load(f) or []
+        coverage += [c for c in old if not re.search(args.only, f"{c['file']}::{c['class']}")]
     coverage.sort(key=lambda c: (c["file"], c["class"]))
-    if not args.only:
-        with open(args.coverage, "w") as f:
-            f.write("# Generated by conformance/tools/port_tests_py.py: every upstream tests-py class and\n")
-            f.write("# test method, and whether it was ported (or why not).\n")
-            dump_yaml(coverage, f)
+    with open(args.coverage, "w") as f:
+        f.write("# Generated by conformance/tools/port_tests_py.py: every upstream tests-py class and\n")
+        f.write("# test method, and whether it was ported (or why not).\n")
+        dump_yaml(coverage, f)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,54 @@
+upstream:
+  file: test_subscriptions.py
+  class: TestStreamingSubscription
+  method: test_streaming_subscription_with_custom_name_set_for_cursor
+  by_hand: true
+steps:
+- ws_connect:
+    protocol: graphql-ws
+- ws_send:
+    message:
+      type: connection_init
+      payload:
+        headers: {}
+- ws_expect:
+    message:
+      type: connection_ack
+- ws_send:
+    message:
+      id: stream_1
+      type: start
+      payload:
+        query: |
+          subscription ($batch_size: Int!) {
+            hge_tests_stream_query: hge_tests_users_stream(cursor: {initial_value: {userId: 0}}, batch_size: $batch_size) {
+               userId
+               name
+            }
+          }
+        variables:
+          batch_size: 1
+- ws_expect:
+    message:
+      id: stream_1
+      type: data
+      payload:
+        data:
+          hge_tests_stream_query:
+          - userId: 1
+            name: Name 1
+- ws_expect:
+    message:
+      id: stream_1
+      type: data
+      payload:
+        data:
+          hge_tests_stream_query:
+          - userId: 2
+            name: Name 2
+- ws_send:
+    message:
+      id: stream_1
+      type: stop
+- ws_expect_silence:
+    ms: 2000

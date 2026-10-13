@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_subscriptions.py::TestSubscriptionLiveQueries
+upstream:
+  file: test_subscriptions.py
+  class: TestSubscriptionLiveQueries
+  dir: queries/subscriptions/live_queries
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: database

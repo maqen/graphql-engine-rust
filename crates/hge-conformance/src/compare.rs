@@ -33,6 +33,35 @@ pub fn diff(expected: &Value, actual: &Value, graphql: bool) -> Option<String> {
     value_diff(expected, actual, "$", false)
 }
 
+/// In a websocket message, a top-level value that matches any string: for error texts that
+/// come from Hasura's JSON parser and that no reimplementation reproduces word for word.
+pub const ANY_STRING: &str = "{{any string}}";
+
+/// Compare websocket messages: `payload` of data messages (`data`, `next`) is a GraphQL
+/// response, everything else ignores key order.
+pub fn ws_message_diff(expected: &Value, actual: &Value) -> Option<String> {
+    let (Value::Object(e), Value::Object(a)) = (expected, actual) else {
+        return value_diff(expected, actual, "$", false);
+    };
+    let mut ek: Vec<_> = e.keys().collect();
+    let mut ak: Vec<_> = a.keys().collect();
+    ek.sort();
+    ak.sort();
+    if ek != ak {
+        return Some(format!("$: keys {ek:?} != {ak:?}"));
+    }
+    e.iter().find_map(|(k, ev)| {
+        if ev == ANY_STRING {
+            return (!a[k].is_string()).then(|| format!("$.{k}: expected a string"));
+        }
+        if k == "payload" {
+            response_diff(ev, &a[k], "$.payload")
+        } else {
+            value_diff(ev, &a[k], &format!("$.{k}"), false)
+        }
+    })
+}
+
 fn response_diff(expected: &Value, actual: &Value, path: &str) -> Option<String> {
     let (Value::Object(e), Value::Object(a)) = (expected, actual) else {
         return value_diff(expected, actual, path, false);
@@ -180,6 +209,23 @@ mod tests {
             )
             .is_some()
         );
+    }
+
+    #[test]
+    fn ws_messages() {
+        let e = json!({"type": "data", "id": "1", "payload": {"data": {"a": 1, "b": 2}}});
+        let a = json!({"id": "1", "payload": {"data": {"a": 1, "b": 2}}, "type": "data"});
+        assert!(ws_message_diff(&e, &a).is_none());
+        let a = json!({"id": "1", "payload": {"data": {"b": 2, "a": 1}}, "type": "data"});
+        assert!(ws_message_diff(&e, &a).is_some());
+        let e = json!({"type": "connection_error", "payload": {"x": 1, "y": 2}});
+        let a = json!({"type": "connection_error", "payload": {"y": 2, "x": 1}});
+        assert!(ws_message_diff(&e, &a).is_none());
+        let e = json!({"type": "connection_error", "payload": ANY_STRING});
+        let a = json!({"type": "connection_error", "payload": "parse error"});
+        assert!(ws_message_diff(&e, &a).is_none());
+        let a = json!({"type": "connection_error", "payload": {"message": "parse error"}});
+        assert!(ws_message_diff(&e, &a).is_some());
     }
 
     #[test]

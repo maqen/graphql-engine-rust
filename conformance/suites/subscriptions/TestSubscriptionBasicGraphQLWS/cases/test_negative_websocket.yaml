@@ -1,0 +1,43 @@
+description: negative_test.yaml over the websocket
+upstream:
+  file: test_subscriptions.py
+  class: TestSubscriptionBasicGraphQLWS
+  method: test_negative
+  by_hand: true
+steps:
+- ws_connect:
+    protocol: graphql-transport-ws
+- ws_send:
+    message:
+      type: connection_init
+      payload:
+        headers:
+          X-Hasura-Admin-Secret: '{{HASURA_GRAPHQL_ADMIN_SECRET}}'
+          X-Hasura-Role: user
+- ws_expect:
+    message:
+      type: connection_ack
+- ws_send:
+    message:
+      id: neg
+      type: subscribe
+      payload:
+        query: |
+          query {
+            hge_tests_test_t1 {
+              c1, c2
+            }
+          }
+- ws_expect:
+    message:
+      type: error
+      id: neg
+      payload:
+      - message: 'missing session variable: "x-hasura-custom"'
+        extensions:
+          path: $
+          code: not-found
+- ws_expect:
+    message:
+      id: neg
+      type: complete

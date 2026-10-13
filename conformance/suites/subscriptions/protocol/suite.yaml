@@ -1,0 +1,5 @@
+description: Websocket protocol and auth tests from hasura/graphql-engine server/tests-py/test_subscriptions.py (classes with no database fixture), written by hand
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none

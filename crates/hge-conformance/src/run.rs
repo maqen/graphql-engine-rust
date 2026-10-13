@@ -3,8 +3,9 @@
 use serde_json::Value;
 
 use crate::compare;
-use crate::suite::{Case, Step, Suite};
+use crate::suite::{Case, HttpStep, Step, Suite};
 use crate::target::Slot;
+use crate::ws;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CaseResult {
@@ -51,8 +52,7 @@ pub async fn run_suite(
     let mut results = vec![];
     for (i, case) in cases.iter().enumerate() {
         let outcome = match slot.before_case(suite, i == 0).await {
-            Ok(()) if record => record_case(slot, case).await,
-            Ok(()) => run_case(slot, case).await,
+            Ok(()) => run_case(slot, case, record).await,
             Err(e) => Err(format!("case setup failed: {e:#}")),
         };
         results.push(result(case, outcome));
@@ -60,41 +60,69 @@ pub async fn run_suite(
     results
 }
 
-async fn run_case(slot: &Slot, case: &Case) -> Result<(), String> {
-    for (i, step) in case.file.steps.iter().enumerate() {
-        let what = step.description.as_deref().unwrap_or(&step.url);
-        let actual = send(slot, case, step)
-            .await
-            .map_err(|e| format!("step {i} ({what}): {e}"))?;
-        check(step, &actual).map_err(|e| format!("step {i} ({what}): {e}"))?;
-    }
-    Ok(())
-}
-
-async fn record_case(slot: &Slot, case: &Case) -> Result<(), String> {
+/// Run a case's steps in order. With `record`, failed expectations are rewritten from
+/// what the engine returned and the case file is saved.
+async fn run_case(slot: &Slot, case: &Case, record: bool) -> Result<(), String> {
     let mut file = case.file.clone();
+    let mut conns = ws::Connections::default();
+    let mut outcome = Ok(());
     for (i, step) in file.steps.iter_mut().enumerate() {
-        let actual = send(slot, case, step)
-            .await
-            .map_err(|e| format!("step {i}: {e}"))?;
-        if check(step, &actual).is_ok() {
-            continue;
-        }
-        step.status = actual.status;
-        step.response = actual.body;
-        for (name, value) in step.resp_headers.iter_mut() {
-            *value = actual
-                .headers
-                .get(name.as_str())
-                .and_then(|v| v.to_str().ok())
-                .map(str::to_owned);
+        let r = match step {
+            Step::Http(step) => http_step(slot, case, step, record).await,
+            Step::Ws(step) => {
+                ws::run_step(
+                    &mut conns,
+                    slot.base_url(),
+                    slot.admin_secret(),
+                    step,
+                    record,
+                )
+                .await
+            }
+        };
+        if let Err(e) = r {
+            let what = match step {
+                Step::Http(h) => h.description.clone().unwrap_or_else(|| h.url.clone()),
+                Step::Ws(w) => ws::label(w),
+            };
+            outcome = Err(format!("step {i} ({what}): {e}"));
+            break;
         }
     }
-    let text = serde_yaml::to_string(&file).map_err(|e| e.to_string())?;
-    std::fs::write(&case.path, text).map_err(|e| format!("{}: {e}", case.path.display()))
+    conns.close_all().await;
+    if record && outcome.is_ok() {
+        let text = serde_yaml::to_string(&file).map_err(|e| e.to_string())?;
+        std::fs::write(&case.path, text).map_err(|e| format!("{}: {e}", case.path.display()))?;
+    }
+    outcome
 }
 
-async fn send(slot: &Slot, case: &Case, step: &Step) -> Result<Actual, String> {
+async fn http_step(
+    slot: &Slot,
+    case: &Case,
+    step: &mut HttpStep,
+    record: bool,
+) -> Result<(), String> {
+    let actual = send(slot, case, step).await?;
+    match check(step, &actual) {
+        Ok(()) => Ok(()),
+        Err(_) if record => {
+            step.status = actual.status;
+            step.response = actual.body;
+            for (name, value) in step.resp_headers.iter_mut() {
+                *value = actual
+                    .headers
+                    .get(name.as_str())
+                    .and_then(|v| v.to_str().ok())
+                    .map(str::to_owned);
+            }
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+async fn send(slot: &Slot, case: &Case, step: &HttpStep) -> Result<Actual, String> {
     let method = step.method.clone().unwrap_or_else(|| {
         if step.query.is_some() || step.body.is_some() {
             "POST".into()
@@ -153,7 +181,7 @@ async fn send(slot: &Slot, case: &Case, step: &Step) -> Result<Actual, String> {
     })
 }
 
-fn check(step: &Step, actual: &Actual) -> Result<(), String> {
+fn check(step: &HttpStep, actual: &Actual) -> Result<(), String> {
     let mut problems = vec![];
     if actual.status != step.status {
         problems.push(format!("status {} != {}", step.status, actual.status));

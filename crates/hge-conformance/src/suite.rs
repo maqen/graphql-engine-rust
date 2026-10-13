@@ -6,7 +6,8 @@
 //!   setup.sql       schema + data, applied to a fresh database
 //!   data.sql        (isolation: data) data restored before every case
 //!   metadata.json   V2 metadata (export_metadata format)
-//!   cases/*.yaml    one case per file: a list of request/response steps
+//!   cases/*.yaml    one case per file: a list of steps (HTTP request/response, or
+//!                   websocket connect/send/expect)
 //! ```
 
 use std::collections::BTreeMap;
@@ -70,10 +71,74 @@ fn is_true(b: &bool) -> bool {
     *b
 }
 
+/// One step of a case.
+#[derive(Debug, Clone)]
+pub enum Step {
+    Http(Box<HttpStep>),
+    Ws(WsStep),
+}
+
+impl<'de> Deserialize<'de> for Step {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        // A websocket step is a mapping with a single `ws_*` key; anything else is HTTP.
+        // Dispatching by hand keeps serde's error messages (an untagged enum loses them).
+        // Reading a JSON value (not a YAML one) keeps keys like `1:` as written.
+        let v = Value::deserialize(d)?;
+        let ws_tag = v.as_object().and_then(|m| {
+            m.keys()
+                .find(|k| k.starts_with("ws_"))
+                .map(|k| (k.clone(), m.len()))
+        });
+        let Some((tag, len)) = ws_tag else {
+            return serde_json::from_value(v)
+                .map(|h| Step::Http(Box::new(h)))
+                .map_err(D::Error::custom);
+        };
+        if len != 1 {
+            return Err(D::Error::custom(
+                "a websocket step has exactly one key (ws_connect, ws_send, ...)",
+            ));
+        }
+        let body = v[&tag].clone();
+        let ws = match tag.as_str() {
+            "ws_connect" => serde_json::from_value(body).map(WsStep::Connect),
+            "ws_send" => serde_json::from_value(body).map(WsStep::Send),
+            "ws_expect" => serde_json::from_value(body).map(WsStep::Expect),
+            "ws_expect_silence" => serde_json::from_value(body).map(WsStep::ExpectSilence),
+            "ws_expect_close" => serde_json::from_value(body).map(WsStep::ExpectClose),
+            other => return Err(D::Error::custom(format!("unknown step {other}"))),
+        };
+        ws.map(Step::Ws)
+            .map_err(|e| D::Error::custom(format!("{tag}: {e}")))
+    }
+}
+
+impl Serialize for Step {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Step::Http(h) => h.serialize(s),
+            Step::Ws(w) => {
+                // As written: `- ws_send: {...}` (serde_yaml would emit a `!ws_send` tag).
+                use serde::ser::SerializeMap;
+                let mut m = s.serialize_map(Some(1))?;
+                match w {
+                    WsStep::Connect(b) => m.serialize_entry("ws_connect", b)?,
+                    WsStep::Send(b) => m.serialize_entry("ws_send", b)?,
+                    WsStep::Expect(b) => m.serialize_entry("ws_expect", b)?,
+                    WsStep::ExpectSilence(b) => m.serialize_entry("ws_expect_silence", b)?,
+                    WsStep::ExpectClose(b) => m.serialize_entry("ws_expect_close", b)?,
+                }
+                m.end()
+            }
+        }
+    }
+}
+
 /// One request and its expected response, in tests-py's fixture format.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct Step {
+pub struct HttpStep {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     pub url: String,
@@ -99,6 +164,98 @@ pub struct Step {
 
 fn ok() -> u16 {
     200
+}
+
+/// A websocket step. Connections are named (`conn`, default `default`) and live until the
+/// case ends. In sent messages and connect headers, `{{HASURA_GRAPHQL_ADMIN_SECRET}}` is
+/// replaced by the suite's admin secret.
+#[derive(Debug, Clone)]
+pub enum WsStep {
+    /// Open a connection (`protocol`: `graphql-ws` (Apollo legacy) or `graphql-transport-ws`).
+    /// (`ws_connect`)
+    Connect(WsConnect),
+    /// Send a JSON message.
+    /// (`ws_send`)
+    Send(WsSend),
+    /// Wait for the next message with the same `id` as `message` (or with no id) and compare
+    /// it. Keep-alives (`ka`, `ping`, `pong`) are skipped; pings are answered.
+    /// (`ws_expect`)
+    Expect(WsExpect),
+    /// No message (with `id`, if given) arrives within `ms`.
+    /// (`ws_expect_silence`)
+    ExpectSilence(WsSilence),
+    /// The server closes the connection, with this code and reason if given.
+    /// (`ws_expect_close`)
+    ExpectClose(WsClose),
+}
+
+fn default_conn() -> String {
+    "default".to_owned()
+}
+
+fn is_default_conn(c: &str) -> bool {
+    c == "default"
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct WsConnect {
+    #[serde(default = "default_conn", skip_serializing_if = "is_default_conn")]
+    pub conn: String,
+    #[serde(default = "default_ws_url", skip_serializing_if = "is_default_ws_url")]
+    pub url: String,
+    pub protocol: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub headers: BTreeMap<String, String>,
+}
+
+fn default_ws_url() -> String {
+    "/v1/graphql".to_owned()
+}
+
+fn is_default_ws_url(u: &str) -> bool {
+    u == "/v1/graphql"
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct WsSend {
+    #[serde(default = "default_conn", skip_serializing_if = "is_default_conn")]
+    pub conn: String,
+    pub message: Value,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct WsExpect {
+    #[serde(default = "default_conn", skip_serializing_if = "is_default_conn")]
+    pub conn: String,
+    pub message: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct WsSilence {
+    #[serde(default = "default_conn", skip_serializing_if = "is_default_conn")]
+    pub conn: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub ms: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct WsClose {
+    #[serde(default = "default_conn", skip_serializing_if = "is_default_conn")]
+    pub conn: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -206,4 +363,66 @@ pub fn load_suite(area: &str, dir: &Path) -> Result<Suite> {
         metadata,
         cases,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CASE: &str = "\
+steps:
+- url: /v1/graphql
+  query:
+    variables:
+      value:
+        1: one
+- ws_connect:
+    protocol: graphql-ws
+- ws_send:
+    conn: other
+    message:
+      type: connection_init
+- ws_expect_close:
+    code: 4400
+";
+
+    #[test]
+    fn steps_parse_and_round_trip() {
+        let file: CaseFile = serde_yaml::from_str(CASE).unwrap();
+        let [
+            Step::Http(h),
+            Step::Ws(WsStep::Connect(c)),
+            Step::Ws(WsStep::Send(s)),
+            Step::Ws(WsStep::ExpectClose(x)),
+        ] = &file.steps[..]
+        else {
+            panic!("unexpected steps: {:?}", file.steps);
+        };
+        assert_eq!(h.query.as_ref().unwrap()["variables"]["value"]["1"], "one");
+        assert_eq!(
+            (c.conn.as_str(), c.url.as_str()),
+            ("default", "/v1/graphql")
+        );
+        assert_eq!(s.conn, "other");
+        assert_eq!(x.code, Some(4400));
+        let text = serde_yaml::to_string(&file).unwrap();
+        assert!(
+            text.contains("- ws_connect:\n    protocol: graphql-ws\n"),
+            "{text}"
+        );
+        let again: CaseFile = serde_yaml::from_str(&text).unwrap();
+        assert_eq!(serde_yaml::to_string(&again).unwrap(), text);
+    }
+
+    #[test]
+    fn ws_step_errors_are_reported() {
+        let err = serde_yaml::from_str::<CaseFile>("steps:\n- ws_send:\n    msg: {}\n")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("ws_send") && err.contains("msg"), "{err}");
+        let err = serde_yaml::from_str::<CaseFile>("steps:\n- ws_bogus: {}\n")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unknown step ws_bogus"), "{err}");
+    }
 }

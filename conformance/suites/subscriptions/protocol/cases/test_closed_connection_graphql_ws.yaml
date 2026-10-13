@@ -1,0 +1,16 @@
+upstream:
+  file: test_subscriptions.py
+  class: TestSubscriptionBasicNoAuth
+  method: test_closed_connection_graphql_ws
+  by_hand: true
+steps:
+- ws_connect:
+    protocol: graphql-transport-ws
+- ws_send:
+    message:
+      type: connection_init
+      payload:
+        headers: {}
+- ws_expect_close:
+    code: 4403
+    reason: '{"server_error_msg":"4403: Forbidden"}'

@@ -1,0 +1,1 @@
+-- No schema: these cases only exercise the websocket protocol.

@@ -81,6 +81,34 @@ Responses compare exactly: status, body and the listed response headers. Object 
 matters inside GraphQL `data` (it follows the selection set) and nowhere else; floats may
 differ in the last bit (Postgres float aggregates do, on V2 too).
 
+### Websocket steps
+
+Steps can also drive GraphQL over websockets on `/v1/graphql`, in either protocol. A step is
+a mapping with one `ws_*` key; connections are named by `conn` (default `default`) and closed
+when the case ends:
+
+```yaml
+- ws_connect: {protocol: graphql-ws}            # or graphql-transport-ws; url, headers optional
+- ws_send:
+    message: {type: connection_init, payload: {headers: {X-Hasura-Admin-Secret: '{{HASURA_GRAPHQL_ADMIN_SECRET}}'}}}
+- ws_expect: {message: {type: connection_ack}}
+- ws_send:
+    message: {id: '1', type: start, payload: {query: 'subscription { author { id } }'}}
+- ws_expect:                                    # the next message with the same id
+    message: {id: '1', type: data, payload: {data: {author: [{id: 1}]}}}
+    timeout_ms: 15000                           # optional
+- ws_expect_silence: {ms: 2000, id: '1'}        # nothing (with this id, if given) arrives
+- ws_expect_close: {code: 4400, reason: ...}    # the server closes; code and reason optional
+```
+
+`{{HASURA_GRAPHQL_ADMIN_SECRET}}` in a sent message or a connect header is replaced by the
+suite's admin secret (the runner does not add it to websockets by itself). Keep-alives (`ka`,
+`pong`) are ignored and pings answered. A message's top-level keys compare in any order and
+its `payload` like an HTTP response; a top-level value of `'{{any string}}'` matches any
+string, for error texts from V2's JSON parser. An HTTP step between websocket steps (for
+example `run_sql` on `/v2/query` to change data under a live query) runs in order. With
+`--record`, a failed `ws_expect` or `ws_expect_close` is rewritten with what arrived.
+
 ## Adding cases
 
 Feature threads add cases for what they build, in the same format, under the area they own:
@@ -110,6 +138,14 @@ are left out. HTTP transport only: tests-py's websocket replay of the same fixtu
 ported. Classes and tests left out are listed in `upstream-coverage.yaml` with the reason;
 most need helper servers (actions, events, remote schemas, auth webhooks, JWT) that a later
 version of the runner can provide.
+
+Tests that are custom Python (the websocket protocol and subscription tests in
+`test_subscriptions.py`) are translated into case files by hand, marked
+`upstream: {..., by_hand: true}`, and recorded from Hasura after checking the result against
+upstream's assertions. The tool keeps them when it regenerates a suite (list the class in
+`HAND_PORTED` so its setup is snapshotted); `subscriptions/protocol*` hold the classes that
+need no database. Use `--only <regex>` to regenerate some classes; their entries in
+`upstream-coverage.yaml` are updated and the others kept.
 
 The fixtures come from [hasura/graphql-engine](https://github.com/hasura/graphql-engine)
 (Apache-2.0), `server/tests-py`, at tag v2.51.0.

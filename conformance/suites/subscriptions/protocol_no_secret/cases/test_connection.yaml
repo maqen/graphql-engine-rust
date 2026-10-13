@@ -1,0 +1,21 @@
+upstream:
+  file: test_subscriptions.py
+  class: TestSubscriptionCtrlWithoutSecret
+  method: test_connection
+  by_hand: true
+steps:
+- ws_connect:
+    protocol: graphql-ws
+- ws_send:
+    message:
+      type: connection_init
+      payload: {}
+- ws_expect:
+    message:
+      type: connection_ack
+- ws_send:
+    message:
+      type: connection_terminate
+- ws_expect_close:
+    code: 1000
+    reason: GQL_CONNECTION_TERMINATE received

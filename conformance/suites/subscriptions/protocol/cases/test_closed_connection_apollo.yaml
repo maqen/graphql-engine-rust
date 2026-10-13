@@ -1,0 +1,20 @@
+upstream:
+  file: test_subscriptions.py
+  class: TestSubscriptionBasicNoAuth
+  method: test_closed_connection_apollo
+  by_hand: true
+steps:
+- ws_connect:
+    protocol: graphql-ws
+- ws_send:
+    message:
+      type: connection_init
+      payload:
+        headers: {}
+- ws_expect:
+    message:
+      type: connection_error
+      payload: '"x-hasura-admin-secret" required, but not found'
+- ws_expect_close:
+    code: 4400
+    reason: '{"server_error_msg":"4400: Connection initialization failed: \"x-hasura-admin-secret\" required, but not found"}'
