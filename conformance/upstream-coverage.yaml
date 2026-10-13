@@ -1378,37 +1378,71 @@
   skipped: no database state fixture
 - file: test_subscriptions.py
   class: TestStreamingSubscription
-  skipped: needs fixture ws_conn_init
+  area: subscriptions
+  tests:
+    test_basic_streaming_subscription_existing_static_data: ported by hand
+    test_streaming_subscriptions_with_concurrent_data_inserts: ported by hand
+    test_streaming_subscription_with_custom_name_set_for_cursor: ported by hand
 - file: test_subscriptions.py
   class: TestStreamingSubscriptionWithTies
-  skipped: needs fixture ws_conn_init
+  area: subscriptions
+  tests:
+    test_streaming_subscription_with_duplicate_cursor_values: ported by hand
 - file: test_subscriptions.py
   class: TestSubscriptionBasic
-  skipped: needs fixture ws_conn_init
+  area: subscriptions
+  tests:
+    test_negative: ported
+    test_connection_error: ported by hand
+    test_start: ported by hand
+    test_start_duplicate: 'skipped: decorated with pytest.mark.skip(reason=''refer to https://github.c'
+    test_stop_without_id: ported by hand
+    test_stop: ported by hand
+    test_start_after_stop: ported by hand
+    test_complete: ported by hand
 - file: test_subscriptions.py
   class: TestSubscriptionBasicGraphQLWS
-  skipped: needs fixture ws_conn_init_graphql_ws
+  area: subscriptions
+  tests:
+    test_negative: ported
+    test_connection_error: ported by hand
+    test_start: ported by hand
+    test_start_duplicate: 'skipped: decorated with pytest.mark.skip(reason=''refer to https://github.c'
+    test_stop_without_id: ported by hand
+    test_stop: ported by hand
+    test_start_after_stop: ported by hand
+    test_complete: ported by hand
 - file: test_subscriptions.py
   class: TestSubscriptionBasicNoAuth
-  skipped: no database state fixture
+  tests:
+    test_closed_connection_apollo: ported by hand
+    test_closed_connection_graphql_ws: ported by hand
 - file: test_subscriptions.py
   class: TestSubscriptionCohortIsolationMSSQLPostgres
-  skipped: needs fixture ws_conn_init
+  area: subscriptions
+  tests:
+    test_cohorts_are_not_confused: ported by hand
 - file: test_subscriptions.py
   class: TestSubscriptionCtrl
-  skipped: no database state fixture
+  tests:
+    test_connection: ported by hand
 - file: test_subscriptions.py
   class: TestSubscriptionCtrlWithoutSecret
-  skipped: no database state fixture
+  tests:
+    test_connection: ported by hand
 - file: test_subscriptions.py
   class: TestSubscriptionCustomizedSourceMSSQLPostgres
   skipped: needs fixture add_customized_source, ws_conn_init
 - file: test_subscriptions.py
   class: TestSubscriptionLiveQueries
-  skipped: needs fixture ws_conn_init
+  area: subscriptions
+  tests:
+    test_live_queries: ported by hand
 - file: test_subscriptions.py
   class: TestSubscriptionLiveQueriesForGraphQLWS
-  skipped: needs fixture ws_conn_init_graphql_ws
+  area: subscriptions
+  tests:
+    test_live_queries: ported by hand
 - file: test_subscriptions.py
   class: TestSubscriptionMSSQLChunkedResults
   skipped: backend mssql
@@ -1425,7 +1459,9 @@
     test_extraneous_session_variables_are_discarded_from_query: 'skipped: uses extra fixtures: hge_ctx'
 - file: test_subscriptions.py
   class: TestSubscriptionUDFWithSessionArg
-  skipped: needs fixture ws_conn_init
+  area: subscriptions
+  tests:
+    test_user_defined_function_with_session_argument: ported by hand
 - file: test_tests.py
   class: TestParameterizedFixtures
   skipped: no database state fixture

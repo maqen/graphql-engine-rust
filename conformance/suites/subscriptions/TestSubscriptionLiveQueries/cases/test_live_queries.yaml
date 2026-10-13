@@ -1,0 +1,267 @@
+upstream:
+  file: test_subscriptions.py
+  class: TestSubscriptionLiveQueries
+  method: test_live_queries
+  by_hand: true
+steps:
+- ws_connect:
+    protocol: graphql-ws
+- ws_send:
+    message:
+      type: connection_init
+      payload:
+        headers:
+          X-Hasura-Admin-Secret: '{{HASURA_GRAPHQL_ADMIN_SECRET}}'
+- ws_expect:
+    message:
+      type: connection_ack
+- ws_send:
+    message:
+      id: live_0
+      type: start
+      payload:
+        query: |
+          subscription ($result_limit: Int!) {
+            hge_tests_live_query_0: hge_tests_test_t2(order_by: {c1: asc}, limit: $result_limit) {
+              c1,
+              c2
+            }
+          }
+        variables:
+          result_limit: 1
+- ws_expect:
+    message:
+      id: live_0
+      type: data
+      payload:
+        data:
+          hge_tests_live_query_0: []
+- ws_send:
+    message:
+      id: live_1
+      type: start
+      payload:
+        query: |
+          subscription ($result_limit: Int!) {
+            hge_tests_live_query_1: hge_tests_test_t2(order_by: {c1: asc}, limit: $result_limit) {
+              c1,
+              c2
+            }
+          }
+        variables:
+          result_limit: 2
+- ws_expect:
+    message:
+      id: live_1
+      type: data
+      payload:
+        data:
+          hge_tests_live_query_1: []
+- ws_send:
+    message:
+      id: live_2
+      type: start
+      payload:
+        query: |
+          subscription ($result_limit: Int!) {
+            hge_tests_live_query_2: hge_tests_test_t2(order_by: {c1: asc}, limit: $result_limit) {
+              c1,
+              c2
+            }
+          }
+        variables:
+          result_limit: 2
+- ws_expect:
+    message:
+      id: live_2
+      type: data
+      payload:
+        data:
+          hge_tests_live_query_2: []
+- ws_send:
+    message:
+      id: mutation_0
+      type: start
+      payload:
+        query: |
+          mutation insert_test_t2($objects: [hge_tests_test_t2_insert_input!]! ) {
+            insert_hge_tests_test_t2(objects: $objects) {
+              returning {
+                c1
+                c2
+              }
+            }
+          }
+        variables:
+          objects:
+          - c1: 1
+            c2: test1
+          - c1: 2
+            c2: test2
+- ws_expect:
+    message:
+      id: mutation_0
+      type: data
+      payload:
+        data:
+          insert_hge_tests_test_t2:
+            returning:
+            - c1: 1
+              c2: test1
+            - c1: 2
+              c2: test2
+- ws_expect:
+    message:
+      id: mutation_0
+      type: complete
+- ws_expect:
+    message:
+      id: live_0
+      type: data
+      payload:
+        data:
+          hge_tests_live_query_0:
+          - c1: 1
+            c2: test1
+- ws_expect:
+    message:
+      id: live_1
+      type: data
+      payload:
+        data:
+          hge_tests_live_query_1:
+          - c1: 1
+            c2: test1
+          - c1: 2
+            c2: test2
+- ws_expect:
+    message:
+      id: live_2
+      type: data
+      payload:
+        data:
+          hge_tests_live_query_2:
+          - c1: 1
+            c2: test1
+          - c1: 2
+            c2: test2
+- ws_send:
+    message:
+      id: mutation_1
+      type: start
+      payload:
+        query: |
+          mutation update_test_t2 {
+            update_hge_tests_test_t2(
+              where: {c1: {_eq: 1}},
+              _set: {c2: "test11"}
+            ) {
+              returning {
+                c1
+                c2
+              }
+            }
+          }
+- ws_expect:
+    message:
+      id: mutation_1
+      type: data
+      payload:
+        data:
+          update_hge_tests_test_t2:
+            returning:
+            - c1: 1
+              c2: test11
+- ws_expect:
+    message:
+      id: mutation_1
+      type: complete
+- ws_expect:
+    message:
+      id: live_0
+      type: data
+      payload:
+        data:
+          hge_tests_live_query_0:
+          - c1: 1
+            c2: test11
+- ws_expect:
+    message:
+      id: live_1
+      type: data
+      payload:
+        data:
+          hge_tests_live_query_1:
+          - c1: 1
+            c2: test11
+          - c1: 2
+            c2: test2
+- ws_expect:
+    message:
+      id: live_2
+      type: data
+      payload:
+        data:
+          hge_tests_live_query_2:
+          - c1: 1
+            c2: test11
+          - c1: 2
+            c2: test2
+- ws_send:
+    message:
+      id: mutation_2
+      type: start
+      payload:
+        query: |
+          mutation delete_test_t2 {
+            delete_hge_tests_test_t2(where: {c1: {_in: [1, 2]}}) {
+              affected_rows
+            }
+          }
+- ws_expect:
+    message:
+      id: mutation_2
+      type: data
+      payload:
+        data:
+          delete_hge_tests_test_t2:
+            affected_rows: 2
+- ws_expect:
+    message:
+      id: mutation_2
+      type: complete
+- ws_expect:
+    message:
+      id: live_0
+      type: data
+      payload:
+        data:
+          hge_tests_live_query_0: []
+- ws_expect:
+    message:
+      id: live_1
+      type: data
+      payload:
+        data:
+          hge_tests_live_query_1: []
+- ws_expect:
+    message:
+      id: live_2
+      type: data
+      payload:
+        data:
+          hge_tests_live_query_2: []
+- ws_send:
+    message:
+      id: live_0
+      type: stop
+- ws_send:
+    message:
+      id: live_1
+      type: stop
+- ws_send:
+    message:
+      id: live_2
+      type: stop
+- ws_expect_silence:
+    ms: 2000

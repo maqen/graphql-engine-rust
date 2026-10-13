@@ -1,0 +1,46 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "articles",
+            "schema": "hge_tests"
+          },
+          "select_permissions": [
+            {
+              "role": "public",
+              "permission": {
+                "columns": [
+                  "title",
+                  "content"
+                ],
+                "filter": {
+                  "is_public": true
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "test_t2",
+            "schema": "hge_tests"
+          }
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

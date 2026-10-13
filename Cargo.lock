@@ -902,6 +902,7 @@ dependencies = [
  "serde_yaml",
  "tokio",
  "tokio-postgres",
+ "tokio-tungstenite",
 ]
 
 [[package]]

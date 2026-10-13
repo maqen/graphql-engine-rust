@@ -1,0 +1,40 @@
+upstream:
+  file: test_subscriptions.py
+  class: TestSubscriptionUDFWithSessionArg
+  method: test_user_defined_function_with_session_argument
+  by_hand: true
+steps:
+- ws_connect:
+    protocol: graphql-ws
+- ws_send:
+    message:
+      type: connection_init
+      payload:
+        headers:
+          X-Hasura-Admin-Secret: '{{HASURA_GRAPHQL_ADMIN_SECRET}}'
+          x-hasura-role: user
+          x-hasura-user-id: '42'
+- ws_expect:
+    message:
+      type: connection_ack
+- ws_send:
+    message:
+      id: '1'
+      type: start
+      payload:
+        query: |
+          subscription {
+            me {
+              id
+              name
+            }
+          }
+- ws_expect:
+    message:
+      id: '1'
+      type: data
+      payload:
+        data:
+          me:
+          - id: '42'
+            name: Charlie

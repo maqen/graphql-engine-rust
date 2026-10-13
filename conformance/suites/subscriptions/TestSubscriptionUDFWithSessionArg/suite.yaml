@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_subscriptions.py::TestSubscriptionUDFWithSessionArg
+upstream:
+  file: test_subscriptions.py
+  class: TestSubscriptionUDFWithSessionArg
+  dir: queries/subscriptions/udf_session_args
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none

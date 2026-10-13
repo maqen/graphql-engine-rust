@@ -1,0 +1,125 @@
+upstream:
+  file: test_subscriptions.py
+  class: TestStreamingSubscription
+  method: test_streaming_subscriptions_with_concurrent_data_inserts
+  by_hand: true
+steps:
+- ws_connect:
+    protocol: graphql-ws
+- ws_send:
+    message:
+      type: connection_init
+      payload:
+        headers: {}
+- ws_expect:
+    message:
+      type: connection_ack
+- ws_send:
+    message:
+      id: stream_1
+      type: start
+      payload:
+        query: |
+          subscription ($batch_size: Int!, $initial_created_at: timestamptz!) {
+            hge_tests_stream_query: hge_tests_test_t2_stream(cursor: [{initial_value: {created_at: $initial_created_at}, ordering: ASC}], batch_size: $batch_size) {
+               c1
+               c2
+            }
+          }
+        variables:
+          batch_size: 2
+          initial_created_at: 2020-01-01
+- ws_send:
+    message:
+      id: mutation_0
+      type: start
+      payload:
+        query: |
+          mutation insert_articles($objects: [hge_tests_test_t2_insert_input!]! ) {
+            insert_hge_tests_test_t2(objects: $objects) {
+              returning {
+                c1
+                c2
+              }
+            }
+          }
+        variables:
+          objects:
+          - c1: 1
+            c2: test1
+- ws_expect:
+    message:
+      id: mutation_0
+      type: data
+      payload:
+        data:
+          insert_hge_tests_test_t2:
+            returning:
+            - c1: 1
+              c2: test1
+- ws_expect:
+    message:
+      id: mutation_0
+      type: complete
+- ws_expect:
+    message:
+      id: stream_1
+      type: data
+      payload:
+        data:
+          hge_tests_stream_query:
+          - c1: 1
+            c2: test1
+- ws_send:
+    message:
+      id: mutation_1
+      type: start
+      payload:
+        query: |
+          mutation insert_articles($objects: [hge_tests_test_t2_insert_input!]! ) {
+            insert_hge_tests_test_t2(objects: $objects) {
+              returning {
+                c1
+                c2
+              }
+            }
+          }
+        variables:
+          objects:
+          - c1: 2
+            c2: test2
+          - c1: 3
+            c2: test3
+- ws_expect:
+    message:
+      id: mutation_1
+      type: data
+      payload:
+        data:
+          insert_hge_tests_test_t2:
+            returning:
+            - c1: 2
+              c2: test2
+            - c1: 3
+              c2: test3
+- ws_expect:
+    message:
+      id: mutation_1
+      type: complete
+- ws_expect:
+    message:
+      id: stream_1
+      type: data
+      payload:
+        data:
+          hge_tests_stream_query:
+          - c1: 2
+            c2: test2
+          - c1: 3
+            c2: test3
+- ws_send:
+    message:
+      id: stream_1
+      type: stop
+- ws_expect_silence:
+    ms: 2000

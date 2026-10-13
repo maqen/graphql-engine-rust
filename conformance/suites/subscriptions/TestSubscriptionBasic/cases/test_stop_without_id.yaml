@@ -1,0 +1,24 @@
+upstream:
+  file: test_subscriptions.py
+  class: TestSubscriptionBasic
+  method: test_stop_without_id
+  by_hand: true
+steps:
+- ws_connect:
+    protocol: graphql-ws
+- ws_send:
+    message:
+      type: connection_init
+      payload:
+        headers:
+          X-Hasura-Admin-Secret: '{{HASURA_GRAPHQL_ADMIN_SECRET}}'
+- ws_expect:
+    message:
+      type: connection_ack
+- ws_send:
+    message:
+      type: stop
+- ws_expect:
+    message:
+      type: connection_error
+      payload: '{{any string}}'

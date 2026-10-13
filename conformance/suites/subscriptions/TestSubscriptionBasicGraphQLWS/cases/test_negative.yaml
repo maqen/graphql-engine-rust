@@ -1,0 +1,25 @@
+upstream:
+  file: test_subscriptions.py
+  class: TestSubscriptionBasicGraphQLWS
+  method: test_negative
+  fixtures:
+  - queries/subscriptions/basic/negative_test.yaml
+steps:
+- description: Query bid prices more than action price
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: |
+      query {
+        hge_tests_test_t1 {
+          c1, c2
+        }
+      }
+  response:
+    errors:
+    - message: 'missing session variable: "x-hasura-custom"'
+      extensions:
+        path: $
+        code: not-found

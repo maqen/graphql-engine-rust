@@ -15,6 +15,7 @@ mod report;
 mod run;
 mod suite;
 mod target;
+mod ws;
 
 use std::collections::VecDeque;
 use std::path::PathBuf;

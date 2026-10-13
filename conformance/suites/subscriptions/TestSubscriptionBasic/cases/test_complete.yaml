@@ -1,0 +1,40 @@
+upstream:
+  file: test_subscriptions.py
+  class: TestSubscriptionBasic
+  method: test_complete
+  by_hand: true
+steps:
+- ws_connect:
+    protocol: graphql-ws
+- ws_send:
+    message:
+      type: connection_init
+      payload:
+        headers:
+          X-Hasura-Admin-Secret: '{{HASURA_GRAPHQL_ADMIN_SECRET}}'
+- ws_expect:
+    message:
+      type: connection_ack
+- ws_send:
+    message:
+      id: q2
+      type: start
+      payload:
+        query: |
+          query {
+            hge_tests_test_t1(order_by: {c1: desc}, limit: 1) {
+              c1,
+              c2
+            }
+          }
+- ws_expect:
+    message:
+      type: data
+      id: q2
+      payload:
+        data:
+          hge_tests_test_t1: []
+- ws_expect:
+    message:
+      id: q2
+      type: complete

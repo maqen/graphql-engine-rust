@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_subscriptions.py::TestSubscriptionBasicGraphQLWS
+upstream:
+  file: test_subscriptions.py
+  class: TestSubscriptionBasicGraphQLWS
+  dir: queries/subscriptions/basic
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: database
