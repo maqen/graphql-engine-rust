@@ -202,13 +202,14 @@ impl Lowerer<'_> {
         };
         let mut comparisons = vec![];
         if let Some(Json::Object(ops)) = input.get("predicate") {
-            self.comparisons(
-                AggregationPredicate::RESULT_COLUMN,
-                &function.result_type(),
-                ops,
-                &format!("{path}.predicate"),
-                &mut comparisons,
-            )?;
+            let ty = function.result_type();
+            for op in self.comparisons(&ty, ops, &format!("{path}.predicate"))? {
+                comparisons.push(BoolExp::Compare {
+                    column: AggregationPredicate::RESULT_COLUMN.to_owned(),
+                    ty: ty.clone(),
+                    op,
+                });
+            }
         }
         // `distinct` is accepted but, as in V2's Postgres backend, not applied.
         Ok(BoolExp::AggregationPredicate(Box::new(

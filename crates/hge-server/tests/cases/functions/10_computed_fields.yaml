@@ -1,0 +1,221 @@
+config:
+  fixture: functions
+  admin_internal_errors: false
+
+cases:
+  - description: scalar computed fields, with arguments, defaults and a json path
+    query:
+      query: '{ author(order_by: {id: asc}) { id full_name greeting hi: greeting(args: {greeting: "Hi"}) none: greeting(args: {greeting: null}) profile city: profile(path: "info.city") is_me } }'
+    response:
+      data:
+        author:
+        - id: 1
+          full_name: Alice Smith
+          greeting: Hello, Alice
+          hi: Hi, Alice
+          none: null
+          profile:
+            info: {city: Oslo}
+            name: Alice
+          city: Oslo
+          is_me: null
+        - id: 2
+          full_name: Bob
+          greeting: Hello, Bob
+          hi: Hi, Bob
+          none: null
+          profile: {info: null, name: Bob}
+          city: null
+          is_me: null
+        - id: 3
+          full_name: Carol Jones
+          greeting: Hello, Carol
+          hi: Hi, Carol
+          none: null
+          profile:
+            info: {city: Rome}
+            name: Carol
+          city: Rome
+          is_me: null
+
+  - description: the session argument gets the session variables
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: '{ author(order_by: {id: asc}) { id first_name full_name is_me } }'
+    response:
+      data:
+        author:
+        - {id: 1, first_name: Alice, full_name: Alice Smith, is_me: false}
+        - {id: 2, first_name: Bob, full_name: Bob, is_me: true}
+        - {id: 3, first_name: Carol, full_name: Carol Jones, is_me: false}
+
+  - description: a role sees only the computed fields its permission lists
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: '{ author { id greeting } }'
+    response:
+      errors:
+      - message: 'field ''greeting'' not found in type: ''author'''
+        extensions: {path: $.selectionSet.author.selectionSet.greeting, code: validation-failed}
+
+  - description: table computed fields take select arguments
+    query:
+      query: '{ author(order_by: {id: asc}) { id published_articles(order_by: {id: desc}) { id title } top: published_articles(where: {rating: {_gt: 3}}, limit: 1) { id } articles_matching(args: {search: "rust"}) { id title } } }'
+    response:
+      data:
+        author:
+        - id: 1
+          published_articles:
+          - {id: 1, title: Rust tips}
+          top:
+          - {id: 1}
+          articles_matching:
+          - {id: 1, title: Rust tips}
+        - id: 2
+          published_articles:
+          - {id: 3, title: Go tips}
+          top: []
+          articles_matching: []
+        - id: 3
+          published_articles:
+          - {id: 4, title: Rust again}
+          top:
+          - {id: 4}
+          articles_matching:
+          - {id: 4, title: Rust again}
+
+  - description: table computed fields apply the returned table's permission
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: '{ author(order_by: {id: asc}) { id published_articles { id } articles_matching(args: {search: "t"}) { id title } } }'
+    response:
+      data:
+        author:
+        - id: 1
+          published_articles:
+          - {id: 1}
+          articles_matching:
+          - {id: 1, title: Rust tips}
+        - id: 2
+          published_articles:
+          - {id: 3}
+          articles_matching:
+          - {id: 3, title: Go tips}
+        - id: 3
+          published_articles:
+          - {id: 4}
+          articles_matching:
+          - {id: 4, title: Rust again}
+
+  - description: required computed field arguments cannot be omitted
+    query:
+      query: '{ author { id articles_matching(args: {}) { id } } }'
+    response:
+      errors:
+      - message: Non default arguments cannot be omitted
+        extensions: {path: $.selectionSet.author.selectionSet.articles_matching.args.args, code: not-supported}
+
+  - description: the args argument is required when an argument has no default
+    query:
+      query: '{ author { id articles_matching { id } } }'
+    response:
+      errors:
+      - message: missing required field 'args'
+        extensions: {path: $.selectionSet.author.selectionSet.articles_matching.args.args, code: validation-failed}
+
+  - description: filtering on scalar and table computed fields
+    query:
+      query: '{ a: author(where: {full_name: {_ilike: "%o%"}}, order_by: {id: asc}) { id } b: author(where: {published_articles: {rating: {_gte: 4}}}, order_by: {id: asc}) { id } c: author(where: {_not: {profile: {_has_key: "info"}}}) { id } }'
+    response:
+      data:
+        a:
+        - {id: 2}
+        - {id: 3}
+        b:
+        - {id: 1}
+        - {id: 3}
+        c: []
+
+  - description: filtering through a table computed field sees only permitted rows
+    headers: { x-hasura-role: user, x-hasura-user-id: "1" }
+    query:
+      query: '{ a: author(where: {is_me: {_eq: true}}) { id } b: author(where: {published_articles: {title: {_eq: "Draft"}}}) { id } }'
+    response:
+      data:
+        a:
+        - {id: 1}
+        b: []
+
+  - description: computed fields with arguments are not in the bool_exp
+    query:
+      query: '{ author(where: {greeting: {_eq: "Hello, Bob"}}) { id } }'
+    response:
+      errors:
+      - message: 'field ''greeting'' not found in type: ''author_bool_exp'''
+        extensions: {path: $.selectionSet.author.args.where.greeting, code: validation-failed}
+
+  - description: ordering by scalar computed fields, also through a relationship
+    query:
+      query: '{ a: author(order_by: {full_name: desc}) { id full_name } b: article(order_by: [{author: {full_name: asc}}, {id: desc}], limit: 3) { id author { full_name } } }'
+    response:
+      data:
+        a:
+        - {id: 3, full_name: Carol Jones}
+        - {id: 2, full_name: Bob}
+        - {id: 1, full_name: Alice Smith}
+        b:
+        - id: 2
+          author: {full_name: Alice Smith}
+        - id: 1
+          author: {full_name: Alice Smith}
+        - id: 3
+          author: {full_name: Bob}
+
+  - description: args cannot be null
+    query:
+      query: '{ author { greeting(args: null) } }'
+    response:
+      errors:
+      - message: expected an object for type 'greeting_author_args', but found null
+        extensions: {path: $.selectionSet.author.selectionSet.greeting.args.args, code: validation-failed}
+
+  - description: permission filters can use scalar and table computed fields
+    headers: { x-hasura-role: fan }
+    query:
+      query: '{ author { id } }'
+    response:
+      data:
+        author:
+        - {id: 3}
+
+  - description: a role without columns gets the root field but no distinct_on
+    headers: { x-hasura-role: anonymous }
+    query:
+      query: '{ author(order_by: {full_name: asc}) { full_name } q: __type(name: "query_root") { fields { name args { name } } } e: __type(name: "author_select_column") { name } }'
+    response:
+      data:
+        author:
+        - {full_name: Alice Smith}
+        - {full_name: Bob}
+        - {full_name: Carol Jones}
+        q:
+          fields:
+          - name: author
+            args:
+            - {name: limit}
+            - {name: offset}
+            - {name: order_by}
+            - {name: where}
+        e: null
+
+  - description: computed fields in a mutation's returning
+    query:
+      query: 'mutation { update_author(where: {id: {_eq: 2}}, _set: {last_name: "Brown"}) { returning { id full_name published_articles { id } } } }'
+    response:
+      data:
+        update_author:
+          returning:
+          - id: 2
+            full_name: Bob Brown
+            published_articles:
+            - {id: 3}

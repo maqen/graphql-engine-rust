@@ -10,6 +10,7 @@ use hge_core::{ColumnType, QualifiedTable, RoleName};
 use indexmap::IndexMap;
 
 use crate::actions::ResolvedActions;
+use crate::functions::{ComputedFieldInfo, ComputedReturn};
 use crate::introspection;
 use crate::model::*;
 use crate::permissions::{SelectAccess, select_access};
@@ -222,12 +223,11 @@ impl Builder<'_> {
     }
 
     fn add_table_select_root_fields(&mut self, table: &Arc<TableInfo>, root: &mut ObjectDef) {
+        // Like V2, even a permission without columns gives the root fields (with an empty
+        // object type when nothing else is selectable).
         let Some(access) = self.access(table).cloned() else {
             return;
         };
-        if access.columns.is_empty() {
-            return;
-        }
         self.ensure_table_types(table);
         let display = table.display_name();
 
@@ -280,14 +280,20 @@ impl Builder<'_> {
 
     /// `distinct_on`, `limit`, `offset`, `order_by`, `where`.
     pub(crate) fn with_select_args(&mut self, field: FieldDef, table: &TableInfo) -> FieldDef {
-        field
-            .arg(
+        // Without selectable columns there is no `<table>_select_column` enum (an enum needs
+        // values), so no `distinct_on` either, as in V2.
+        let field = if self.has_selectable_columns(table) {
+            field.arg(
                 InputValueDef::new(
                     "distinct_on",
                     TypeRef::nn(table.select_column_name()).list(),
                 )
                 .describe("distinct select on columns"),
             )
+        } else {
+            field
+        };
+        field
             .arg(
                 InputValueDef::new("limit", TypeRef::named("Int"))
                     .describe("limit the number of rows returned"),
@@ -304,6 +310,11 @@ impl Builder<'_> {
                 InputValueDef::new("where", TypeRef::named(table.bool_exp_name()))
                     .describe("filter the rows returned"),
             )
+    }
+
+    fn has_selectable_columns(&self, table: &TableInfo) -> bool {
+        self.access(table)
+            .is_some_and(|a| table.columns.keys().any(|c| a.allows_column(c)))
     }
 
     pub(crate) fn note_scalar(&mut self, ty: &ColumnType) {
@@ -462,12 +473,108 @@ impl Builder<'_> {
             order_by.fields.insert(f.name.clone(), f);
         }
 
+        for cf in table.computed_fields.clone() {
+            let mut field = match &cf.returns {
+                ComputedReturn::Scalar(ty) => {
+                    if !access.computed_fields.contains(&cf.name) {
+                        continue;
+                    }
+                    self.note_scalar(ty);
+                    let mut field = FieldDef::new(
+                        cf.name.clone(),
+                        scalars::column_type_ref(ty, true),
+                        FieldKind::ComputedField(cf.clone()),
+                    );
+                    if scalars::is_json_like(ty) {
+                        field = field.arg(
+                            InputValueDef::new("path", TypeRef::named("String"))
+                                .describe("JSON select path"),
+                        );
+                    }
+                    if !cf.has_input_args() {
+                        let cmp = self.ensure_comparison_exp(ty);
+                        bool_exp.fields.insert(
+                            cf.name.clone(),
+                            InputValueDef::new(cf.name.clone(), TypeRef::named(cmp)),
+                        );
+                        order_by.fields.insert(
+                            cf.name.clone(),
+                            InputValueDef::new(cf.name.clone(), TypeRef::named("order_by")),
+                        );
+                    }
+                    field
+                }
+                ComputedReturn::Table(target) => {
+                    let Some(target) = self.tables.get(&table.source, target).cloned() else {
+                        continue;
+                    };
+                    if self.access(&target).is_none() {
+                        continue;
+                    }
+                    self.ensure_table_types(&target);
+                    if !cf.has_input_args() {
+                        bool_exp.fields.insert(
+                            cf.name.clone(),
+                            InputValueDef::new(
+                                cf.name.clone(),
+                                TypeRef::named(target.bool_exp_name()),
+                            ),
+                        );
+                    }
+                    let field = FieldDef::new(
+                        cf.name.clone(),
+                        TypeRef::nn(target.type_name()).list(),
+                        FieldKind::ComputedField(cf.clone()),
+                    );
+                    self.with_select_args(field, &target)
+                }
+            };
+            field.description = Some(cf.description.clone());
+            if cf.has_input_args() {
+                let name = self.ensure_computed_field_args(table, &cf);
+                let ty = if cf.args_required() {
+                    TypeRef::nn(name)
+                } else {
+                    TypeRef::named(name)
+                };
+                field = field.arg(InputValueDef::new("args", ty).describe(format!(
+                    "input parameters for computed field \"{}\" defined on table \"{display}\"",
+                    cf.name
+                )));
+            }
+            obj.fields.insert(cf.name.clone(), field);
+        }
+
         self.schema
             .types
             .insert(obj.name.clone(), TypeDef::Object(obj));
         self.schema.add(TypeDef::InputObject(bool_exp));
         self.schema.add(TypeDef::InputObject(order_by));
-        self.schema.add(TypeDef::Enum(select_column));
+        if !select_column.values.is_empty() {
+            self.schema.add(TypeDef::Enum(select_column));
+        }
+    }
+
+    /// `<field>_<table>_args`: the input arguments of a computed field.
+    fn ensure_computed_field_args(&mut self, table: &TableInfo, cf: &ComputedFieldInfo) -> String {
+        let name = cf.args_type_name(table.type_name());
+        if self.schema.types.contains_key(&name) {
+            return name;
+        }
+        let mut fields = IndexMap::new();
+        for (_, gql_name, arg) in cf.input_args() {
+            self.note_scalar(&arg.ty);
+            fields.insert(
+                gql_name.clone(),
+                InputValueDef::new(gql_name, scalars::column_type_ref(&arg.ty, true)),
+            );
+        }
+        self.schema.add(TypeDef::InputObject(InputObjectDef {
+            name: name.clone(),
+            description: None,
+            fields,
+        }));
+        name
     }
 
     pub(crate) fn ensure_order_by_enum(&mut self) {

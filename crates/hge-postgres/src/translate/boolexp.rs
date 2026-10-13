@@ -58,6 +58,17 @@ impl Translator<'_> {
                 self.bool_exp_in(exp, &rel, root)?;
                 self.b.push(")");
             }
+            BoolExp::CompareComputed { call, op, .. } => {
+                self.compare_with(op, |t| t.function_call(call, alias))?
+            }
+            BoolExp::ComputedTable { call, exp } => {
+                let rel = self.fresh("_e");
+                self.b.push("EXISTS (SELECT 1 FROM ");
+                self.function_call(call, alias)?;
+                self.b.push(" AS ").ident(&rel).push(" WHERE ");
+                self.bool_exp_in(exp, &rel, root)?;
+                self.b.push(")");
+            }
             BoolExp::Exists { table, exp } => {
                 let rel = self.fresh("_e");
                 self.b.push("EXISTS (SELECT 1 FROM ");
@@ -108,16 +119,25 @@ impl Translator<'_> {
         op: &CompareOp,
         redact: Option<(&BoolExp, &str)>,
     ) -> Result<(), Error> {
+        self.compare_with(op, |t| t.column(alias, column, redact))
+    }
+
+    /// `(<lhs> <op> <value>)`, with `lhs` rendered by the callback.
+    fn compare_with(
+        &mut self,
+        op: &CompareOp,
+        mut lhs: impl FnMut(&mut Self) -> Result<(), Error>,
+    ) -> Result<(), Error> {
         use CompareOp::*;
         self.b.push("(");
         if let IsNull(is_null) = op {
-            self.column(alias, column, redact)?;
+            lhs(self)?;
             self.b
                 .push(if *is_null { " IS NULL" } else { " IS NOT NULL" });
             self.b.push(")");
             return Ok(());
         }
-        self.column(alias, column, redact)?;
+        lhs(self)?;
         let (sql_op, v, suffix) = match op {
             Eq(v) => (" = ", v, ""),
             Neq(v) => (" <> ", v, ""),

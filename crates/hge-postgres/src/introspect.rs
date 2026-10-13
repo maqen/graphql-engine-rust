@@ -3,8 +3,9 @@
 use std::collections::HashMap;
 
 use hge_core::{
-    ColumnInfo, ColumnType, Error, ForeignKey, QualifiedTable, SourceCatalog, TableCatalog,
-    TableKind, TableMutability, TypeKind, UniqueConstraint,
+    ColumnInfo, ColumnType, Error, ForeignKey, FunctionArg, FunctionCatalog, QualifiedFunction,
+    QualifiedTable, SourceCatalog, TableCatalog, TableKind, TableMutability, TypeKind,
+    UniqueConstraint, Volatility,
 };
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -109,6 +110,88 @@ JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
 WHERE t.typtype = 'e'
 "#;
 
+/// Every overload of the requested functions (`$1`: `[{"schema", "name"}]`), as a JSON
+/// array (text).
+pub const FUNCTIONS_SQL: &str = r#"
+WITH types AS (
+  SELECT ty.oid,
+         coalesce(et.ns, bt.ns, tn.nspname) AS type_schema,
+         coalesce(et.typname, bt.typname, ty.typname) AS type_name,
+         coalesce(et.typtype, bt.typtype, ty.typtype)::text AS type_kind,
+         CASE WHEN et.typname IS NOT NULL THEN 1 ELSE 0 END AS dims
+    FROM pg_catalog.pg_type ty
+    JOIN pg_catalog.pg_namespace tn ON tn.oid = ty.typnamespace
+    LEFT JOIN (SELECT t.oid, t.typname, t.typtype, n.nspname AS ns
+                 FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace) bt
+      ON ty.typtype = 'd' AND bt.oid = ty.typbasetype
+    LEFT JOIN (SELECT t.oid, t.typname, t.typtype, n.nspname AS ns
+                 FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace) et
+      ON ty.typcategory = 'A' AND ty.typelem <> 0 AND et.oid = ty.typelem
+)
+SELECT coalesce(json_agg(json_build_object(
+  'schema', n.nspname,
+  'name', p.proname,
+  'description', pg_catalog.obj_description(p.oid, 'pg_proc'),
+  'args', (
+    SELECT coalesce(json_agg(json_build_object(
+      'name', nullif(a.name, ''),
+      'type_schema', t.type_schema, 'type_name', t.type_name,
+      'type_kind', t.type_kind, 'dims', t.dims,
+      'has_default', a.ord > p.pronargs - p.pronargdefaults
+    ) ORDER BY a.ord), '[]')
+    FROM (
+      SELECT row_number() OVER (ORDER BY all_args.ord) AS ord, all_args.type_oid,
+             p.proargnames[all_args.ord] AS name
+        FROM unnest(coalesce(p.proallargtypes, p.proargtypes::oid[]))
+               WITH ORDINALITY AS all_args(type_oid, ord)
+       WHERE p.proargmodes IS NULL OR p.proargmodes[all_args.ord] IN ('i', 'b', 'v')
+    ) a
+    JOIN types t ON t.oid = a.type_oid
+  ),
+  -- A domain result stays a domain (V2 rejects it as a computed field).
+  'return_schema', CASE WHEN raw.typtype = 'd' THEN raw_ns.nspname ELSE rt.type_schema END,
+  'return_name', CASE WHEN raw.typtype = 'd' THEN raw.typname ELSE rt.type_name END,
+  'return_kind', CASE WHEN raw.typtype = 'd' THEN 'd' ELSE rt.type_kind END,
+  'return_dims', rt.dims,
+  'returns_set', p.proretset,
+  'volatility', p.provolatile::text,
+  'variadic', p.provariadic <> 0
+)), '[]')::text
+FROM pg_catalog.pg_proc p
+JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+JOIN types rt ON rt.oid = p.prorettype
+JOIN pg_catalog.pg_type raw ON raw.oid = p.prorettype
+JOIN pg_catalog.pg_namespace raw_ns ON raw_ns.oid = raw.typnamespace
+JOIN jsonb_to_recordset(($1)::jsonb) AS wanted("schema" text, "name" text)
+  ON wanted."schema" = n.nspname AND wanted."name" = p.proname
+WHERE p.prokind = 'f'
+"#;
+
+#[derive(Deserialize)]
+struct RawFunction {
+    schema: String,
+    name: String,
+    description: Option<String>,
+    args: Vec<RawArg>,
+    return_schema: String,
+    return_name: String,
+    return_kind: String,
+    return_dims: u32,
+    returns_set: bool,
+    volatility: String,
+    variadic: bool,
+}
+
+#[derive(Deserialize)]
+struct RawArg {
+    name: Option<String>,
+    type_schema: String,
+    type_name: String,
+    type_kind: String,
+    dims: u32,
+    has_default: bool,
+}
+
 #[derive(Deserialize)]
 struct RawTable {
     schema: String,
@@ -157,6 +240,63 @@ pub fn tables_param(tables: &[QualifiedTable]) -> String {
     serde_json::to_string(tables).expect("serialisable")
 }
 
+fn type_kind(code: &str) -> TypeKind {
+    match code {
+        "b" => TypeKind::Base,
+        "e" => TypeKind::Enum,
+        "c" => TypeKind::Composite,
+        "d" => TypeKind::Domain,
+        "r" | "m" => TypeKind::Range,
+        "p" => TypeKind::Pseudo,
+        _ => TypeKind::Other,
+    }
+}
+
+/// Parse the output of [`FUNCTIONS_SQL`].
+pub fn parse_functions(
+    functions_json: &str,
+) -> Result<HashMap<QualifiedFunction, Vec<FunctionCatalog>>, Error> {
+    let raw: Vec<RawFunction> = serde_json::from_str(functions_json)
+        .map_err(|e| Error::unexpected(format!("could not parse function catalog: {e}")))?;
+    let mut out: HashMap<QualifiedFunction, Vec<FunctionCatalog>> = HashMap::new();
+    for f in raw {
+        let name = QualifiedFunction::new(f.schema, f.name);
+        let args = f
+            .args
+            .into_iter()
+            .map(|a| FunctionArg {
+                name: a.name,
+                ty: ColumnType {
+                    schema: a.type_schema,
+                    name: a.type_name,
+                    kind: type_kind(&a.type_kind),
+                    dimensions: a.dims,
+                },
+                has_default: a.has_default,
+            })
+            .collect();
+        out.entry(name.clone()).or_default().push(FunctionCatalog {
+            name,
+            description: f.description,
+            args,
+            return_type: ColumnType {
+                schema: f.return_schema,
+                name: f.return_name,
+                kind: type_kind(&f.return_kind),
+                dimensions: f.return_dims,
+            },
+            returns_set: f.returns_set,
+            volatility: match f.volatility.as_str() {
+                "i" => Volatility::Immutable,
+                "s" => Volatility::Stable,
+                _ => Volatility::Volatile,
+            },
+            variadic: f.variadic,
+        });
+    }
+    Ok(out)
+}
+
 /// Parse the outputs of [`TABLES_SQL`] and [`ENUMS_SQL`].
 pub fn parse_catalog(tables_json: &str, enums_json: &str) -> Result<SourceCatalog, Error> {
     let raw: Vec<RawTable> = serde_json::from_str(tables_json)
@@ -178,15 +318,7 @@ pub fn parse_catalog(tables_json: &str, enums_json: &str) -> Result<SourceCatalo
             .columns
             .into_iter()
             .map(|c| {
-                let kind = match c.type_kind.as_str() {
-                    "b" => TypeKind::Base,
-                    "e" => TypeKind::Enum,
-                    "c" => TypeKind::Composite,
-                    "d" => TypeKind::Domain,
-                    "r" | "m" => TypeKind::Range,
-                    "p" => TypeKind::Pseudo,
-                    _ => TypeKind::Other,
-                };
+                let kind = type_kind(&c.type_kind);
                 (
                     c.name.clone(),
                     ColumnInfo {
@@ -239,5 +371,9 @@ pub fn parse_catalog(tables_json: &str, enums_json: &str) -> Result<SourceCatalo
         .into_iter()
         .map(|e| ((e.schema, e.name), e.values.unwrap_or_default()))
         .collect();
-    Ok(SourceCatalog { tables, enums })
+    Ok(SourceCatalog {
+        tables,
+        enums,
+        functions: HashMap::new(),
+    })
 }

@@ -45,6 +45,7 @@ impl Translator<'_> {
         self.b.push(" FROM (");
         let query = BaseQuery {
             table: &sel.table,
+            from_function: None,
             args: &sel.args,
             permission_filter: sel.permission_filter.as_ref(),
         };

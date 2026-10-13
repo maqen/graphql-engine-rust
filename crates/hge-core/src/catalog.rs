@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::QualifiedTable;
+use crate::{QualifiedFunction, QualifiedTable};
 
 /// Everything the engine knows about one source's database.
 #[derive(Debug, Clone, Default)]
@@ -14,12 +14,47 @@ pub struct SourceCatalog {
     pub tables: HashMap<QualifiedTable, TableCatalog>,
     /// Values of native enum types, keyed by `(schema, type name)`.
     pub enums: HashMap<(String, String), Vec<String>>,
+    /// Functions referenced by metadata (tracked functions and computed fields), with every
+    /// overload of each name.
+    pub functions: HashMap<QualifiedFunction, Vec<FunctionCatalog>>,
 }
 
 impl SourceCatalog {
     pub fn table(&self, name: &QualifiedTable) -> Option<&TableCatalog> {
         self.tables.get(name)
     }
+}
+
+/// A database function (one overload).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FunctionCatalog {
+    pub name: QualifiedFunction,
+    pub description: Option<String>,
+    /// Input arguments in declaration order (`OUT` arguments excluded).
+    pub args: Vec<FunctionArg>,
+    /// The return type; for functions returning rows of a table, its row type.
+    pub return_type: ColumnType,
+    /// `RETURNS SETOF …`
+    pub returns_set: bool,
+    pub volatility: Volatility,
+    /// `VARIADIC` last argument.
+    pub variadic: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FunctionArg {
+    /// `None` for unnamed arguments.
+    pub name: Option<String>,
+    pub ty: ColumnType,
+    pub has_default: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum Volatility {
+    Immutable,
+    Stable,
+    Volatile,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

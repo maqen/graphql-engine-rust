@@ -1,0 +1,5 @@
+function:
+  name: publish_article
+  schema: public
+permissions:
+  - role: user

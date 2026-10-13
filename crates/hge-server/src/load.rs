@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use hge_actions::{ActionRegistry, HandlerConfig, ProcessEnv};
-use hge_core::{Code, Error, InconsistentObject, QualifiedTable, SourceCatalog};
+use hge_core::{Code, Error, InconsistentObject, QualifiedFunction, QualifiedTable, SourceCatalog};
 use hge_metadata::store::MetadataStore;
 use hge_metadata::{Metadata, PgConnectionInfo, Source, SourceConfiguration, UrlConfig, load_dir};
 use hge_metadata_api::Reload;
@@ -173,8 +173,20 @@ pub struct PreparedSource {
     key: String,
     pub pg: Arc<PgSource>,
     pub catalog: Arc<SourceCatalog>,
-    /// The tables `catalog` was introspected for.
-    introspected: HashSet<QualifiedTable>,
+    /// The tables and functions `catalog` was introspected for.
+    introspected: Introspected,
+}
+
+#[derive(Clone, Default, PartialEq, Eq)]
+struct Introspected {
+    tables: HashSet<QualifiedTable>,
+    functions: HashSet<QualifiedFunction>,
+}
+
+impl Introspected {
+    fn covers(&self, wanted: &Introspected) -> bool {
+        wanted.tables.is_subset(&self.tables) && wanted.functions.is_subset(&self.functions)
+    }
 }
 
 /// Metadata resolved against the databases: everything but the per-role schemas.
@@ -251,17 +263,22 @@ pub async fn prepare(
                 }
             },
         };
-        let tracked: HashSet<QualifiedTable> =
-            source.tables.iter().map(|t| t.table.clone()).collect();
+        let tracked = Introspected {
+            tables: source.tables.iter().map(|t| t.table.clone()).collect(),
+            functions: hge_schema::functions::referenced_functions(source)
+                .into_iter()
+                .collect(),
+        };
         let (catalog, introspected) = if let Some(c) = catalogs.remove(&source.name) {
             (Arc::new(c), tracked)
         } else if let Some(p) = previous
-            .filter(|p| !reload.introspects(&source.name) && tracked.is_subset(&p.introspected))
+            .filter(|p| !reload.introspects(&source.name) && p.introspected.covers(&tracked))
         {
             (p.catalog.clone(), p.introspected.clone())
         } else {
-            let list: Vec<_> = tracked.iter().cloned().collect();
-            match pg.introspect(&list).await {
+            let tables: Vec<_> = tracked.tables.iter().cloned().collect();
+            let functions: Vec<_> = tracked.functions.iter().cloned().collect();
+            match pg.introspect(&tables, &functions).await {
                 Ok(c) => (Arc::new(c), tracked),
                 Err(e) => {
                     inconsistencies.push(source_inconsistency(

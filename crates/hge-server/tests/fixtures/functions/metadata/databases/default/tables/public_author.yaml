@@ -1,0 +1,63 @@
+table:
+  name: author
+  schema: public
+array_relationships:
+  - name: articles
+    using:
+      foreign_key_constraint_on:
+        column: author_id
+        table:
+          name: article
+          schema: public
+computed_fields:
+  - name: full_name
+    definition:
+      function:
+        name: author_full_name
+        schema: public
+  - name: greeting
+    definition:
+      function:
+        name: author_greeting
+        schema: public
+    comment: Says hello
+  - name: profile
+    definition:
+      function:
+        name: author_profile
+        schema: public
+  - name: is_me
+    definition:
+      function:
+        name: author_is_me
+        schema: public
+      session_argument: hasura_session
+  - name: articles_matching
+    definition:
+      function:
+        name: author_articles_matching
+        schema: public
+      table_argument: author_row
+  - name: published_articles
+    definition:
+      function:
+        name: author_published
+        schema: public
+select_permissions:
+  - role: user
+    permission:
+      columns: [id, first_name]
+      computed_fields: [full_name, is_me]
+      filter: {}
+  - role: fan
+    permission:
+      columns: [id]
+      filter:
+        _and:
+          - full_name: { _ilike: "%o%" }
+          - published_articles: { rating: { _gte: 4 } }
+  - role: anonymous
+    permission:
+      columns: []
+      computed_fields: [full_name]
+      filter: {}

@@ -14,6 +14,9 @@ pub struct QualifiedTable {
     pub name: String,
 }
 
+/// A schema-qualified function name; same forms as a table name.
+pub type QualifiedFunction = QualifiedTable;
+
 impl QualifiedTable {
     pub fn new(schema: impl Into<String>, name: impl Into<String>) -> Self {
         QualifiedTable {

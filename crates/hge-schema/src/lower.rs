@@ -4,14 +4,15 @@ use std::sync::Arc;
 
 use hge_core::{Code, ColumnType, Error};
 use hge_ir::{
-    BoolExp, ColumnField, CompareOp, DatabaseRootField, Field, JsonPathElement, NullsOrder,
-    Operation, OrderBy, OrderByTarget, OrderDirection, QueryRoot, RelationshipSelect, RootField,
-    Select, SelectArgs, Value,
+    BoolExp, ColumnField, CompareOp, ComputedScalarField, DatabaseRootField, Field, FunctionCall,
+    JsonPathElement, NullsOrder, Operation, OrderBy, OrderByTarget, OrderDirection, QueryRoot,
+    RelationshipSelect, RootField, Select, SelectArgs, Value,
 };
 use serde_json::{Map, Value as Json};
 
 use crate::aggregate::aggregate_relationship;
 use crate::build::RoleSchema;
+use crate::functions::{ComputedFieldInfo, ComputedReturn};
 use crate::introspection;
 use crate::model::FieldKind;
 use crate::normalize::{NormalizedOperation, Selected, SelectedField};
@@ -142,6 +143,7 @@ impl Lowerer<'_> {
             args,
             permission_filter: self.permission_filter(table),
             permission_limit: self.rs.select_access(table).and_then(|a| a.limit),
+            from_function: None,
         })
     }
 
@@ -215,6 +217,46 @@ impl Lowerer<'_> {
                     FieldKind::ArrayRelationshipAggregate(rel) => {
                         Field::ArrayAggregate(Box::new(self.relationship_aggregate(rel, sel)?))
                     }
+                    FieldKind::ComputedField(cf) => {
+                        let user_args = match sel.arg("args") {
+                            Some(Json::Object(o)) => Some(o),
+                            Some(Json::Null) => {
+                                return Err(Error::validation(format!(
+                                    "expected an object for type '{}', but found null",
+                                    cf.args_type_name(table.type_name())
+                                ))
+                                .with_path(sel.arg_path("args")));
+                            }
+                            _ => None,
+                        };
+                        let call =
+                            self.computed_call(table, cf, user_args, &sel.arg_path("args"))?;
+                        match &cf.returns {
+                            ComputedReturn::Scalar(ty) => {
+                                let json_path = match sel.arg("path") {
+                                    Some(Json::String(p)) => {
+                                        Some(parse_json_path(p).map_err(|e| {
+                                            Error::validation(e).with_path(sel.arg_path("path"))
+                                        })?)
+                                    }
+                                    _ => None,
+                                };
+                                Field::ComputedScalar(Box::new(ComputedScalarField {
+                                    call,
+                                    ty: ty.clone(),
+                                    stringify: self.rs.options.stringify_numeric_types
+                                        && scalars::is_big_num(ty),
+                                    json_path,
+                                }))
+                            }
+                            ComputedReturn::Table(target) => {
+                                let target = self.table(&table.source, target)?;
+                                let mut select = self.select(target, sel, true)?;
+                                select.from_function = Some(call);
+                                Field::ComputedTable(Box::new(select))
+                            }
+                        }
+                    }
                     other => {
                         return Err(Error::unexpected(format!(
                             "unexpected field kind {other:?} in table selection"
@@ -225,6 +267,36 @@ impl Lowerer<'_> {
             out.push((sel.alias.clone(), f));
         }
         Ok(out)
+    }
+
+    pub(crate) fn table(
+        &self,
+        source: &str,
+        name: &hge_core::QualifiedTable,
+    ) -> Result<&Arc<TableInfo>, Error> {
+        self.rs
+            .tables
+            .get(source, name)
+            .ok_or_else(|| Error::unexpected(format!("unknown table {name}")))
+    }
+
+    /// The call of a computed field on the current row of `table`. `user_args` is the
+    /// field's `args` argument (at `path`).
+    fn computed_call(
+        &self,
+        table: &TableInfo,
+        cf: &ComputedFieldInfo,
+        user_args: Option<&Map<String, Json>>,
+        path: &str,
+    ) -> Result<FunctionCall, Error> {
+        let mut inputs = vec![];
+        for (i, gql_name, arg) in cf.input_args() {
+            if let Some(v) = user_args.and_then(|a| a.get(&gql_name)) {
+                inputs.push((i, to_value(v, &arg.ty, &format!("{path}.{gql_name}"))?));
+            }
+        }
+        cf.call(&table.name, inputs)
+            .map_err(|m| Error::new(Code::NotSupported, m).with_path(path.to_owned()))
     }
 
     pub(crate) fn select_args(
@@ -315,14 +387,45 @@ impl Lowerer<'_> {
                 _ => {
                     if let Some(col) = table.column_by_gql_name(key) {
                         if let Json::Object(ops) = value {
-                            let mut cmps = vec![];
-                            self.comparisons(&col.name, &col.ty, ops, &item_path, &mut cmps)?;
+                            let cmps =
+                                self.comparisons(&col.ty, ops, &item_path)?
+                                    .into_iter()
+                                    .map(|op| BoolExp::Compare {
+                                        column: col.name.clone(),
+                                        ty: col.ty.clone(),
+                                        op,
+                                    });
                             match self.redaction(table, &col.name) {
                                 None => items.extend(cmps),
-                                Some(condition) => items.extend(
-                                    cmps.into_iter()
-                                        .map(|cmp| redacted_comparison(condition, cmp)),
-                                ),
+                                Some(condition) => items
+                                    .extend(cmps.map(|cmp| redacted_comparison(condition, cmp))),
+                            }
+                        }
+                    } else if let Some(cf) = table.computed_field(key) {
+                        let Json::Object(o) = value else { continue };
+                        let call = self.computed_call(table, cf, None, &item_path)?;
+                        match &cf.returns {
+                            ComputedReturn::Scalar(ty) => {
+                                for op in self.comparisons(ty, o, &item_path)? {
+                                    items.push(BoolExp::CompareComputed {
+                                        call: call.clone(),
+                                        ty: ty.clone(),
+                                        op,
+                                    });
+                                }
+                            }
+                            ComputedReturn::Table(target) => {
+                                let target = self.table(&table.source, target)?;
+                                let user = self.bool_exp(target, o, &item_path)?;
+                                let permission = self
+                                    .permission_filter(target)
+                                    .map(|p| BoolExp::Rooted(Box::new(p)));
+                                let exp = BoolExp::and(permission, user)
+                                    .unwrap_or_else(BoolExp::always_true);
+                                items.push(BoolExp::ComputedTable {
+                                    call,
+                                    exp: Box::new(exp),
+                                });
                             }
                         }
                     } else if let Some(rel) = table.relationship_by_name(key) {
@@ -363,12 +466,11 @@ impl Lowerer<'_> {
 
     pub(crate) fn comparisons(
         &self,
-        column: &str,
         ty: &ColumnType,
         ops: &Map<String, Json>,
         path: &str,
-        out: &mut Vec<BoolExp>,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<CompareOp>, Error> {
+        let mut out = vec![];
         for (op, v) in ops {
             let op_path = format!("{path}.{op}");
             if v.is_null() {
@@ -416,13 +518,9 @@ impl Lowerer<'_> {
                     .with_path(op_path));
                 }
             };
-            out.push(BoolExp::Compare {
-                column: column.to_owned(),
-                ty: ty.clone(),
-                op: cmp,
-            });
+            out.push(cmp);
         }
-        Ok(())
+        Ok(out)
     }
 
     pub(crate) fn order_by(
@@ -441,6 +539,17 @@ impl Lowerer<'_> {
                 let (direction, nulls) = order_type(value.as_str().unwrap_or("asc"));
                 out.push(OrderBy {
                     target: self.column_target(table, &col.name),
+                    direction,
+                    nulls,
+                });
+            } else if let Some(cf) = table.computed_field(key)
+                && cf.scalar_type().is_some()
+            {
+                let (direction, nulls) = order_type(value.as_str().unwrap_or("asc"));
+                out.push(OrderBy {
+                    target: OrderByTarget::ComputedField(
+                        self.computed_call(table, cf, None, &item_path)?,
+                    ),
                     direction,
                     nulls,
                 });

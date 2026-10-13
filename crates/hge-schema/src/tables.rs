@@ -14,6 +14,8 @@ use hge_metadata::{
 };
 use indexmap::IndexMap;
 
+use crate::functions::{ComputedFieldInfo, computed};
+
 /// A column as exposed in GraphQL.
 #[derive(Debug, Clone)]
 pub struct ColumnInfo {
@@ -72,6 +74,7 @@ pub struct TableInfo {
     pub mutability: TableMutability,
     pub object_relationships: Vec<Arc<RelationshipInfo>>,
     pub array_relationships: Vec<Arc<RelationshipInfo>>,
+    pub computed_fields: Vec<Arc<ComputedFieldInfo>>,
     pub root_fields: RootFieldNames,
     pub is_enum: bool,
     /// The metadata entry, for permission lookups.
@@ -90,6 +93,10 @@ impl TableInfo {
             .iter()
             .chain(self.array_relationships.iter())
             .find(|r| r.name == name)
+    }
+
+    pub fn computed_field(&self, name: &str) -> Option<&Arc<ComputedFieldInfo>> {
+        self.computed_fields.iter().find(|c| c.name == name)
     }
 
     pub fn type_name(&self) -> &str {
@@ -152,6 +159,12 @@ pub fn resolve_source(
     inconsistencies: &mut Vec<InconsistentObject>,
 ) {
     let source_name: Arc<str> = Arc::from(source.name.as_str());
+    let tracked: HashSet<QualifiedTable> = source
+        .tables
+        .iter()
+        .filter(|t| catalog.table(&t.table).is_some())
+        .map(|t| t.table.clone())
+        .collect();
     for entry in &source.tables {
         let table_def = || serde_json::to_value(&entry.table).unwrap_or_default();
         let Some(cat) = catalog.table(&entry.table) else {
@@ -166,7 +179,7 @@ pub fn resolve_source(
             ));
             continue;
         };
-        match resolve_table(&source_name, entry, cat, catalog, inconsistencies) {
+        match resolve_table(&source_name, entry, cat, catalog, &tracked, inconsistencies) {
             Ok(info) => {
                 let info = Arc::new(info);
                 tables
@@ -215,6 +228,7 @@ fn resolve_table(
     entry: &TableEntry,
     cat: &TableCatalog,
     catalog: &SourceCatalog,
+    tracked: &HashSet<QualifiedTable>,
     issues: &mut Vec<InconsistentObject>,
 ) -> Result<TableInfo, String> {
     let config = &entry.configuration;
@@ -341,6 +355,11 @@ fn resolve_table(
         }));
     }
 
+    let computed_fields = computed::resolve(source, entry, cat, catalog, tracked, issues)
+        .into_iter()
+        .map(Arc::new)
+        .collect();
+
     let crf = config.custom_root_fields.clone().unwrap_or_default();
     let pick = |f: &Option<hge_metadata::CustomRootField>, default: String| {
         f.as_ref()
@@ -371,6 +390,7 @@ fn resolve_table(
         mutability: cat.mutability,
         object_relationships,
         array_relationships,
+        computed_fields,
         root_fields,
         is_enum: entry.is_enum,
         entry: entry.clone(),
@@ -579,7 +599,8 @@ pub fn drop_conflicting(tables: &mut Tables, inconsistencies: &mut Vec<Inconsist
                 .map(|c| &c.gql_name)
                 .chain(table.object_relationships.iter().map(|r| &r.name))
                 .chain(table.array_relationships.iter().map(|r| &r.name))
-                .chain(aggregate_names.iter());
+                .chain(aggregate_names.iter())
+                .chain(table.computed_fields.iter().map(|c| &c.name));
             for n in names {
                 if !is_valid_name(n) {
                     problem = Some(format!("field \"{n}\" is not a valid GraphQL name"));
@@ -668,6 +689,7 @@ mod tests {
         let catalog = SourceCatalog {
             tables: HashMap::from([table("article"), table(other)]),
             enums: HashMap::new(),
+            functions: HashMap::new(),
         };
         let catalogs = HashMap::from([("default".to_owned(), catalog)]);
         crate::resolve_tables(&metadata, &catalogs).1

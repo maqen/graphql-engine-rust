@@ -1,0 +1,10 @@
+- name: default
+  kind: postgres
+  configuration:
+    connection_info:
+      database_url:
+        from_env: HASURA_GRAPHQL_DATABASE_URL
+      pool_settings:
+        max_connections: 10
+  tables: "!include default/tables/tables.yaml"
+  functions: "!include default/functions/functions.yaml"

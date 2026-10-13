@@ -9,8 +9,8 @@
 
 use hge_core::{Code, ColumnType, Error, QualifiedTable, Session};
 use hge_ir::{
-    BoolExp, Field, JsonPathElement, NullsOrder, OrderBy, OrderByTarget, OrderDirection, Select,
-    SelectArgs, Value,
+    BoolExp, Field, FunctionArgValue, FunctionCall, JsonPathElement, NullsOrder, OrderBy,
+    OrderByTarget, OrderDirection, Select, SelectArgs, Value,
 };
 
 use crate::sql::SqlBuilder;
@@ -30,9 +30,11 @@ pub(crate) const MAX_JSON_BUILD_PAIRS: usize = 50;
 /// How a nested select is joined to its parent row: `(parent alias, [(parent col, child col)])`.
 pub type Join<'a> = Option<(&'a str, &'a [(String, String)])>;
 
-/// The rows a select reads: a table, the request's arguments and the permission filter.
+/// The rows a select reads: a table (or a function returning its rows), the request's
+/// arguments and the permission filter.
 pub(crate) struct BaseQuery<'a> {
     pub table: &'a QualifiedTable,
+    pub from_function: Option<&'a FunctionCall>,
     pub args: &'a SelectArgs,
     pub permission_filter: Option<&'a BoolExp>,
 }
@@ -41,6 +43,7 @@ impl<'a> From<&'a Select> for BaseQuery<'a> {
     fn from(sel: &'a Select) -> Self {
         BaseQuery {
             table: &sel.table,
+            from_function: sel.from_function.as_ref(),
             args: &sel.args,
             permission_filter: sel.permission_filter.as_ref(),
         }
@@ -160,10 +163,16 @@ impl<'s> Translator<'s> {
             }
         }
         self.b.push(" FROM ");
-        self.b
-            .ident(&sel.table.schema)
-            .push(".")
-            .ident(&sel.table.name);
+        match sel.from_function {
+            // Arguments refer to the parent row (a computed field's table argument).
+            Some(call) => self.function_call(call, join.map_or(alias, |(parent, _)| parent))?,
+            None => {
+                self.b
+                    .ident(&sel.table.schema)
+                    .push(".")
+                    .ident(&sel.table.name);
+            }
+        }
         self.b.push(" AS ").ident(alias);
 
         let mut conds = 0;
@@ -236,6 +245,7 @@ impl<'s> Translator<'s> {
                 self.b.qualified(alias, column);
                 self.b.push(" ELSE NULL END)");
             }
+            OrderByTarget::ComputedField(call) => self.function_call(call, alias)?,
             OrderByTarget::ObjectRelationship {
                 table,
                 mapping,
@@ -335,16 +345,7 @@ impl<'s> Translator<'s> {
                 {
                     self.b.push("(");
                     self.b.qualified(alias, &c.column).push(" #> ");
-                    let elems: Vec<String> = path
-                        .iter()
-                        .map(|e| match e {
-                            JsonPathElement::Key(k) => k.clone(),
-                            JsonPathElement::Index(i) => i.to_string(),
-                        })
-                        .collect();
-                    let literal = crate::translate::boolexp::array_literal(&elems);
-                    self.b
-                        .param(Some(literal), &ColumnType::builtin("text").array_of());
+                    self.json_path_param(path);
                     self.b.push(")");
                 } else if c.stringify {
                     self.b.push("(");
@@ -374,7 +375,86 @@ impl<'s> Translator<'s> {
                 self.select_aggregate(&rel.select, Some((alias, &rel.mapping)))?;
                 self.b.push(")");
             }
+            Field::ComputedScalar(cf) => {
+                let geo = cf.ty.dimensions == 0
+                    && matches!(cf.ty.name.as_str(), "geometry" | "geography");
+                if let Some(path) = cf.json_path.as_deref().filter(|p| !p.is_empty()) {
+                    self.b.push("(");
+                    self.function_call(&cf.call, alias)?;
+                    self.b.push(" #> ");
+                    self.json_path_param(path);
+                    self.b.push(")");
+                } else if cf.stringify {
+                    self.b.push("(");
+                    self.function_call(&cf.call, alias)?;
+                    self.b.push(")::text");
+                } else if geo {
+                    self.b.push("ST_AsGeoJSON(");
+                    self.function_call(&cf.call, alias)?;
+                    self.b.push(", 15, 4)::json");
+                } else {
+                    self.function_call(&cf.call, alias)?;
+                }
+            }
+            Field::ComputedTable(select) => {
+                self.b.push("(");
+                self.select_many(select, Some((alias, &[])))?;
+                self.b.push(")");
+            }
         }
+        Ok(())
+    }
+
+    fn json_path_param(&mut self, path: &[JsonPathElement]) {
+        let elems: Vec<String> = path
+            .iter()
+            .map(|e| match e {
+                JsonPathElement::Key(k) => k.clone(),
+                JsonPathElement::Index(i) => i.to_string(),
+            })
+            .collect();
+        let literal = crate::translate::boolexp::array_literal(&elems);
+        self.b
+            .param(Some(literal), &ColumnType::builtin("text").array_of());
+    }
+
+    /// `"schema"."fn"(args)`; a row argument is the row of `alias`.
+    pub(crate) fn function_call(&mut self, call: &FunctionCall, alias: &str) -> Result<(), Error> {
+        self.b
+            .ident(&call.function.schema)
+            .push(".")
+            .ident(&call.function.name)
+            .push("(");
+        for (i, arg) in call.args.iter().enumerate() {
+            if i > 0 {
+                self.b.push(", ");
+            }
+            if let Some(name) = &arg.name {
+                self.b.ident(name).push(" => ");
+            }
+            match &arg.value {
+                FunctionArgValue::Value(v) => self.value(v)?,
+                FunctionArgValue::Row { table, columns } => {
+                    self.b.push("ROW(");
+                    for (j, c) in columns.iter().enumerate() {
+                        if j > 0 {
+                            self.b.push(", ");
+                        }
+                        self.b.qualified(alias, c);
+                    }
+                    self.b
+                        .push(")::")
+                        .ident(&table.schema)
+                        .push(".")
+                        .ident(&table.name);
+                }
+                FunctionArgValue::Session => {
+                    let json = self.session.variables.to_json().to_string();
+                    self.b.param(Some(json), &ColumnType::builtin("json"));
+                }
+            }
+        }
+        self.b.push(")");
         Ok(())
     }
 

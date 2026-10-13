@@ -10,6 +10,7 @@ use indexmap::IndexMap;
 
 use crate::actions::{ActionInfo, ActionRelInfo, AsyncResultField};
 pub use crate::aggregate::AggregateFieldKind;
+use crate::functions::ComputedFieldInfo;
 use crate::tables::{RelationshipInfo, TableInfo};
 
 #[derive(Debug, Clone)]
@@ -179,6 +180,8 @@ pub enum FieldKind {
     },
     ObjectRelationship(Arc<RelationshipInfo>),
     ArrayRelationship(Arc<RelationshipInfo>),
+    /// A computed field (scalar or table-returning).
+    ComputedField(Arc<ComputedFieldInfo>),
     /// `author(where: ...)` on the query root.
     SelectMany(Arc<TableInfo>),
     /// `author_by_pk(id: ...)` on the query root.
