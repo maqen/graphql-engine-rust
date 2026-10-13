@@ -1,3 +1,29 @@
 table:
   name: allowed_reader
   schema: public
+insert_permissions:
+  - role: backend
+    permission:
+      check: {}
+      columns: [user_id]
+      backend_only: true
+delete_permissions:
+  - role: backend
+    permission:
+      filter: {}
+  - role: backend_delete
+    permission:
+      filter: {}
+      backend_only: true
+update_permissions:
+  - role: backend
+    permission:
+      columns: [user_id]
+      filter: {}
+      check: null
+      backend_only: true
+select_permissions:
+  - role: backend
+    permission:
+      columns: [user_id]
+      filter: {}

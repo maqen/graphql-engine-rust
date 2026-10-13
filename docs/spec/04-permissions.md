@@ -577,6 +577,7 @@ DELETE FROM "public"."article" WHERE (<delete filter>) AND (<user where>) RETURN
 - JWT and webhook requests never get backend access, even with the header. The role is typically set via `x-hasura-role` along with the admin secret (impersonation).
 - A backend-only insert permission still requires the mutation to pass `check`, `set` and so on.
 - When `backend_only: true`, the corresponding `insert_x` / `update_x` / `delete_x` fields are absent from the normal role schema. Absent fields give the usual GraphQL validation error (`field 'insert_x' not found in type: 'mutation_root'`).
+- **Deliberate deviation (nested inserts).** V2 checks `backend_only` only when it builds the root `insert_x` / `update_x` / `delete_x` fields. From memory of `GraphQL/Schema/Mutation.hs` (not verified against the source), the nested-insert parsers (`objectRelationshipInput`, `arrayRelationshipInput`) read the target's insert permission without that check. If so, a frontend request can insert into a table whose insert permission is `backend_only` by nesting it under another table's insert. We hide backend-only permissions everywhere in the frontend schema: the nested relationship field is left out of `<parent>_insert_input`, and an `on_conflict` update uses only update permissions that are not backend-only. This closes the bypass. A project that depended on it would need its own frontend insert permission on the nested table.
 - Test: `server/lib/api-tests/src/Test/Databases/Postgres/BackendOnlyPermissionsSpec.hs`.
 
 ---

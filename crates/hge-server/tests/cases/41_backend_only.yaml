@@ -1,0 +1,80 @@
+config:
+  fixture: permissions
+
+cases:
+  - description: a backend_only insert permission is hidden without the backend-only header
+    headers: { x-hasura-role: backend }
+    query:
+      query: "mutation { insert_allowed_reader(objects: [{user_id: 8}]) { affected_rows } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_allowed_reader", code: validation-failed }
+          message: "field 'insert_allowed_reader' not found in type: 'mutation_root'"
+
+  - description: so is a backend_only update permission
+    headers: { x-hasura-role: backend }
+    query:
+      query: "mutation { update_allowed_reader(where: {}, _set: {user_id: 9}) { affected_rows } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.update_allowed_reader", code: validation-failed }
+          message: "field 'update_allowed_reader' not found in type: 'mutation_root'"
+
+  - description: the header set to false hides them too
+    headers: { x-hasura-role: backend, x-hasura-use-backend-only-permissions: "false" }
+    query:
+      query: "mutation { insert_allowed_reader(objects: [{user_id: 8}]) { affected_rows } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_allowed_reader", code: validation-failed }
+          message: "field 'insert_allowed_reader' not found in type: 'mutation_root'"
+
+  - description: permissions that are not backend_only stay available
+    headers: { x-hasura-role: backend }
+    query:
+      query: "mutation { delete_allowed_reader(where: {user_id: {_eq: 7}}) { affected_rows } }"
+    response:
+      data:
+        delete_allowed_reader: { affected_rows: 1 }
+
+  - description: a role with only backend_only permissions has no mutations without the header
+    headers: { x-hasura-role: backend_delete }
+    query:
+      query: "mutation { delete_allowed_reader(where: {}) { affected_rows } }"
+    response:
+      errors:
+        - extensions: { path: "$", code: validation-failed }
+          message: no mutations exist
+
+  - description: with the header, the backend_only insert is available
+    headers: { x-hasura-role: backend, x-hasura-use-backend-only-permissions: "true" }
+    query:
+      query: "mutation { insert_allowed_reader(objects: [{user_id: 8}]) { affected_rows } }"
+    response:
+      data:
+        insert_allowed_reader: { affected_rows: 1 }
+
+  - description: other truthy header values work too, and backend_only update is available
+    headers: { x-hasura-role: backend, x-hasura-use-backend-only-permissions: "YES" }
+    query:
+      query: "mutation { update_allowed_reader(where: {user_id: {_eq: 8}}, _set: {user_id: 9}) { affected_rows } }"
+    response:
+      data:
+        update_allowed_reader: { affected_rows: 1 }
+
+  - description: other permissions are still there with the header
+    headers: { x-hasura-role: backend, x-hasura-use-backend-only-permissions: "t" }
+    query:
+      query: "mutation { delete_allowed_reader(where: {user_id: {_eq: 9}}) { affected_rows } }"
+    response:
+      data:
+        delete_allowed_reader: { affected_rows: 1 }
+
+  - description: a frontend request after backend ones still gets the frontend schema
+    headers: { x-hasura-role: backend }
+    query:
+      query: "mutation { insert_allowed_reader(objects: [{user_id: 8}]) { affected_rows } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_allowed_reader", code: validation-failed }
+          message: "field 'insert_allowed_reader' not found in type: 'mutation_root'"

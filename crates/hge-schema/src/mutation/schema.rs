@@ -115,16 +115,16 @@ impl Builder<'_> {
         } else if ma
             .update
             .as_ref()
-            .is_some_and(|a| !a.backend_only && table.mutability.updatable)
+            .is_some_and(|_| table.mutability.updatable)
             || ma
                 .delete
                 .as_ref()
-                .is_some_and(|a| !a.backend_only && table.mutability.insertable)
+                .is_some_and(|_| table.mutability.insertable)
         {
             self.ensure_bare_bool_exp(table);
         }
 
-        if let Some(ia) = ma.insert.as_ref().filter(|a| !a.backend_only)
+        if let Some(ia) = ma.insert.as_ref()
             && table.mutability.insertable
         {
             let input = self.ensure_insert_input(table, ia, access);
@@ -169,7 +169,7 @@ impl Builder<'_> {
             }
         }
 
-        if let Some(ua) = ma.update.as_ref().filter(|a| !a.backend_only)
+        if let Some(ua) = ma.update.as_ref()
             && table.mutability.updatable
         {
             let response = self.ensure_mutation_response(table, selectable);
@@ -232,7 +232,7 @@ impl Builder<'_> {
         }
 
         // V2 quirk: deletes from views are gated on the view being insertable.
-        if ma.delete.as_ref().is_some_and(|a| !a.backend_only) && table.mutability.insertable {
+        if ma.delete.is_some() && table.mutability.insertable {
             let response = self.ensure_mutation_response(table, selectable);
             let f = FieldDef::new(
                 names.delete.0.clone(),
@@ -493,7 +493,6 @@ impl Builder<'_> {
         }
         let display = table.display_name();
         let columns: Vec<&ColumnInfo> = ua
-            .filter(|a| !a.backend_only)
             .map(|a| a.input_columns(table).collect())
             .unwrap_or_default();
         let def = if columns.is_empty() {
