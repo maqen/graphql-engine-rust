@@ -1,0 +1,27 @@
+config:
+  stringify_numeric_types: true
+cases:
+  - description: aggregates of big-number columns are stringified, decided by the column type
+    query:
+      query: |
+        { author_aggregate {
+            aggregate {
+              count
+              sum { id rating big }
+              avg { id rating big }
+              max { big }
+            }
+          }
+          article_aggregate { aggregate { avg { score } sum { score } } } }
+    response:
+      data:
+        author_aggregate:
+          aggregate:
+            count: 3
+            sum: { id: 6, rating: "7.7", big: "9223372036854775808" }
+            avg: { id: 2.0, rating: "3.8500000000000000", big: "4611686018427387904" }
+            max: { big: "9223372036854775807" }
+        article_aggregate:
+          aggregate:
+            avg: { score: "3.3333333333333335" }
+            sum: { score: "10" }

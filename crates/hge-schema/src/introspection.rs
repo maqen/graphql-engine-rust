@@ -339,10 +339,17 @@ fn type_object(schema: &Schema, ty: &TypeRef, selection: &[SelectedField<'_>]) -
                 "enumValues" => match def {
                     TypeDef::Enum(e) => {
                         let with_deprecated = include_deprecated_arg(sel);
+                        // Values keep definition order (error messages list them that way);
+                        // introspection shows them sorted, as V2 does.
+                        let mut values: Vec<_> = e
+                            .values
+                            .values()
+                            .filter(|v| with_deprecated || v.deprecation_reason.is_none())
+                            .collect();
+                        values.sort_by(|a, b| a.name.cmp(&b.name));
                         Json::Array(
-                            e.values
-                                .values()
-                                .filter(|v| with_deprecated || v.deprecation_reason.is_none())
+                            values
+                                .into_iter()
                                 .map(|v| enum_value_object(v, &sel.selection))
                                 .collect(),
                         )

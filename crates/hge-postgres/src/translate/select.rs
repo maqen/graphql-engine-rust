@@ -7,9 +7,10 @@
 //!       WHERE … ORDER BY "_t1"."name" ASC NULLS LAST LIMIT 10) AS "_b1"
 //! ```
 
-use hge_core::{Code, ColumnType, Error, Session};
+use hge_core::{Code, ColumnType, Error, QualifiedTable, Session};
 use hge_ir::{
-    Field, JsonPathElement, NullsOrder, OrderBy, OrderByTarget, OrderDirection, Select, Value,
+    BoolExp, Field, JsonPathElement, NullsOrder, OrderBy, OrderByTarget, OrderDirection, Select,
+    SelectArgs, Value,
 };
 
 use crate::sql::SqlBuilder;
@@ -28,6 +29,23 @@ pub(crate) const MAX_JSON_BUILD_PAIRS: usize = 50;
 
 /// How a nested select is joined to its parent row: `(parent alias, [(parent col, child col)])`.
 pub type Join<'a> = Option<(&'a str, &'a [(String, String)])>;
+
+/// The rows a select reads: a table, the request's arguments and the permission filter.
+pub(crate) struct BaseQuery<'a> {
+    pub table: &'a QualifiedTable,
+    pub args: &'a SelectArgs,
+    pub permission_filter: Option<&'a BoolExp>,
+}
+
+impl<'a> From<&'a Select> for BaseQuery<'a> {
+    fn from(sel: &'a Select) -> Self {
+        BaseQuery {
+            table: &sel.table,
+            args: &sel.args,
+            permission_filter: sel.permission_filter.as_ref(),
+        }
+    }
+}
 
 impl<'s> Translator<'s> {
     pub fn new(session: &'s Session) -> Self {
@@ -48,62 +66,70 @@ impl<'s> Translator<'s> {
         format!("{prefix}{}", self.next_alias)
     }
 
+    /// Aliases of a select's rows (`_bN`) and of its table inside the base query (`_tN`).
+    pub(crate) fn base_aliases(&mut self) -> (String, String) {
+        self.next_alias += 1;
+        let n = self.next_alias;
+        (format!("_b{n}"), format!("_t{n}"))
+    }
+
     /// A JSON array of rows.
     pub fn select_many(&mut self, sel: &Select, join: Join<'_>) -> Result<(), Error> {
-        let n = self.next_alias + 1;
-        let (base, inner) = (format!("_b{n}"), format!("_t{n}"));
-        self.next_alias = n;
+        let (base, inner) = self.base_aliases();
 
         self.b.push("SELECT coalesce(json_agg(");
         self.row_json(&sel.fields, &base)?;
-        let order = &sel.args.order_by;
-        if !order.is_empty() {
-            self.b.push(" ORDER BY ");
-            for (i, ob) in order.iter().enumerate() {
-                if i > 0 {
-                    self.b.push(", ");
-                }
-                match &ob.target {
-                    OrderByTarget::Column(c) => {
-                        self.b.qualified(&base, c);
-                    }
-                    _ => {
-                        self.b.qualified(&base, &order_key(i));
-                    }
-                }
-                push_direction(&mut self.b, ob);
-            }
-        }
+        self.node_order(&sel.args.order_by, &base);
         self.b.push("), '[]') FROM (");
         let limit = effective_limit(sel.args.limit, sel.permission_limit);
-        self.base(sel, &inner, join, limit)?;
+        self.base(sel.into(), &inner, join, limit)?;
         self.b.push(") AS ").ident(&base);
         Ok(())
     }
 
     /// A single JSON object (or SQL NULL when there is no row).
     pub fn select_one(&mut self, sel: &Select, join: Join<'_>) -> Result<(), Error> {
-        let n = self.next_alias + 1;
-        let (base, inner) = (format!("_b{n}"), format!("_t{n}"));
-        self.next_alias = n;
+        let (base, inner) = self.base_aliases();
 
         self.b.push("SELECT ");
         self.row_json(&sel.fields, &base)?;
         self.b.push(" FROM (");
-        self.base(sel, &inner, join, Some(1))?;
+        self.base(sel.into(), &inner, join, Some(1))?;
         self.b.push(") AS ").ident(&base);
         Ok(())
     }
 
+    /// ` ORDER BY …` of the rows of `base` (the output of [`Self::base`]), for `json_agg`.
+    pub(crate) fn node_order(&mut self, order: &[OrderBy], base: &str) {
+        if order.is_empty() {
+            return;
+        }
+        self.b.push(" ORDER BY ");
+        for (i, ob) in order.iter().enumerate() {
+            if i > 0 {
+                self.b.push(", ");
+            }
+            match &ob.target {
+                OrderByTarget::Column(c) => {
+                    self.b.qualified(base, c);
+                }
+                _ => {
+                    self.b.qualified(base, &order_key(i));
+                }
+            }
+            push_direction(&mut self.b, ob);
+        }
+    }
+
     /// `SELECT * FROM table WHERE … ORDER BY … LIMIT … OFFSET …`
-    fn base(
+    pub(crate) fn base(
         &mut self,
-        sel: &Select,
+        sel: BaseQuery<'_>,
         alias: &str,
         join: Join<'_>,
         limit: Option<u64>,
     ) -> Result<(), Error> {
-        let args = &sel.args;
+        let args = sel.args;
         self.b.push("SELECT ");
         if !args.distinct_on.is_empty() {
             self.b.push("DISTINCT ON (");
@@ -154,7 +180,7 @@ impl<'s> Translator<'s> {
             }
         }
         // Permission filter first, as V2 renders it.
-        if let Some(p) = &sel.permission_filter {
+        if let Some(p) = sel.permission_filter {
             and(&mut self.b);
             self.bool_exp(p, alias)?;
         }
@@ -234,6 +260,15 @@ impl<'s> Translator<'s> {
                     self.bool_exp(filter, &rel_alias)?;
                 }
                 self.b.push(" LIMIT 1)");
+            }
+            OrderByTarget::ArrayAggregate {
+                table,
+                mapping,
+                permission_filter,
+                aggregate,
+            } => {
+                let filter = permission_filter.as_deref();
+                self.aggregate_order_target(table, mapping, filter, aggregate, alias)?;
             }
         }
         Ok(())
@@ -334,6 +369,11 @@ impl<'s> Translator<'s> {
                 self.select_many(&rel.select, Some((alias, &rel.mapping)))?;
                 self.b.push(")");
             }
+            Field::ArrayAggregate(rel) => {
+                self.b.push("(");
+                self.select_aggregate(&rel.select, Some((alias, &rel.mapping)))?;
+                self.b.push(")");
+            }
         }
         Ok(())
     }
@@ -359,7 +399,7 @@ impl<'s> Translator<'s> {
     }
 }
 
-fn order_key(i: usize) -> String {
+pub(crate) fn order_key(i: usize) -> String {
     // Lives next to the table's own columns in the base query; keep it unlikely to clash.
     format!("__hge_order_{i}")
 }
@@ -375,7 +415,7 @@ fn push_direction(b: &mut SqlBuilder, ob: &OrderBy) {
     });
 }
 
-fn effective_limit(requested: Option<u64>, permission: Option<u64>) -> Option<u64> {
+pub(crate) fn effective_limit(requested: Option<u64>, permission: Option<u64>) -> Option<u64> {
     match (requested, permission) {
         (Some(a), Some(b)) => Some(a.min(b)),
         (a, b) => a.or(b),

@@ -211,13 +211,13 @@ cases:
       data:
         __type:
           fields:
-            - { name: id, type: { kind: NON_NULL } }
-            - { name: title, type: { kind: NON_NULL } }
-            - { name: author_id, type: { kind: SCALAR } }
-            - { name: is_published, type: { kind: SCALAR } }
-            - { name: word_count, type: { kind: SCALAR } }
             - { name: author, type: { kind: NON_NULL } }
+            - { name: author_id, type: { kind: SCALAR } }
+            - { name: id, type: { kind: NON_NULL } }
+            - { name: is_published, type: { kind: SCALAR } }
             - { name: reviewer, type: { kind: OBJECT } }
+            - { name: title, type: { kind: NON_NULL } }
+            - { name: word_count, type: { kind: SCALAR } }
 
   - description: by_pk compares a redacted primary key as null
     headers: { x-hasura-role: pab }

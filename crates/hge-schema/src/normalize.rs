@@ -219,7 +219,8 @@ impl<'s, 'd> Context<'s, 'd> {
         for (key, fields) in grouped {
             let first = fields[0];
             let name = first.name.node.as_str();
-            let field_path = format!("{path}.selectionSet.{key}");
+            // V2 paths name the field, not its alias.
+            let field_path = format!("{path}.selectionSet.{name}");
             if fields.iter().any(|f| f.name.node.as_str() != name) {
                 return Err(Error::validation(format!(
                     "the response key '{key}' is used for multiple fields with different names"
@@ -565,10 +566,14 @@ impl<'s, 'd> Context<'s, 'd> {
                 GqlValue::Enum(v) if e.values.contains_key(v.as_str()) => {
                     Ok(Json::String(v.to_string()))
                 }
-                _ => Err(Error::validation(format!(
-                    "expected one of the values {} for type '{name}', but found {}",
+                GqlValue::Enum(v) => Err(Error::validation(format!(
+                    "expected one of the values {} for type '{name}', but found '{v}'",
                     enum_values_list(e),
-                    describe_gql(value)
+                ))
+                .with_path(path.to_owned())),
+                other => Err(Error::validation(format!(
+                    "expected an enum value for type '{name}', but found {}",
+                    describe_gql(other)
                 ))
                 .with_path(path.to_owned())),
             },
@@ -634,18 +639,21 @@ fn check_required_fields(
 }
 
 fn enum_values_list(e: &EnumDef) -> String {
-    e.values
+    let list = e
+        .values
         .keys()
         .map(|v| format!("'{v}'"))
         .collect::<Vec<_>>()
-        .join(", ")
+        .join(", ");
+    format!("[{list}]")
 }
 
 fn describe_gql(v: &GqlValue) -> &'static str {
     match v {
         GqlValue::Variable(_) => "a variable",
         GqlValue::Null => "null",
-        GqlValue::Number(_) => "a number",
+        GqlValue::Number(n) if n.is_f64() => "a float",
+        GqlValue::Number(_) => "an integer",
         GqlValue::String(_) => "a string",
         GqlValue::Boolean(_) => "a boolean",
         GqlValue::Binary(_) => "binary data",
@@ -690,10 +698,16 @@ pub(crate) fn coerce_json(
             Some(TypeDef::Scalar(_)) => coerce_scalar(name, value.clone(), path),
             Some(TypeDef::Enum(e)) => match value {
                 Json::String(s) if e.values.contains_key(s) => Ok(value.clone()),
-                _ => Err(Error::validation(format!(
-                    "expected one of the values {} for type '{name}', but found {}",
-                    enum_values_list(e),
-                    describe_json(value)
+                Json::String(v) if crate::tables::is_valid_name(v) => {
+                    Err(Error::validation(format!(
+                        "expected one of the values {} for type '{name}', but found '{v}'",
+                        enum_values_list(e),
+                    ))
+                    .with_path(path.to_owned()))
+                }
+                other => Err(Error::validation(format!(
+                    "expected an enum value for type '{name}', but found {}",
+                    describe_json(other)
                 ))
                 .with_path(path.to_owned())),
             },

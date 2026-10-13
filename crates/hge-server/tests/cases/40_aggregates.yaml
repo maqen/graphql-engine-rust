@@ -1,0 +1,542 @@
+cases:
+  - description: root aggregate with count, sum, avg, max, min and nodes
+    query:
+      query: |
+        { author_aggregate(order_by: {id: asc}) {
+            aggregate {
+              count
+              sum { id rating big }
+              avg { id rating }
+              max { name createdAt mood tags }
+              min { name rating }
+            }
+            nodes { id name }
+        } }
+    response:
+      data:
+        author_aggregate:
+          aggregate:
+            count: 3
+            sum: { id: 6, rating: 7.7, big: 9223372036854775808 }
+            avg: { id: 2.0, rating: 3.85 }
+            max: { name: Carol, createdAt: "2020-01-01T00:00:00+00:00", mood: sad, tags: [a, b] }
+            min: { name: Alice, rating: 3.2 }
+          nodes: [{ id: 1, name: Alice }, { id: 2, name: Bob }, { id: 3, name: Carol }]
+
+  - description: count with columns and distinct (V2 CountType)
+    query:
+      query: |
+        { article_aggregate { aggregate {
+            all: count
+            authors: count(columns: author_id)
+            distinct_authors: count(columns: [author_id], distinct: true)
+            distinct_only: count(distinct: true)
+            scores: count(columns: [score])
+            rows: count(columns: [score, published_on])
+        } } }
+    response:
+      data:
+        article_aggregate:
+          aggregate:
+            all: 4
+            authors: 4
+            distinct_authors: 2
+            distinct_only: 4
+            scores: 3
+            rows: 4
+
+  - description: aggregates see the rows left after where, order_by, limit and offset
+    query:
+      query: |
+        { article_aggregate(where: {id: {_gt: 0}}, order_by: {id: desc}, limit: 2, offset: 1) {
+            aggregate { count max { id } min { id } }
+            nodes { id }
+        } }
+    response:
+      data:
+        article_aggregate:
+          aggregate: { count: 2, max: { id: 3 }, min: { id: 2 } }
+          nodes: [{ id: 3 }, { id: 2 }]
+
+  - description: no rows give count 0, null functions and empty nodes
+    query:
+      query: |
+        { author_aggregate(where: {id: {_gt: 100}}) {
+            aggregate { count sum { id } max { name } }
+            nodes { id }
+        } }
+    response:
+      data:
+        author_aggregate:
+          aggregate: { count: 0, sum: { id: null }, max: { name: null } }
+          nodes: []
+
+  - description: __typename at every level, aliases and statistical functions
+    query:
+      query: |
+        { a: author_aggregate {
+            __typename
+            agg: aggregate {
+              __typename
+              n: count
+              stddev { __typename id }
+              stddev_pop { id }
+              stddev_samp { id }
+              var_pop { id }
+              var_samp { id }
+              variance { id }
+              max { __typename id }
+            }
+            first: nodes { __typename id }
+          }
+          only: author_aggregate { __typename }
+          fields_only: author_aggregate { aggregate { __typename } } }
+    response:
+      data:
+        a:
+          __typename: author_aggregate
+          agg:
+            __typename: author_aggregate_fields
+            n: 3
+            stddev: { __typename: author_stddev_fields, id: 1.0 }
+            stddev_pop: { id: 0.81649658092772603273 }
+            stddev_samp: { id: 1.0 }
+            var_pop: { id: 0.6666666666666666 }
+            var_samp: { id: 1.0 }
+            variance: { id: 1.0 }
+            max: { __typename: author_max_fields, id: 3 }
+          first:
+            - { __typename: author, id: 1 }
+            - { __typename: author, id: 2 }
+            - { __typename: author, id: 3 }
+        only: { __typename: author_aggregate }
+        fields_only: { aggregate: { __typename: author_aggregate_fields } }
+
+  - description: response keys longer than 63 bytes
+    query:
+      query: |
+        { author_aggregate(where: {id: {_eq: 1}}) {
+            an_aggregate_alias_that_is_much_longer_than_postgres_identifiers_allow: aggregate {
+              a_count_alias_that_is_much_longer_than_postgres_identifiers_allow_too: count
+              sum { an_id_alias_that_is_much_longer_than_postgres_identifiers_allow_too: id }
+            }
+            a_nodes_alias_that_is_much_longer_than_postgres_identifiers_allow_to: nodes {
+              a_name_alias_that_is_much_longer_than_postgres_identifiers_allow_too: name
+            }
+        } }
+    response:
+      data:
+        author_aggregate:
+          an_aggregate_alias_that_is_much_longer_than_postgres_identifiers_allow:
+            a_count_alias_that_is_much_longer_than_postgres_identifiers_allow_too: 1
+            sum: { an_id_alias_that_is_much_longer_than_postgres_identifiers_allow_too: 1 }
+          a_nodes_alias_that_is_much_longer_than_postgres_identifiers_allow_to:
+            - a_name_alias_that_is_much_longer_than_postgres_identifiers_allow_too: Alice
+
+  - description: array relationship aggregates with arguments
+    query:
+      query: |
+        { author(order_by: {id: asc}) {
+            name
+            articles_aggregate(where: {is_published: {_eq: true}}, order_by: {id: desc}) {
+              __typename
+              aggregate { count avg { score } max { title } }
+              nodes { title }
+            }
+            all: articles_aggregate { aggregate { count } }
+        } }
+    response:
+      data:
+        author:
+          - name: Alice
+            articles_aggregate:
+              __typename: article_aggregate
+              aggregate: { count: 1, avg: { score: 4.5 }, max: { title: Rust in production } }
+              nodes: [{ title: Rust in production }]
+            all: { aggregate: { count: 2 } }
+          - name: Bob
+            articles_aggregate:
+              __typename: article_aggregate
+              aggregate: { count: 2, avg: { score: 3.5 }, max: { title: Lima travel } }
+              nodes: [{ title: Lima travel }, { title: Go concurrency }]
+            all: { aggregate: { count: 2 } }
+          - name: Carol
+            articles_aggregate:
+              __typename: article_aggregate
+              aggregate: { count: 0, avg: { score: null }, max: { title: null } }
+              nodes: []
+            all: { aggregate: { count: 0 } }
+
+  - description: order by an array relationship's count
+    query:
+      query: "{ author(order_by: [{articles_aggregate: {count: asc}}, {id: desc}]) { id } }"
+    response:
+      data:
+        author: [{ id: 3 }, { id: 2 }, { id: 1 }]
+
+  - description: order by an aggregate function of a relationship, with nulls ordering and limit
+    query:
+      query: |
+        { by_sum: author(order_by: {articles_aggregate: {sum: {score: asc}}}) { id }
+          by_max: author(order_by: {articles_aggregate: {max: {score: desc_nulls_last}}}, limit: 2) { id }
+          through_object: article(order_by: [{author: {articles_aggregate: {count: desc}}}, {id: asc}], limit: 3) { id } }
+    response:
+      data:
+        by_sum: [{ id: 2 }, { id: 1 }, { id: 3 }]
+        by_max: [{ id: 1 }, { id: 2 }]
+        through_object: [{ id: 1 }, { id: 2 }, { id: 3 }]
+
+  - description: order by aggregate inside an aggregate's nodes
+    query:
+      query: |
+        { author_aggregate(order_by: [{articles_aggregate: {min: {title: desc}}}, {id: asc}]) {
+            nodes { id }
+        } }
+    response:
+      data:
+        author_aggregate:
+          nodes: [{ id: 3 }, { id: 2 }, { id: 1 }]
+
+  - description: aggregation predicate on count, with filter and arguments
+    query:
+      query: |
+        { two: author(where: {articles_aggregate: {count: {predicate: {_eq: 2}}}}, order_by: {id: asc}) { id }
+          none: author(where: {articles_aggregate: {count: {predicate: {_eq: 0}}}}) { id }
+          published: author(where: {articles_aggregate: {count: {
+              filter: {is_published: {_eq: true}}, predicate: {_eq: 1}}}}) { id }
+          scored: author(where: {articles_aggregate: {count: {
+              arguments: [score], distinct: true, predicate: {_eq: 1}}}}) { id } }
+    response:
+      data:
+        two: [{ id: 1 }, { id: 2 }]
+        none: [{ id: 3 }]
+        published: [{ id: 1 }]
+        scored: [{ id: 2 }]
+
+  - description: aggregation predicates on bool and float8 columns
+    query:
+      query: |
+        { all_published: author(where: {articles_aggregate: {bool_and: {
+              arguments: is_published, predicate: {_eq: true}}}}) { id }
+          some_draft: author(where: {articles_aggregate: {bool_or: {
+              arguments: is_published, filter: {score: {_lt: 3}}, predicate: {_eq: false}}}}) { id }
+          high_avg: author(where: {articles_aggregate: {avg: {
+              arguments: score, predicate: {_gt: 3.4}}}}, order_by: {id: asc}) { id }
+          summed: author(where: {_not: {articles_aggregate: {sum: {
+              arguments: score, predicate: {_lt: 4}}}}}, order_by: {id: asc}) { id }
+          paired: author(where: {articles_aggregate: {covar_samp: {
+              arguments: {X: score, Y: score}, predicate: {_gt: 1}}}}) { id } }
+    response:
+      data:
+        all_published: [{ id: 2 }]
+        some_draft: [{ id: 1 }]
+        high_avg: [{ id: 2 }]
+        summed: [{ id: 1 }, { id: 3 }]
+        paired: [{ id: 1 }]
+
+  - description: an aggregation predicate takes exactly one function
+    query:
+      query: |
+        { author(where: {articles_aggregate: {
+            count: {predicate: {_eq: 2}}, bool_or: {arguments: is_published, predicate: {_eq: true}}}}) { id } }
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.args.where.articles_aggregate", code: validation-failed }
+          message: exactly one predicate should be specified
+
+  - description: role with allow_aggregations; the permission limit applies to nodes only
+    headers: { x-hasura-role: reader }
+    query:
+      query: |
+        { author_aggregate(order_by: {id: asc}) { aggregate { count sum { rating } } nodes { id } }
+          limited: author_aggregate(limit: 1) { aggregate { count } }
+          nodes_only: author_aggregate(order_by: {id: desc}) { nodes { id } } }
+    response:
+      data:
+        author_aggregate:
+          aggregate: { count: 3, sum: { rating: 7.7 } }
+          nodes: [{ id: 1 }, { id: 2 }]
+        limited: { aggregate: { count: 1 } }
+        nodes_only: { nodes: [{ id: 3 }, { id: 2 }] }
+
+  - description: ordering by a relationship aggregate needs no allow_aggregations on the target
+    headers: { x-hasura-role: reader }
+    query:
+      query: "{ author(order_by: [{articles_aggregate: {count: desc}}, {id: asc}]) { id } }"
+    response:
+      data:
+        author: [{ id: 1 }, { id: 2 }]
+
+  - description: relationship aggregates need allow_aggregations on the target
+    headers: { x-hasura-role: reader }
+    query:
+      query: "{ author { articles_aggregate { aggregate { count } } } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.selectionSet.articles_aggregate", code: validation-failed }
+          message: "field 'articles_aggregate' not found in type: 'author'"
+
+  - description: aggregation predicates need allow_aggregations on the target
+    headers: { x-hasura-role: reader }
+    query:
+      query: "{ author(where: {articles_aggregate: {count: {predicate: {_eq: 1}}}}) { id } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.args.where.articles_aggregate", code: validation-failed }
+          message: "field 'articles_aggregate' not found in type: 'author_bool_exp'"
+
+  - description: role without allow_aggregations has no aggregate root field
+    headers: { x-hasura-role: public }
+    query:
+      query: "{ author_aggregate { aggregate { count } } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author_aggregate", code: validation-failed }
+          message: "field 'author_aggregate' not found in type: 'query_root'"
+
+  - description: aggregate types per role
+    headers: { x-hasura-role: reader }
+    query:
+      query: |
+        { author_aggregate: __type(name: "author_aggregate") { name }
+          sum: __type(name: "author_sum_fields") { fields { name type { name } } }
+          article_aggregate: __type(name: "article_aggregate") { name }
+          article_order: __type(name: "article_aggregate_order_by") { name }
+          article_predicate: __type(name: "article_aggregate_bool_exp") { name } }
+    response:
+      data:
+        author_aggregate: { name: author_aggregate }
+        sum: { fields: [{ name: id, type: { name: Int } }, { name: rating, type: { name: numeric } }] }
+        article_aggregate: null
+        article_order: { name: article_aggregate_order_by }
+        article_predicate: null
+
+  - description: introspection of the aggregate root field and objects
+    query:
+      query: |
+        { __schema { queryType { fields { name } } }
+          root: __type(name: "query_root") { fields { name description args { name } type { kind ofType { name } } } }
+          aggregate: __type(name: "author_aggregate") {
+            description fields { name type { kind name ofType { kind ofType { kind ofType { name } } } } } }
+          fields: __type(name: "author_aggregate_fields") {
+            description
+            fields { name args { name type { kind name ofType { kind name } } } type { kind name ofType { name } } } }
+          avg: __type(name: "author_avg_fields") { description fields { name type { kind name } } }
+          max: __type(name: "author_max_fields") { description fields { name type { kind name ofType { kind ofType { name } } } } }
+          author: __type(name: "author") { fields { name description type { kind ofType { name } } } } }
+    response:
+      data:
+        __schema:
+          queryType:
+            fields:
+              - name: article
+              - name: article_aggregate
+              - name: article_by_pk
+              - name: author
+              - name: author_aggregate
+              - name: author_by_pk
+              - name: other_thing_aggregate
+              - name: other_thing_by_pk
+              - name: things
+        root:
+          fields:
+            - name: article
+              description: 'fetch data from the table: "article"'
+              args: [{ name: distinct_on }, { name: limit }, { name: offset }, { name: order_by }, { name: where }]
+              type: { kind: NON_NULL, ofType: { name: null } }
+            - name: article_aggregate
+              description: 'fetch aggregated fields from the table: "article"'
+              args: [{ name: distinct_on }, { name: limit }, { name: offset }, { name: order_by }, { name: where }]
+              type: { kind: NON_NULL, ofType: { name: article_aggregate } }
+            - name: article_by_pk
+              description: 'fetch data from the table: "article" using primary key columns'
+              args: [{ name: id }]
+              type: { kind: OBJECT, ofType: null }
+            - name: author
+              description: 'fetch data from the table: "author"'
+              args: [{ name: distinct_on }, { name: limit }, { name: offset }, { name: order_by }, { name: where }]
+              type: { kind: NON_NULL, ofType: { name: null } }
+            - name: author_aggregate
+              description: 'fetch aggregated fields from the table: "author"'
+              args: [{ name: distinct_on }, { name: limit }, { name: offset }, { name: order_by }, { name: where }]
+              type: { kind: NON_NULL, ofType: { name: author_aggregate } }
+            - name: author_by_pk
+              description: 'fetch data from the table: "author" using primary key columns'
+              args: [{ name: id }]
+              type: { kind: OBJECT, ofType: null }
+            - name: other_thing_aggregate
+              description: 'fetch aggregated fields from the table: "other.thing"'
+              args: [{ name: distinct_on }, { name: limit }, { name: offset }, { name: order_by }, { name: where }]
+              type: { kind: NON_NULL, ofType: { name: other_thing_aggregate } }
+            - name: other_thing_by_pk
+              description: 'fetch data from the table: "other.thing" using primary key columns'
+              args: [{ name: code }]
+              type: { kind: OBJECT, ofType: null }
+            - name: things
+              description: 'fetch data from the table: "other.thing"'
+              args: [{ name: distinct_on }, { name: limit }, { name: offset }, { name: order_by }, { name: where }]
+              type: { kind: NON_NULL, ofType: { name: null } }
+        aggregate:
+          description: aggregated selection of "author"
+          fields:
+            - name: aggregate
+              type: { kind: OBJECT, name: author_aggregate_fields, ofType: null }
+            - name: nodes
+              type: { kind: NON_NULL, name: null, ofType: { kind: LIST, ofType: { kind: NON_NULL, ofType: { name: author } } } }
+        fields:
+          description: aggregate fields of "author"
+          fields:
+            - { name: avg, args: [], type: { kind: OBJECT, name: author_avg_fields, ofType: null } }
+            - name: count
+              args:
+                - { name: columns, type: { kind: LIST, name: null, ofType: { kind: NON_NULL, name: null } } }
+                - { name: distinct, type: { kind: SCALAR, name: Boolean, ofType: null } }
+              type: { kind: NON_NULL, name: null, ofType: { name: Int } }
+            - { name: max, args: [], type: { kind: OBJECT, name: author_max_fields, ofType: null } }
+            - { name: min, args: [], type: { kind: OBJECT, name: author_min_fields, ofType: null } }
+            - { name: stddev, args: [], type: { kind: OBJECT, name: author_stddev_fields, ofType: null } }
+            - { name: stddev_pop, args: [], type: { kind: OBJECT, name: author_stddev_pop_fields, ofType: null } }
+            - { name: stddev_samp, args: [], type: { kind: OBJECT, name: author_stddev_samp_fields, ofType: null } }
+            - { name: sum, args: [], type: { kind: OBJECT, name: author_sum_fields, ofType: null } }
+            - { name: var_pop, args: [], type: { kind: OBJECT, name: author_var_pop_fields, ofType: null } }
+            - { name: var_samp, args: [], type: { kind: OBJECT, name: author_var_samp_fields, ofType: null } }
+            - { name: variance, args: [], type: { kind: OBJECT, name: author_variance_fields, ofType: null } }
+        avg:
+          description: aggregate avg on columns
+          fields:
+            - { name: big, type: { kind: SCALAR, name: Float } }
+            - { name: id, type: { kind: SCALAR, name: Float } }
+            - { name: rating, type: { kind: SCALAR, name: Float } }
+        max:
+          description: aggregate max on columns
+          fields:
+            - { name: big, type: { kind: SCALAR, name: bigint, ofType: null } }
+            - { name: createdAt, type: { kind: SCALAR, name: timestamptz, ofType: null } }
+            - { name: id, type: { kind: SCALAR, name: Int, ofType: null } }
+            - { name: mood, type: { kind: SCALAR, name: mood, ofType: null } }
+            - { name: name, type: { kind: SCALAR, name: String, ofType: null } }
+            - { name: rating, type: { kind: SCALAR, name: numeric, ofType: null } }
+            - { name: tags, type: { kind: LIST, name: null, ofType: { kind: NON_NULL, ofType: { name: String } } } }
+        author:
+          fields:
+            - { name: articles, description: An array relationship, type: { kind: NON_NULL, ofType: { name: null } } }
+            - { name: articles_aggregate, description: An aggregate relationship, type: { kind: NON_NULL, ofType: { name: article_aggregate } } }
+            - { name: big, description: null, type: { kind: SCALAR, ofType: null } }
+            - { name: createdAt, description: null, type: { kind: NON_NULL, ofType: { name: timestamptz } } }
+            - { name: id, description: null, type: { kind: NON_NULL, ofType: { name: Int } } }
+            - { name: info, description: null, type: { kind: SCALAR, ofType: null } }
+            - { name: mood, description: null, type: { kind: SCALAR, ofType: null } }
+            - { name: name, description: null, type: { kind: NON_NULL, ofType: { name: String } } }
+            - { name: rating, description: null, type: { kind: SCALAR, ofType: null } }
+            - { name: tags, description: null, type: { kind: LIST, ofType: { name: null } } }
+
+  - description: introspection of the aggregate order_by types
+    query:
+      query: |
+        { author_order: __type(name: "author_order_by") { inputFields { name type { name } } }
+          order: __type(name: "article_aggregate_order_by") { description inputFields { name description type { name } } }
+          sum: __type(name: "article_sum_order_by") { description inputFields { name type { name } } } }
+    response:
+      data:
+        author_order:
+          inputFields:
+            - { name: articles_aggregate, type: { name: article_aggregate_order_by } }
+            - { name: big, type: { name: order_by } }
+            - { name: createdAt, type: { name: order_by } }
+            - { name: id, type: { name: order_by } }
+            - { name: info, type: { name: order_by } }
+            - { name: mood, type: { name: order_by } }
+            - { name: name, type: { name: order_by } }
+            - { name: rating, type: { name: order_by } }
+            - { name: tags, type: { name: order_by } }
+        order:
+          description: order by aggregate values of table "article"
+          inputFields:
+            - { name: avg, description: null, type: { name: article_avg_order_by } }
+            - { name: count, description: null, type: { name: order_by } }
+            - { name: max, description: null, type: { name: article_max_order_by } }
+            - { name: min, description: null, type: { name: article_min_order_by } }
+            - { name: stddev, description: null, type: { name: article_stddev_order_by } }
+            - { name: stddev_pop, description: null, type: { name: article_stddev_pop_order_by } }
+            - { name: stddev_samp, description: null, type: { name: article_stddev_samp_order_by } }
+            - { name: sum, description: null, type: { name: article_sum_order_by } }
+            - { name: var_pop, description: null, type: { name: article_var_pop_order_by } }
+            - { name: var_samp, description: null, type: { name: article_var_samp_order_by } }
+            - { name: variance, description: null, type: { name: article_variance_order_by } }
+        sum:
+          description: order by sum() on columns of table "article"
+          inputFields:
+            - { name: author_id, type: { name: order_by } }
+            - { name: id, type: { name: order_by } }
+            - { name: score, type: { name: order_by } }
+
+  - description: introspection of the aggregation predicate types
+    query:
+      query: |
+        { bool_exp: __type(name: "author_bool_exp") { inputFields { name type { name } } }
+          predicates: __type(name: "article_aggregate_bool_exp") { description inputFields { name type { name } } }
+          count: __type(name: "article_aggregate_bool_exp_count") {
+            description inputFields { name type { kind name ofType { kind name ofType { name } } } } }
+          bool_and: __type(name: "article_aggregate_bool_exp_bool_and") {
+            inputFields { name type { kind name ofType { name } } } }
+          corr: __type(name: "article_aggregate_bool_exp_corr_arguments") {
+            inputFields { name type { kind ofType { name } } } }
+          columns: __type(name: "article_select_column_article_aggregate_bool_exp_bool_and_arguments_columns") {
+            kind description enumValues { name description } } }
+    response:
+      data:
+        bool_exp:
+          inputFields:
+            - { name: _and, type: { name: null } }
+            - { name: _not, type: { name: author_bool_exp } }
+            - { name: _or, type: { name: null } }
+            - { name: articles, type: { name: article_bool_exp } }
+            - { name: articles_aggregate, type: { name: article_aggregate_bool_exp } }
+            - { name: big, type: { name: bigint_comparison_exp } }
+            - { name: createdAt, type: { name: timestamptz_comparison_exp } }
+            - { name: id, type: { name: Int_comparison_exp } }
+            - { name: info, type: { name: jsonb_comparison_exp } }
+            - { name: mood, type: { name: mood_comparison_exp } }
+            - { name: name, type: { name: String_comparison_exp } }
+            - { name: rating, type: { name: numeric_comparison_exp } }
+            - { name: tags, type: { name: String_array_comparison_exp } }
+        predicates:
+          description: null
+          inputFields:
+            - { name: avg, type: { name: article_aggregate_bool_exp_avg } }
+            - { name: bool_and, type: { name: article_aggregate_bool_exp_bool_and } }
+            - { name: bool_or, type: { name: article_aggregate_bool_exp_bool_or } }
+            - { name: corr, type: { name: article_aggregate_bool_exp_corr } }
+            - { name: count, type: { name: article_aggregate_bool_exp_count } }
+            - { name: covar_samp, type: { name: article_aggregate_bool_exp_covar_samp } }
+            - { name: max, type: { name: article_aggregate_bool_exp_max } }
+            - { name: min, type: { name: article_aggregate_bool_exp_min } }
+            - { name: stddev_samp, type: { name: article_aggregate_bool_exp_stddev_samp } }
+            - { name: sum, type: { name: article_aggregate_bool_exp_sum } }
+            - { name: var_samp, type: { name: article_aggregate_bool_exp_var_samp } }
+        count:
+          description: null
+          inputFields:
+            - name: arguments
+              type: { kind: LIST, name: null, ofType: { kind: NON_NULL, name: null, ofType: { name: article_select_column } } }
+            - name: distinct
+              type: { kind: SCALAR, name: Boolean, ofType: null }
+            - name: filter
+              type: { kind: INPUT_OBJECT, name: article_bool_exp, ofType: null }
+            - name: predicate
+              type: { kind: NON_NULL, name: null, ofType: { kind: INPUT_OBJECT, name: Int_comparison_exp, ofType: null } }
+        bool_and:
+          inputFields:
+            - name: arguments
+              type: { kind: NON_NULL, name: null, ofType: { name: article_select_column_article_aggregate_bool_exp_bool_and_arguments_columns } }
+            - { name: distinct, type: { kind: SCALAR, name: Boolean, ofType: null } }
+            - { name: filter, type: { kind: INPUT_OBJECT, name: article_bool_exp, ofType: null } }
+            - { name: predicate, type: { kind: NON_NULL, name: null, ofType: { name: Boolean_comparison_exp } } }
+        corr:
+          inputFields:
+            - { name: X, type: { kind: NON_NULL, ofType: { name: article_select_column_article_aggregate_bool_exp_corr_arguments_columns } } }
+            - { name: Y, type: { kind: NON_NULL, ofType: { name: article_select_column_article_aggregate_bool_exp_corr_arguments_columns } } }
+        columns:
+          kind: ENUM
+          description: select "article_aggregate_bool_exp_bool_and_arguments_columns" columns of table "article"
+          enumValues: [{ name: is_published, description: column name }]

@@ -12,3 +12,7 @@ select_permissions:
       filter:
         is_published:
           _eq: true
+  - role: reader
+    permission:
+      columns: '*'
+      filter: {}

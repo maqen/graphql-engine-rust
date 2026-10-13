@@ -91,6 +91,59 @@ pub fn is_big_num(ty: &ColumnType) -> bool {
         )
 }
 
+/// Numeric types (V2's `isNumType`): the columns `sum`, `avg`, `stddev`, … apply to.
+pub fn is_numeric(ty: &ColumnType) -> bool {
+    !ty.is_array()
+        && matches!(ty.kind, TypeKind::Base | TypeKind::Domain)
+        && matches!(
+            canonical(&ty.name),
+            "smallint" | "integer" | "bigint" | "real" | "float8" | "numeric" | "money"
+        )
+}
+
+/// Types `max` and `min` apply to (V2's `isComparableType`): every type V2 knows by name
+/// except json, jsonb, geometry, geography and boolean, plus native enums, composites and
+/// arrays. Types V2 does not know (`time`, `interval`, `inet`, ranges, …) are excluded.
+pub fn is_comparable(ty: &ColumnType) -> bool {
+    if ty.is_array() || matches!(ty.kind, TypeKind::Enum | TypeKind::Composite) {
+        return true;
+    }
+    matches!(ty.kind, TypeKind::Base | TypeKind::Domain)
+        && matches!(
+            canonical(&ty.name),
+            "smallint"
+                | "integer"
+                | "bigint"
+                | "serial"
+                | "bigserial"
+                | "real"
+                | "float8"
+                | "numeric"
+                | "money"
+                | "bpchar"
+                | "varchar"
+                | "text"
+                | "citext"
+                | "date"
+                | "timestamp"
+                | "timestamptz"
+                | "timetz"
+                | "raster"
+                | "uuid"
+                | "ltree"
+                | "lquery"
+                | "ltxtquery"
+        )
+}
+
+/// Whether a column has exactly the Postgres type `name` (aggregation predicate arguments
+/// accept only `float8` or `bool` columns).
+pub fn is_exactly(ty: &ColumnType, name: &str) -> bool {
+    !ty.is_array()
+        && matches!(ty.kind, TypeKind::Base | TypeKind::Domain)
+        && canonical(&ty.name) == canonical(name)
+}
+
 /// GraphQL built-in scalars whose input values we validate strictly.
 pub fn builtin_kind(name: &str) -> Option<BuiltinScalar> {
     Some(match name {
@@ -131,5 +184,21 @@ mod tests {
         assert_eq!(column_type_ref(&arr, true).to_string(), "[String!]");
         assert_eq!(column_type_ref(&arr, false).to_string(), "[String!]!");
         assert_eq!(comparison_exp_name(&arr), "String_array_comparison_exp");
+    }
+
+    #[test]
+    fn aggregate_applicability_like_v2() {
+        let t = ColumnType::builtin;
+        assert!(is_numeric(&t("int4")) && is_numeric(&t("numeric")) && is_numeric(&t("money")));
+        assert!(!is_numeric(&t("text")) && !is_numeric(&t("int4").array_of()));
+        assert!(is_comparable(&t("text")) && is_comparable(&t("timestamptz")));
+        assert!(is_comparable(&t("jsonb").array_of()));
+        for name in [
+            "bool", "json", "jsonb", "geometry", "time", "interval", "inet",
+        ] {
+            assert!(!is_comparable(&t(name)), "{name}");
+        }
+        assert!(is_exactly(&t("double precision"), "float8"));
+        assert!(!is_exactly(&t("numeric"), "float8"));
     }
 }

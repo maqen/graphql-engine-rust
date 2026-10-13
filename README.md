@@ -18,6 +18,8 @@ Early. Implemented so far:
 - Queries: `t`, `t_by_pk` with `where`, `order_by` (incl. object relationships),
   `limit`, `offset`, `distinct_on`, nested object/array relationships, JSON path arguments,
   variables, fragments, `@skip`/`@include`, batched requests.
+- Aggregates: `t_aggregate` and `<rel>_aggregate` (`count`, `sum`, `avg`, `max`, `min`, …,
+  `nodes`), `order_by` on `<rel>_aggregate`, aggregation predicates in `where`.
 - Admin secret auth, `x-hasura-role`, unauthorized role; select permissions without row
   filters (row filters arrive with the permissions workstream).
 - `/healthz`, `/v1/version`, `/v1/graphql`.

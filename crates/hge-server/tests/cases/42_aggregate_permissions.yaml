@@ -1,0 +1,258 @@
+config:
+  fixture: permissions
+
+cases:
+  - description: root aggregate counts and sums only the rows the role's filter lets through
+    headers: { x-hasura-role: agg, x-hasura-user-id: "2" }
+    query:
+      query: "{ article_aggregate { aggregate { count sum { word_count } } } }"
+    response:
+      data:
+        article_aggregate:
+          aggregate: { count: 4, sum: { word_count: 2050 } }
+
+  - description: root aggregate follows the session variables of the request
+    headers: { x-hasura-role: agg, x-hasura-user-id: "3" }
+    query:
+      query: "{ article_aggregate { aggregate { count sum { word_count } } } }"
+    response:
+      data:
+        article_aggregate:
+          aggregate: { count: 3, sum: { word_count: 1350 } }
+
+  - description: with aggregate fields the permission limit cuts only nodes
+    headers: { x-hasura-role: agg, x-hasura-user-id: "2" }
+    query:
+      query: "{ article_aggregate(order_by: {id: asc}) { aggregate { count } nodes { id } } }"
+    response:
+      data:
+        article_aggregate:
+          aggregate: { count: 4 }
+          nodes: [{ id: 1 }]
+
+  - description: the user limit still applies to the aggregated rows
+    headers: { x-hasura-role: agg, x-hasura-user-id: "2" }
+    query:
+      query: "{ article_aggregate(order_by: {id: asc}, limit: 2) { aggregate { count } nodes { id } } }"
+    response:
+      data:
+        article_aggregate:
+          aggregate: { count: 2 }
+          nodes: [{ id: 1 }]
+
+  - description: without aggregate fields the permission limit cuts the rows
+    headers: { x-hasura-role: agg, x-hasura-user-id: "2" }
+    query:
+      query: "{ article_aggregate(order_by: {id: desc}) { nodes { id } } }"
+    response:
+      data:
+        article_aggregate:
+          nodes: [{ id: 5 }]
+
+  - description: array session variable in the filter of a root aggregate
+    headers: { x-hasura-role: agg, x-hasura-user-id: "2", x-hasura-author-ids: "{1,3}" }
+    query:
+      query: "{ author_aggregate(order_by: {id: asc}) { aggregate { count } nodes { name } } }"
+    response:
+      data:
+        author_aggregate:
+          aggregate: { count: 2 }
+          nodes: [{ name: Alice }, { name: Carol }]
+
+  - description: filtering a root aggregate through a relationship cannot see hidden rows
+    headers: { x-hasura-role: agg, x-hasura-user-id: "2", x-hasura-author-ids: "{1,2}" }
+    query:
+      query: "{ article_aggregate(where: {author: {name: {_eq: \"Carol\"}}}) { aggregate { count } } }"
+    response:
+      data:
+        article_aggregate:
+          aggregate: { count: 0 }
+
+  - description: <rel>_aggregate applies the target's filter, and its limit to nodes only
+    headers: { x-hasura-role: agg, x-hasura-user-id: "2", x-hasura-author-ids: "{1,2,3}" }
+    query:
+      query: |
+        { author(order_by: {id: asc}) {
+            name
+            articles_aggregate(order_by: {id: asc}) {
+              aggregate { count sum { word_count } }
+              nodes { id }
+            }
+        } }
+    response:
+      data:
+        author:
+          - name: Alice
+            articles_aggregate: { aggregate: { count: 1, sum: { word_count: 900 } }, nodes: [{ id: 1 }] }
+          - name: Bob
+            articles_aggregate: { aggregate: { count: 2, sum: { word_count: 1100 } }, nodes: [{ id: 3 }] }
+          - name: Carol
+            articles_aggregate: { aggregate: { count: 1, sum: { word_count: 50 } }, nodes: [{ id: 5 }] }
+
+  - description: aggregate order_by counts only visible related rows
+    headers: { x-hasura-role: agg, x-hasura-user-id: "2", x-hasura-author-ids: "{1,2,3}" }
+    query:
+      query: "{ author(order_by: [{articles_aggregate: {count: asc}}, {id: asc}]) { name } }"
+    response:
+      data:
+        author: [{ name: Alice }, { name: Carol }, { name: Bob }]
+
+  - description: aggregate order_by sums only visible related rows
+    headers: { x-hasura-role: agg, x-hasura-user-id: "1", x-hasura-author-ids: "{1,2,3}" }
+    query:
+      query: "{ author(order_by: {articles_aggregate: {sum: {word_count: desc}}}) { name } }"
+    response:
+      data:
+        author: [{ name: Alice }, { name: Bob }, { name: Carol }]
+
+  - description: aggregation predicates count only visible related rows
+    headers: { x-hasura-role: agg, x-hasura-user-id: "1", x-hasura-author-ids: "{1,2,3}" }
+    query:
+      query: "{ author(where: {articles_aggregate: {count: {predicate: {_gte: 2}}}}, order_by: {id: asc}) { name } }"
+    response:
+      data:
+        author: [{ name: Alice }]
+
+  - description: an aggregation predicate's own filter adds to the permission filter
+    headers: { x-hasura-role: agg, x-hasura-user-id: "1", x-hasura-author-ids: "{1,2,3}" }
+    query:
+      query: |
+        { author(where: {articles_aggregate: {count: {
+            filter: {word_count: {_gte: 400}}, predicate: {_gte: 2}}}}) { name } }
+    response:
+      data:
+        author: []
+
+  - description: aggregation predicate inside a root aggregate's where
+    headers: { x-hasura-role: agg, x-hasura-user-id: "2", x-hasura-author-ids: "{1,2,3}" }
+    query:
+      query: "{ author_aggregate(where: {articles_aggregate: {count: {predicate: {_eq: 2}}}}) { aggregate { count } } }"
+    response:
+      data:
+        author_aggregate:
+          aggregate: { count: 1 }
+
+  - description: query_root_fields without select_aggregate hides the aggregate root field
+    headers: { x-hasura-role: agg_noroot }
+    query:
+      query: "{ article_aggregate { aggregate { count } } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.article_aggregate", code: validation-failed }
+          message: "field 'article_aggregate' not found in type: 'query_root'"
+
+  - description: query_root_fields does not hide <rel>_aggregate
+    headers: { x-hasura-role: agg_noroot }
+    query:
+      query: "{ author(order_by: {id: asc}) { name articles_aggregate { aggregate { count } } } }"
+    response:
+      data:
+        author:
+          - { name: Alice, articles_aggregate: { aggregate: { count: 1 } } }
+          - { name: Bob, articles_aggregate: { aggregate: { count: 1 } } }
+          - { name: Carol, articles_aggregate: { aggregate: { count: 1 } } }
+
+  - description: without allow_aggregations there is no aggregate root field
+    headers: { x-hasura-role: agg_off }
+    query:
+      query: "{ article_aggregate { aggregate { count } } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.article_aggregate", code: validation-failed }
+          message: "field 'article_aggregate' not found in type: 'query_root'"
+
+  - description: without allow_aggregations on the target there is no <rel>_aggregate field
+    headers: { x-hasura-role: agg_off }
+    query:
+      query: "{ author { articles_aggregate { aggregate { count } } } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.selectionSet.articles_aggregate", code: validation-failed }
+          message: "field 'articles_aggregate' not found in type: 'author'"
+
+  - description: without allow_aggregations on the target there are no aggregation predicates
+    headers: { x-hasura-role: agg_off }
+    query:
+      query: "{ author(where: {articles_aggregate: {count: {predicate: {_eq: 1}}}}) { name } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.args.where.articles_aggregate", code: validation-failed }
+          message: "field 'articles_aggregate' not found in type: 'author_bool_exp'"
+
+  - description: ordering by <rel>_aggregate needs only select access and counts visible rows
+    headers: { x-hasura-role: agg_off }
+    query:
+      query: "{ author(order_by: [{articles_aggregate: {count: asc}}, {id: asc}]) { name } }"
+    response:
+      data:
+        author: [{ name: Alice }, { name: Bob }, { name: Carol }]
+
+  - description: a hidden column cannot be summed
+    headers: { x-hasura-role: agg, x-hasura-user-id: "1" }
+    query:
+      query: "{ article_aggregate { aggregate { sum { min_words } } } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.article_aggregate.selectionSet.aggregate.selectionSet.sum.selectionSet.min_words", code: validation-failed }
+          message: "field 'min_words' not found in type: 'article_sum_fields'"
+
+  - description: a hidden column cannot be counted
+    headers: { x-hasura-role: agg, x-hasura-user-id: "1" }
+    query:
+      query: "{ article_aggregate { aggregate { count(columns: [min_words]) } } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.article_aggregate.selectionSet.aggregate.selectionSet.count.args.columns[0]", code: validation-failed }
+          message: "expected one of the values ['id', 'title', 'author_id', 'word_count'] for type 'article_select_column', but found 'min_words'"
+
+  - description: a hidden column cannot order by an aggregate
+    headers: { x-hasura-role: agg, x-hasura-user-id: "1", x-hasura-author-ids: "{1}" }
+    query:
+      query: "{ author(order_by: {articles_aggregate: {max: {min_words: asc}}}) { name } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.args.order_by.articles_aggregate.max.min_words", code: validation-failed }
+          message: "field 'min_words' not found in type: 'article_max_order_by'"
+
+  - description: a hidden column cannot be an aggregation predicate's argument
+    headers: { x-hasura-role: agg, x-hasura-user-id: "1", x-hasura-author-ids: "{1}" }
+    query:
+      query: "{ author(where: {articles_aggregate: {count: {arguments: [min_words], predicate: {_gt: 0}}}}) { name } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.args.where.articles_aggregate.count.arguments[0]", code: validation-failed }
+          message: "expected one of the values ['id', 'title', 'author_id', 'word_count'] for type 'article_select_column', but found 'min_words'"
+
+  - description: a hidden column cannot filter an aggregation predicate
+    headers: { x-hasura-role: agg, x-hasura-user-id: "1", x-hasura-author-ids: "{1}" }
+    query:
+      query: "{ author(where: {articles_aggregate: {count: {filter: {min_words: {_gt: 0}}, predicate: {_gt: 0}}}}) { name } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.args.where.articles_aggregate.count.filter.min_words", code: validation-failed }
+          message: "field 'min_words' not found in type: 'article_bool_exp'"
+
+  - description: aggregates of an inherited role read redacted columns as null
+    headers: { x-hasura-role: agg_mixed }
+    query:
+      query: "{ article_aggregate { aggregate { count c: count(columns: [word_count]) sum { word_count } max { word_count } } } }"
+    response:
+      data:
+        article_aggregate:
+          aggregate: { count: 5, c: 3, sum: { word_count: 1350 }, max: { word_count: 900 } }
+
+  - description: aggregate order_by of an inherited role reads redacted columns as null
+    headers: { x-hasura-role: agg_mixed }
+    query:
+      query: "{ author(order_by: {articles_aggregate: {sum: {word_count: desc}}}) { name } }"
+    response:
+      data:
+        author: [{ name: Alice }, { name: Bob }, { name: Carol }]
+
+  - description: aggregation predicates of an inherited role read redacted columns as null
+    headers: { x-hasura-role: agg_mixed }
+    query:
+      query: "{ author(where: {articles_aggregate: {count: {arguments: [word_count], predicate: {_eq: 1}}}}, order_by: {id: asc}) { name } }"
+    response:
+      data:
+        author: [{ name: Alice }, { name: Bob }, { name: Carol }]

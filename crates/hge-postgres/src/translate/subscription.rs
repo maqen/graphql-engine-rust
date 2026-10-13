@@ -57,6 +57,7 @@ pub fn translate_multiplexed(
                 QueryRoot::Select(select) => t.select_many(select, None)?,
                 QueryRoot::SelectOne(select) => t.select_one(select, None)?,
                 QueryRoot::Count(count) => t.count(count)?,
+                QueryRoot::Aggregate(select) => t.select_aggregate(select, None)?,
                 QueryRoot::Stream(_) => {
                     return Err(Error::new(
                         Code::NotSupported,

@@ -485,8 +485,8 @@ WHERE (<permission filter>) AND (<user where>)
 
 - The effective limit is `min(user limit, permission limit)`. With only one present, that one applies.
 - Aggregate queries:
-  - If the aggregate query selects aggregate fields or uses an aggregate order-by, the permission limit is applied in an inner subquery named `sub_query`. That way `count` counts at most `limit` rows.
-  - Otherwise it is applied to nodes only.
+  - If the aggregate query selects aggregate fields or uses an aggregate order-by, the permission limit applies to `nodes` only: aggregates see every permitted row (within the user's own `limit`). Checked on v2.51.0-ce: with `limit: 2` over 5 rows, `count` is 5 and `nodes` has 2 rows; with a user `limit: 3`, `count` is 3.
+  - Otherwise it applies to the rows, as for a plain select.
   - Upstream: `Translate/Select/Internal/Process.hs` (`PermissionLimitSubQuery`).
 - The limit also applies to array relationships of that table.
 
