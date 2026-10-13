@@ -6,6 +6,10 @@
 #   docker compose up -d --wait                 # postgres + hasura + handler
 #   docker compose --profile rust up -d --wait  # ... + rust engine
 #
+# Engines are pinned to the same cores (ENGINE_CPUSET, default "0,1") rather
+# than given a CFS quota: GHC's -N and tokio both size their thread pools
+# from the visible CPUs, so pinning keeps the comparison even.
+#
 # Image overrides (e.g. a registry mirror when Docker Hub rate-limits):
 #   HASURA_IMAGE, POSTGRES_IMAGE, PYTHON_IMAGE, RUST_ENGINE_IMAGE
 
@@ -18,7 +22,6 @@ x-engine-env: &engine-env
   HASURA_GRAPHQL_LOG_LEVEL: warn
   HASURA_GRAPHQL_UNAUTHORIZED_ROLE: anonymous
   ACTION_BASE_URL: http://handler:3000
-  EVENT_WEBHOOK_URL: http://handler:3000/events
 
 services:
   postgres:
@@ -57,11 +60,12 @@ services:
       HASURA_GRAPHQL_METADATA_DATABASE_URL: postgres://postgres:postgres@postgres:5432/hasura
       PG_DATABASE_URL: postgres://postgres:postgres@postgres:5432/hasura
       HASURA_GRAPHQL_PG_CONNECTIONS: "50"
+      EVENT_WEBHOOK_URL: http://handler:3000/events/hasura
     volumes:
       - ./project/migrations:/hasura-migrations:ro
       - ./project/metadata:/hasura-metadata:ro
     ports: ["${HASURA_PORT:-8080}:8080"]
-    cpus: ${ENGINE_CPUS:-2}
+    cpuset: ${ENGINE_CPUSET:-0,1}
     mem_limit: ${ENGINE_MEM:-2g}
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8080/healthz"]
@@ -81,8 +85,9 @@ services:
       HASURA_GRAPHQL_METADATA_DATABASE_URL: postgres://postgres:postgres@postgres:5432/hasura
       PG_DATABASE_URL: postgres://postgres:postgres@postgres:5432/hasura
       HASURA_GRAPHQL_PG_CONNECTIONS: "50"
+      EVENT_WEBHOOK_URL: http://handler:3000/events/hasura
     ports: ["${HASURA_SERVE_PORT:-8082}:8080"]
-    cpus: ${ENGINE_CPUS:-2}
+    cpuset: ${ENGINE_CPUSET:-0,1}
     mem_limit: ${ENGINE_MEM:-2g}
 
   rust-engine:
@@ -100,11 +105,12 @@ services:
       HASURA_GRAPHQL_METADATA_DATABASE_URL: postgres://postgres:postgres@postgres:5432/rust
       PG_DATABASE_URL: postgres://postgres:postgres@postgres:5432/rust
       HASURA_GRAPHQL_PG_CONNECTIONS: "50"
+      EVENT_WEBHOOK_URL: http://handler:3000/events/rust
       HASURA_GRAPHQL_MIGRATIONS_DIR: /hasura-migrations
       HASURA_GRAPHQL_METADATA_DIR: /hasura-metadata
     volumes:
       - ./project/migrations:/hasura-migrations:ro
       - ./project/metadata:/hasura-metadata:ro
     ports: ["${RUST_ENGINE_PORT:-8081}:8080"]
-    cpus: ${ENGINE_CPUS:-2}
+    cpuset: ${ENGINE_CPUSET:-0,1}
     mem_limit: ${ENGINE_MEM:-2g}

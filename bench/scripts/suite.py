@@ -16,6 +16,7 @@ Query files live in bench/queries/*.graphql. Header lines starting with
 
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import re
@@ -54,7 +55,9 @@ class Case:
         return self.query.lstrip().startswith("mutation")
 
     def headers(self) -> dict[str, str]:
-        h = {"content-type": "application/json"}
+        # Real clients ask for gzip and Hasura compresses large bodies, so
+        # load and parity runs both send it explicitly.
+        h = {"content-type": "application/json", "accept-encoding": "gzip"}
         if self.auth == "admin":
             h["x-hasura-admin-secret"] = ADMIN_SECRET
         if self.role:
@@ -132,18 +135,33 @@ class Engine:
         name, _, rest = spec.partition("=")
         if not rest:
             raise ValueError(f"engine spec must be name=url[@service], got {spec!r}")
-        url, _, service = rest.partition("@")
-        return cls(name=name, url=url.rstrip("/"), service=service or None)
+        url, service = rest, None
+        head, sep, tail = rest.rpartition("@")
+        if sep and "/" not in tail and ":" not in tail:  # a service name, not URL userinfo
+            url, service = head, tail
+        return cls(name=name, url=url.rstrip("/"), service=service)
 
 
-@dataclass
-class Response:
-    status: int
-    body: bytes
+class RawNum:
+    """A JSON number kept as its source text, so `15.90` and `15.9` (or `1`
+    and `1.0`) stay different: clients see the bytes, not a float."""
 
-    def json(self):
-        # Keep key order: parity also reports field-order differences.
-        return json.loads(self.body, object_pairs_hook=_OrderedObject)
+    __slots__ = ("text",)
+
+    def __init__(self, text: str):
+        self.text = text
+
+    def __eq__(self, other):
+        return isinstance(other, RawNum) and other.text == self.text
+
+    def __hash__(self):
+        return hash(self.text)
+
+    def __repr__(self):
+        return self.text
+
+    def value(self) -> float:
+        return float(self.text)
 
 
 class _OrderedObject(dict):
@@ -154,15 +172,56 @@ class _OrderedObject(dict):
         self.order = [k for k, _ in pairs]
 
 
+def loads(text):
+    """Parse JSON keeping key order and number text."""
+    return json.loads(
+        text, object_pairs_hook=_OrderedObject, parse_float=RawNum, parse_int=RawNum, parse_constant=RawNum
+    )
+
+
+def dumps(v, indent=2, _level=0) -> str:
+    """Serialise values from `loads`, writing numbers back verbatim."""
+    pad, inner = " " * (indent * _level), " " * (indent * (_level + 1))
+    if isinstance(v, RawNum):
+        return v.text
+    if isinstance(v, dict):
+        if not v:
+            return "{}"
+        items = [f"{inner}{json.dumps(k, ensure_ascii=False)}: {dumps(x, indent, _level + 1)}" for k, x in v.items()]
+        return "{\n" + ",\n".join(items) + "\n" + pad + "}"
+    if isinstance(v, list):
+        if not v:
+            return "[]"
+        return "[\n" + ",\n".join(inner + dumps(x, indent, _level + 1) for x in v) + "\n" + pad + "]"
+    return json.dumps(v, ensure_ascii=False)
+
+
+@dataclass
+class Response:
+    status: int
+    body: bytes  # decoded (gunzipped) body
+    headers: dict = field(default_factory=dict)
+    wire_bytes: int = 0  # body size as sent over the wire
+
+    def json(self):
+        return loads(self.body)
+
+
+def _response(status, headers, raw) -> Response:
+    hdrs = {k.lower(): v for k, v in headers.items()}
+    body = gzip.decompress(raw) if hdrs.get("content-encoding") == "gzip" else raw
+    return Response(status, body, hdrs, len(raw))
+
+
 def send(engine: Engine, case: Case, timeout: float = 30.0) -> Response:
     req = urllib.request.Request(
         engine.url + case.path(), data=case.body(), headers=case.headers(), method=case.method()
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            return Response(r.status, r.read())
+            return _response(r.status, r.headers, r.read())
     except urllib.error.HTTPError as e:
-        return Response(e.code, e.read())
+        return _response(e.code, e.headers, e.read())
 
 
 def http_get(url: str, timeout: float = 5.0) -> tuple[int, bytes]:

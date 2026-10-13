@@ -1,5 +1,6 @@
 {
   "status": 200,
+  "content_encoding": "gzip",
   "body": {
     "data": {
       "customer": [
@@ -10,7 +11,7 @@
           "invoices": [
             {
               "invoice_id": 42,
-              "total": 15.9,
+              "total": 15.90,
               "lines": [
                 {
                   "quantity": 3,
@@ -118,7 +119,7 @@
             },
             {
               "invoice_id": 6042,
-              "total": 15.9,
+              "total": 15.90,
               "lines": [
                 {
                   "quantity": 3,

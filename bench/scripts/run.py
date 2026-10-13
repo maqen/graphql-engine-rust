@@ -9,8 +9,11 @@ percentiles, throughput, CPU and memory per engine, plus cold-start time.
       --label 2026-10-13-baseline
 
 `name=url@service`: the optional compose service enables memory/CPU sampling
-(docker stats) and startup measurement (docker compose stop/start). Engines
-are interleaved per case so drift on a shared machine hits both equally.
+(docker stats) and startup measurement (docker compose stop/start). The
+engine name is also its event-trigger namespace on bench/handler. Engines
+alternate order per case so drift on a shared machine hits both equally;
+after each mutation case the runner waits for that engine's event-trigger
+backlog to drain (reported as `event_drain_s`) before measuring anything else.
 
 Results go to bench/results/<label>/results.json and summary.md.
 """
@@ -30,7 +33,7 @@ import threading
 import time
 from pathlib import Path
 
-from suite import COMPOSE_FILE, RESULTS_DIR, Engine, http_get, load_suite, send
+from suite import COMPOSE_FILE, HANDLER_URL, RESULTS_DIR, Engine, http_get, load_suite, send
 
 
 # --------------------------------------------------------------------------
@@ -39,7 +42,10 @@ from suite import COMPOSE_FILE, RESULTS_DIR, Engine, http_get, load_suite, send
 
 class Compose:
     def __init__(self, extra_args: list[str]):
-        self.base = ["docker", "compose", "-f", str(COMPOSE_FILE), *extra_args]
+        # Enable every profile so profiled services (rust-engine, hasura-serve)
+        # resolve for ps/stop/start; only explicitly named services are touched.
+        self.base = ["docker", "compose", "-f", str(COMPOSE_FILE), "--profile", "rust", "--profile", "startup",
+                     *extra_args]
 
     def run(self, *args: str, check=True) -> str:
         p = subprocess.run([*self.base, *args], capture_output=True, text=True)
@@ -173,6 +179,26 @@ def oha_cmd(oha: str, engine: Engine, case, duration: str, concurrency: int) -> 
     return cmd + [engine.url + case.path()]
 
 
+def drain_events(engine: Engine, timeout: float = 600.0, settle: float = 3.0) -> float | None:
+    """Seconds until the engine's event deliveries stop arriving (counter
+    unchanged for `settle` s, not counted). None if the handler is unreachable."""
+    t0 = time.monotonic()
+    last, last_change = None, t0
+    while time.monotonic() - t0 < timeout:
+        try:
+            _, body = http_get(HANDLER_URL + "/events/stats")
+        except OSError:
+            return None
+        cur = json.loads(body).get(engine.name, {})
+        now = time.monotonic()
+        if cur != last:
+            last, last_change = cur, now
+        elif now - last_change >= settle:
+            return round(last_change - t0, 1)
+        time.sleep(0.5)
+    return round(timeout, 1)
+
+
 def run_oha(cmd: list[str]) -> dict:
     p = subprocess.run(cmd, capture_output=True, text=True)
     if p.returncode != 0:
@@ -180,37 +206,50 @@ def run_oha(cmd: list[str]) -> dict:
     return json.loads(p.stdout)
 
 
-def validate(engine: Engine, case) -> str | None:
+def validate(engine: Engine, case) -> tuple[str | None, int]:
     """A load run is only meaningful if the request succeeds; GraphQL errors
-    come back as HTTP 200, so check the body too."""
+    come back as HTTP 200, so check the body too. Returns (error, wire size)."""
     resp = send(engine, case)
     if resp.status != 200:
-        return f"HTTP {resp.status}: {resp.body[:200]!r}"
+        return f"HTTP {resp.status}: {resp.body[:200]!r}", 0
     try:
         body = json.loads(resp.body)
     except ValueError:
-        return f"non-JSON body: {resp.body[:200]!r}"
+        return f"non-JSON body: {resp.body[:200]!r}", 0
     if isinstance(body, dict) and "errors" in body:
-        return f"GraphQL errors: {json.dumps(body['errors'])[:200]}"
-    return None
+        return f"GraphQL errors: {json.dumps(body['errors'])[:200]}", 0
+    return None, resp.wire_bytes
 
 
-def summarise_oha(d: dict) -> dict:
+def _ms(v):
+    return None if v is None else round(v * 1000, 2)
+
+
+def summarise_oha(d: dict, expected_bytes: int, is_mutation: bool) -> dict:
     s, lp = d["summary"], d["latencyPercentiles"]
     codes = d.get("statusCodeDistribution", {})
     total = sum(codes.values())
-    ok = codes.get("200", 0)
-    return {
-        "rps": round(s["requestsPerSec"], 1),
-        "p50_ms": round(lp["p50"] * 1000, 2),
-        "p95_ms": round(lp["p95"] * 1000, 2),
-        "p99_ms": round(lp["p99"] * 1000, 2),
-        "max_ms": round(s["slowest"] * 1000, 2),
+    non_200 = total - codes.get("200", 0)
+    transport = sum(v for k, v in d.get("errorDistribution", {}).items() if "deadline" not in k)
+    r = {
+        "rps": round(s["requestsPerSec"] or 0, 1),
+        "p50_ms": _ms(lp.get("p50")),
+        "p95_ms": _ms(lp.get("p95")),
+        "p99_ms": _ms(lp.get("p99")),
+        "max_ms": _ms(s.get("slowest")),
         "requests": total,
-        "non_200": total - ok,
-        "transport_errors": sum(d.get("errorDistribution", {}).values()),
+        "errors": non_200 + transport,
+        "non_200": non_200,
+        "transport_errors": transport,
         "bytes_per_request": s.get("sizePerRequest"),
+        "expected_bytes": expected_bytes,
     }
+    # GraphQL errors under load (pool exhaustion, timeouts) are HTTP 200 with
+    # a different body; a size far from the validated response flags them.
+    size = s.get("sizePerRequest") or 0
+    if not is_mutation and expected_bytes and abs(size - expected_bytes) > 0.1 * expected_bytes:
+        r["size_mismatch"] = True
+    return r
 
 
 # --------------------------------------------------------------------------
@@ -244,12 +283,20 @@ def write_summary(path: Path, result: dict):
         lines.append(f"| {extra['name']} (startup only) | {extra.get('image', '-')} | "
                      f"{_fmt(extra.get('image_size_mb'), ' MB')} | - | {_fmt(st.get('median_s'), ' s')} |")
     lines += ["", "## Latency and throughput", ""]
+    lines += [
+        "Columns per engine: requests/s, latency percentiles, failed requests (non-200, transport errors), "
+        "peak memory (MB), mean CPU (cores). `!` marks rows whose response size under load differed from "
+        "the validated response (likely GraphQL errors); `drain` is how long the event-trigger backlog took "
+        "to deliver after a mutation case.",
+        "",
+    ]
+    per = 7
     header = "| case | c | " + " | ".join(
-        f"{e} rps | {e} p50 | {e} p95 | {e} p99 | {e} peak MB | {e} CPU" for e in engines)
+        f"{e} rps | {e} p50 | {e} p95 | {e} p99 | {e} err | {e} MB | {e} CPU" for e in engines)
     if len(engines) == 2:
         header += f" | rps {engines[1]}/{engines[0]}"
     lines.append(header + " |")
-    ncols = 2 + 6 * len(engines) + (1 if len(engines) == 2 else 0)
+    ncols = 2 + per * len(engines) + (1 if len(engines) == 2 else 0)
     lines.append("|" + "---|" * ncols)
     for row in result["cases"]:
         cells = [row["case"], str(row["concurrency"])]
@@ -257,12 +304,16 @@ def write_summary(path: Path, result: dict):
         for e in engines:
             r = row["engines"].get(e)
             if not r or "error" in r:
-                cells += [f"error: {r['error'][:40]}" if r else "-"] + [""] * 5
+                msg = f"error: {r['error'][:60]}" if r else "-"
+                cells += [msg.replace("|", "\\|")] + [""] * (per - 1)
                 rps.append(None)
                 continue
-            cells += [f"{r['rps']:.0f}", f"{r['p50_ms']} ms", f"{r['p95_ms']} ms", f"{r['p99_ms']} ms",
-                      _fmt(r.get("peak_mem_mb")), _fmt(r.get("mean_cpu_cores"))]
-            rps.append(r["rps"])
+            err = str(r.get("errors", 0)) + (" !" if r.get("size_mismatch") else "")
+            if r.get("event_drain_s") is not None:
+                err += f" (drain {r['event_drain_s']} s)"
+            cells += [f"{r['rps']:.0f}", _fmt(r['p50_ms'], " ms"), _fmt(r['p95_ms'], " ms"),
+                      _fmt(r['p99_ms'], " ms"), err, _fmt(r.get("peak_mem_mb")), _fmt(r.get("mean_cpu_cores"))]
+            rps.append(r["rps"] if not r.get("errors") and not r.get("size_mismatch") else None)
         if len(engines) == 2:
             cells.append(f"{rps[1] / rps[0]:.2f}x" if all(rps) else "-")
         lines.append("| " + " | ".join(cells) + " |")
@@ -286,6 +337,26 @@ def machine_info() -> dict:
     except OSError:
         pass
     return {"cpus": os.cpu_count(), "cpu_model": model, "os": f"{platform.system()} {platform.release()}"}
+
+
+def measure_all_startups(compose: Compose, engines: list[Engine], result: dict, args):
+    for info, e in zip(result["engines"], engines):
+        if e.service:
+            info["startup"] = measure_startup(compose, e, args.startup_runs)
+            print(f"startup {e.name}: {info['startup']}", flush=True)
+    result["startup_only"] = []
+    for spec in args.startup_only:
+        e = Engine.parse(spec)
+        compose.run("up", "-d", "--no-deps", e.service)
+        wait_healthy(e)
+        extra = {"name": e.name, "service": e.service}
+        cid = compose.container_id(e.service)
+        if cid:
+            extra.update(image_info(cid))
+        extra["startup"] = measure_startup(compose, e, args.startup_runs)
+        compose.run("stop", e.service)
+        print(f"startup {e.name}: {extra['startup']}", flush=True)
+        result["startup_only"].append(extra)
 
 
 def main():
@@ -320,7 +391,8 @@ def main():
         "machine": machine_info(),
         "config": {
             "duration": args.duration, "warmup": args.warmup, "concurrency": concurrency,
-            "engine_limits": f"cpus={os.environ.get('ENGINE_CPUS', '2')}, mem={os.environ.get('ENGINE_MEM', '2g')}",
+            "engine_limits": f"cpuset={os.environ.get('ENGINE_CPUSET', '0,1')}, mem={os.environ.get('ENGINE_MEM', '2g')}",
+            "accept_encoding": "gzip",
         },
         "engines": [],
         "cases": [],
@@ -338,48 +410,47 @@ def main():
                 info["idle_mem_mb"] = snapshot_mem_mb(cid)
         result["engines"].append(info)
 
+    step = 0
     for case in cases:
         for c in concurrency:
             row = {"case": case.name, "description": case.description, "concurrency": c, "engines": {}}
-            for e in engines:
-                err = validate(e, case)
+            order = engines if step % 2 == 0 else engines[::-1]
+            step += 1
+            for e in order:
+                err, wire_bytes = validate(e, case)
                 if err:
                     row["engines"][e.name] = {"error": err}
                     print(f"{case.name:32} c={c:<4} {e.name:10} SKIP {err}", flush=True)
                     continue
-                run_oha(oha_cmd(args.oha, e, case, args.warmup, c))
-                cid = containers.get(e.name)
-                if cid:
-                    with StatsSampler(cid) as sampler:
-                        d = run_oha(oha_cmd(args.oha, e, case, args.duration, c))
-                    stats = sampler.summary()
-                else:
-                    d, stats = run_oha(oha_cmd(args.oha, e, case, args.duration, c)), {}
-                r = summarise_oha(d) | stats
+                try:
+                    run_oha(oha_cmd(args.oha, e, case, args.warmup, c))
+                    cid = containers.get(e.name)
+                    if cid:
+                        with StatsSampler(cid) as sampler:
+                            d = run_oha(oha_cmd(args.oha, e, case, args.duration, c))
+                        stats = sampler.summary()
+                    else:
+                        d, stats = run_oha(oha_cmd(args.oha, e, case, args.duration, c)), {}
+                except RuntimeError as ex:
+                    row["engines"][e.name] = {"error": str(ex)}
+                    print(f"{case.name:32} c={c:<4} {e.name:10} FAILED {ex}", flush=True)
+                    continue
+                r = summarise_oha(d, wire_bytes, case.is_mutation) | stats
+                if case.is_mutation:
+                    r["event_drain_s"] = drain_events(e)
                 row["engines"][e.name] = r
-                print(f"{case.name:32} c={c:<4} {e.name:10} {r['rps']:>9.0f} rps  p50 {r['p50_ms']:>7} ms  "
-                      f"p99 {r['p99_ms']:>7} ms  mem {r.get('peak_mem_mb')} MB", flush=True)
+                print(f"{case.name:32} c={c:<4} {e.name:10} {r['rps']:>9.0f} rps  p50 {r['p50_ms']} ms  "
+                      f"p99 {r['p99_ms']} ms  err {r['errors']}{' SIZE!' if r.get('size_mismatch') else ''}  "
+                      f"mem {r.get('peak_mem_mb')} MB  drain {r.get('event_drain_s')}", flush=True)
             result["cases"].append(row)
             (out_dir / "results.json").write_text(json.dumps(result, indent=2) + "\n")
 
     if args.startup_runs > 0:
-        for info, e in zip(result["engines"], engines):
-            if e.service:
-                info["startup"] = measure_startup(compose, e, args.startup_runs)
-                print(f"startup {e.name}: {info['startup']}", flush=True)
-        result["startup_only"] = []
-        for spec in args.startup_only:
-            e = Engine.parse(spec)
-            compose.run("up", "-d", "--no-deps", e.service)
-            wait_healthy(e)
-            extra = {"name": e.name, "service": e.service}
-            cid = compose.container_id(e.service)
-            if cid:
-                extra.update(image_info(cid))
-            extra["startup"] = measure_startup(compose, e, args.startup_runs)
-            compose.run("stop", e.service)
-            print(f"startup {e.name}: {extra['startup']}", flush=True)
-            result["startup_only"].append(extra)
+        try:
+            measure_all_startups(compose, engines, result, args)
+        except (RuntimeError, TimeoutError) as ex:  # still write what we have
+            result["startup_error"] = str(ex)
+            print(f"startup measurement failed: {ex}", flush=True)
 
     (out_dir / "results.json").write_text(json.dumps(result, indent=2) + "\n")
     write_summary(out_dir / "summary.md", result)

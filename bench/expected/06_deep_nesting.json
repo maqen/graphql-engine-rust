@@ -1,5 +1,6 @@
 {
   "status": 200,
+  "content_encoding": "gzip",
   "body": {
     "data": {
       "customer": [
@@ -80,7 +81,7 @@
             },
             {
               "invoice_id": 2001,
-              "total": 15.9,
+              "total": 15.90,
               "lines": [
                 {
                   "quantity": 3,
@@ -355,7 +356,7 @@
             },
             {
               "invoice_id": 4002,
-              "total": 15.9,
+              "total": 15.90,
               "lines": [
                 {
                   "quantity": 3,
@@ -432,7 +433,7 @@
           "invoices": [
             {
               "invoice_id": 3,
-              "total": 15.9,
+              "total": 15.90,
               "lines": [
                 {
                   "quantity": 3,
@@ -707,7 +708,7 @@
             },
             {
               "invoice_id": 2004,
-              "total": 15.9,
+              "total": 15.90,
               "lines": [
                 {
                   "quantity": 3,
@@ -982,7 +983,7 @@
             },
             {
               "invoice_id": 4005,
-              "total": 15.9,
+              "total": 15.90,
               "lines": [
                 {
                   "quantity": 3,

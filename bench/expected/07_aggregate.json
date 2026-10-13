@@ -1,5 +1,6 @@
 {
   "status": 200,
+  "content_encoding": null,
   "body": {
     "data": {
       "track_aggregate": {
@@ -7,10 +8,10 @@
           "count": 3600,
           "sum": {
             "milliseconds": 841721400,
-            "unit_price": 4764.0
+            "unit_price": 4764.00
           },
           "avg": {
-            "milliseconds": 233811.5
+            "milliseconds": 233811.500000000000
           },
           "min": {
             "milliseconds": 120037,

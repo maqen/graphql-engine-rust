@@ -1,4 +1,4 @@
-#@ description: Synchronous action (HTTP handler) with an action relationship to a table
+#@ description: Synchronous action with an action relationship to a table (throughput bounded by the Python handler)
 #@ role: user
 #@ user_id: 3
 query {

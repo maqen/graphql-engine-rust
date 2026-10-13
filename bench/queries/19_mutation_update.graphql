@@ -1,4 +1,4 @@
-#@ description: Permissioned update (idempotent: sets constant values)
+#@ description: Permissioned update (idempotent: sets constant values; every request locks the same row)
 #@ role: user
 #@ user_id: 42
 mutation {

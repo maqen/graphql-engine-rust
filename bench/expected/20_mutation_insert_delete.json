@@ -1,5 +1,6 @@
 {
   "status": 200,
+  "content_encoding": null,
   "body": {
     "data": {
       "insert_playlist_one": {
