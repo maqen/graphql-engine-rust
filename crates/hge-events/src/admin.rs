@@ -40,6 +40,30 @@ pub async fn invoke(
     Ok(id)
 }
 
+/// Archive a deleted trigger's events (V2's `archiveEvents`). A source whose event catalog
+/// was never created has nothing to archive.
+pub async fn archive(pool: &Pool, trigger: &str) -> Result<(), String> {
+    let client = pool.get().await.map_err(|e| e.to_string())?;
+    let catalog: bool = client
+        .query_one(
+            "SELECT to_regclass('hdb_catalog.event_log') IS NOT NULL",
+            &[],
+        )
+        .await
+        .map_err(pg_err)?
+        .get(0);
+    if catalog {
+        client
+            .execute(
+                "UPDATE hdb_catalog.event_log SET archived = 't' WHERE trigger_name = $1",
+                &[&trigger],
+            )
+            .await
+            .map_err(pg_err)?;
+    }
+    Ok(())
+}
+
 /// What [`redeliver`] did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Redelivery {
@@ -57,7 +81,7 @@ pub async fn redeliver(pool: &Pool, event_id: &str) -> Result<Redelivery, String
     let busy = tx
         .query_opt(
             "SELECT l.locked IS NOT NULL AND l.locked >= (NOW() - interval '30 minute') \
-             FROM hdb_catalog.event_log l WHERE l.id = $1",
+             FROM hdb_catalog.event_log l WHERE l.id = $1 FOR UPDATE",
             &[&event_id],
         )
         .await

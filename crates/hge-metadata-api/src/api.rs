@@ -188,9 +188,16 @@ async fn handle<R: Runtime>(rt: &R, body: &[u8]) -> ApiResult<Value> {
     if modifies {
         ctx.expect_version(resource_version)?;
     }
-    let result = run(&mut ctx, &cmd).await?;
-    ctx.commit().await?;
-    Ok(result)
+    match run(&mut ctx, &cmd).await {
+        Ok(result) => {
+            ctx.commit().await?;
+            Ok(result)
+        }
+        Err(e) => {
+            ctx.discard().await;
+            Err(e)
+        }
+    }
 }
 
 /// Run one command (recursively for bulk) against the working state. Execution errors are

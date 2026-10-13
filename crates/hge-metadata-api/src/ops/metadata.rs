@@ -340,6 +340,25 @@ fn drop_object(md: &mut Metadata, obj: &InconsistentObject) -> bool {
             }
             true
         }
+        // V2's definition is `{configuration, table}`; the source is in the object's name.
+        "event_trigger" => {
+            let (Some(source), Some(table), Some(name)) = (
+                source_of(&obj.name),
+                table_of(def),
+                def.pointer("/configuration/name").and_then(Value::as_str),
+            ) else {
+                return false;
+            };
+            if let Some(entry) = md
+                .source_mut(source)
+                .and_then(|s| s.tables.iter_mut().find(|t| t.table == table))
+            {
+                entry
+                    .event_triggers
+                    .retain(|c| c.get("name").and_then(Value::as_str) != Some(name));
+            }
+            true
+        }
         kind => {
             let (Some(source), Some(table)) =
                 (def.get("source").and_then(Value::as_str), table_of(def))
@@ -366,9 +385,6 @@ fn drop_object(md: &mut Metadata, obj: &InconsistentObject) -> bool {
                     .retain(|c| c.get("name").and_then(Value::as_str) != Some(name)),
                 "remote_relationship" => entry
                     .remote_relationships
-                    .retain(|c| c.get("name").and_then(Value::as_str) != Some(name)),
-                "event_trigger" => entry
-                    .event_triggers
                     .retain(|c| c.get("name").and_then(Value::as_str) != Some(name)),
                 _ => return false,
             }

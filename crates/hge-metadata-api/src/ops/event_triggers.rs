@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use hge_core::{Code, QualifiedTable};
 use hge_events::admin::{self, InvocationsOf, LogStatus, Redelivery};
+use hge_events::cron::CronSchedule;
 use hge_events::model::{HeaderConf, MAX_TRIGGER_NAME_LENGTH, is_legal_trigger_name};
 use hge_postgres::PgSource;
 use serde::de::DeserializeOwned;
@@ -68,8 +69,23 @@ fn text(obj: &Obj, key: &str, path: &str) -> ApiResult<Option<String>> {
     }
 }
 
+/// A required string field; aeson calls the type `ty` (`Text`, or `String` for names).
+fn required_string(obj: &Obj, key: &str, path: &str, ty: &str) -> ApiResult<String> {
+    match obj.get(key) {
+        None => Err(missing(path, key)),
+        Some(Value::String(s)) => Ok(s.clone()),
+        Some(v) => Err(parse_failed(
+            &format!("{path}.{key}"),
+            format!(
+                "parsing {ty} failed, expected String, but encountered {}",
+                json_kind(v)
+            ),
+        )),
+    }
+}
+
 fn required_text(obj: &Obj, key: &str, path: &str) -> ApiResult<String> {
-    text(obj, key, path)?.ok_or_else(|| missing(path, key))
+    required_string(obj, key, path, "Text")
 }
 
 fn boolean(obj: &Obj, key: &str, path: &str) -> ApiResult<Option<bool>> {
@@ -90,9 +106,19 @@ fn int(obj: &Obj, key: &str, path: &str) -> ApiResult<Option<i64>> {
     match field(obj, key) {
         None => Ok(None),
         Some(Value::Number(n)) if n.is_i64() => Ok(n.as_i64()),
+        // aeson's bounded `Int` accepts integral floats (`1.0`).
+        Some(Value::Number(n))
+            if n.as_f64().is_some_and(|f| {
+                f.fract() == 0.0 && f >= i64::MIN as f64 && f < i64::MAX as f64
+            }) =>
+        {
+            Ok(n.as_f64().map(|f| f as i64))
+        }
         Some(v @ Value::Number(_)) => Err(parse_failed(
             &format!("{path}.{key}"),
-            format!("parsing Int failed, unexpected floating number {v}"),
+            format!(
+                "parsing Int failed, value is either floating or will cause over or underflow {v}"
+            ),
         )),
         Some(v) => Err(parse_failed(
             &format!("{path}.{key}"),
@@ -148,7 +174,15 @@ struct OpSpec {
 
 impl OpSpec {
     fn parse(v: &Value, path: &str) -> ApiResult<OpSpec> {
-        let obj = object(v, path)?;
+        let obj = v.as_object().ok_or_else(|| {
+            parse_failed(
+                path,
+                format!(
+                    "parsing Hasura.RQL.Types.EventTrigger.SubscribeOpSpec(SubscribeOpSpec) failed, expected Object, but encountered {}",
+                    json_kind(v)
+                ),
+            )
+        })?;
         let columns = obj.get("columns").ok_or_else(|| missing(path, "columns"))?;
         Ok(OpSpec {
             columns: Columns::parse(columns, &format!("{path}.columns"))?,
@@ -195,7 +229,7 @@ impl CreateEventTrigger {
         let p = "$.args";
         let obj = object(args, p)?;
         let source = source_name(obj, p)?;
-        let name = required_text(obj, "name", p)?;
+        let name = required_string(obj, "name", p, "String")?;
         let table: QualifiedTable = typed(
             obj.get("table").ok_or_else(|| missing(p, "table"))?,
             &format!("{p}.table"),
@@ -219,9 +253,9 @@ impl CreateEventTrigger {
                     .iter()
                     .enumerate()
                     .map(|(i, h)| {
-                        let path = format!("{p}.headers[{i}]");
-                        typed::<HeaderConf>(h, &path)?;
-                        Ok(h.clone())
+                        // Stored as decoded: unknown keys are dropped, as in V2.
+                        let header: HeaderConf = typed(h, &format!("{p}.headers[{i}]"))?;
+                        Ok(serde_json::to_value(header).expect("serialisable"))
                     })
                     .collect::<ApiResult<Vec<_>>>()?,
             ),
@@ -367,6 +401,13 @@ fn retry_conf(v: &Value, path: &str) -> ApiResult<Value> {
 fn cleanup_config(v: &Value, path: &str) -> ApiResult<Value> {
     let obj = object(v, path)?;
     let schedule = required_text(obj, "schedule", path)?;
+    if CronSchedule::parse(&schedule).is_err() {
+        // V2's cron parser reports most malformed schedules like this.
+        return Err(parse_failed(
+            &format!("{path}.schedule"),
+            "Failed reading: takeWhile1",
+        ));
+    }
     let clear_older_than =
         int(obj, "clear_older_than", path)?.ok_or_else(|| missing(path, "clear_older_than"))?;
     Ok(json!({
@@ -498,8 +539,13 @@ pub async fn delete_event_trigger<R: Runtime>(
         .tables[ti]
         .event_triggers
         .remove(i);
-    // Resolving the metadata without it drops its SQL triggers and archives its events.
+    // Resolving the metadata without it drops its SQL triggers. Its events are archived
+    // here even when it had none (manual-only, or never installed), as V2 always does.
     ctx.changed().await?;
+    let pool = source_pool(ctx, &source)?;
+    admin::archive(pool.pool(), &name)
+        .await
+        .map_err(|e| ApiError::new(500, Code::Unexpected, e))?;
     Ok(success())
 }
 
@@ -561,8 +607,9 @@ pub async fn redeliver_event<R: Runtime>(ctx: &mut Ctx<'_, R>, args: &Value) -> 
 fn existing_trigger<R: Runtime>(ctx: &Ctx<'_, R>, obj: &Obj) -> ApiResult<(String, Arc<PgSource>)> {
     let name = required_text(obj, "name", "$.args")?;
     let source = source_name(obj, "$.args")?;
+    let pool = source_pool(ctx, &source)?;
     find_trigger(ctx, &source, &name).ok_or_else(|| trigger_missing(&name))?;
-    Ok((name, source_pool(ctx, &source)?))
+    Ok((name, pool))
 }
 
 pub async fn get_event_logs<R: Runtime>(ctx: &mut Ctx<'_, R>, args: &Value) -> ApiResult<Value> {
@@ -698,6 +745,12 @@ pub async fn switch_event_trigger_cleanups<R: Runtime>(
             .iter_mut()
             .find(|s| s.name == source)
             .ok_or_else(|| unknown_source(&source))?;
+        let exists: Vec<String> = src
+            .tables
+            .iter()
+            .flat_map(|t| &t.event_triggers)
+            .filter_map(|t| Some(t.get("name")?.as_str()?.to_owned()))
+            .collect();
         let mut configs: Vec<(String, &mut Value)> = src
             .tables
             .iter_mut()
@@ -715,6 +768,9 @@ pub async fn switch_event_trigger_cleanups<R: Runtime>(
                 .for_each(|(_, c)| c["paused"] = Value::Bool(paused)),
             Some(names) => {
                 for name in names {
+                    if !exists.contains(&name) {
+                        return Err(trigger_missing(&name));
+                    }
                     let (_, config) =
                         configs
                             .iter_mut()

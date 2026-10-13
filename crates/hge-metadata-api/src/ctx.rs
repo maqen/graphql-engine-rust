@@ -251,6 +251,24 @@ impl<'a, R: Runtime> Ctx<'a, R> {
         }
     }
 
+    /// Give up on the working copy. Resolving it may already have changed the sources (event
+    /// trigger SQL is installed when metadata is resolved), so the stored metadata is
+    /// resolved again to put them back.
+    pub async fn discard(self) {
+        if !self.modified {
+            return;
+        }
+        let installed = self.rt.installed();
+        let stored = match self.rt.store().fetch().await {
+            Ok(Some(s)) if s.resource_version != installed.resource_version => {
+                hge_metadata::from_json(s.metadata).ok()
+            }
+            _ => None,
+        };
+        let metadata = stored.as_ref().unwrap_or(&installed.metadata);
+        let _ = self.rt.prepare(metadata, PrepareOptions::default()).await;
+    }
+
     /// Write the result back and install it. The store only accepts the write if nobody else
     /// wrote since [`Ctx::begin`]. Returns the new resource version (unchanged when nothing
     /// was modified).
@@ -281,11 +299,18 @@ impl<'a, R: Runtime> Ctx<'a, R> {
             }
         };
         let store = self.rt.store();
-        let version = if self.modified {
+        let stored = if self.modified {
             let doc = hge_metadata::export_json(&self.metadata);
-            store.store(&doc, self.resource_version).await?
+            store.store(&doc, self.resource_version).await
         } else {
-            store.bump_version(self.resource_version).await?
+            store.bump_version(self.resource_version).await
+        };
+        let version = match stored {
+            Ok(v) => v,
+            Err(e) => {
+                self.discard().await;
+                return Err(e.into());
+            }
         };
         // Install before anything else can fail or be cancelled: the store already has it.
         self.rt.install(prepared, self.metadata, version);

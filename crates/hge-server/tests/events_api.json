@@ -1105,7 +1105,7 @@
    },
    "status": 200,
    "response": {
-    "event_id": "ee450ee5-b95c-4a98-b579-b1136947cee7"
+    "event_id": "d2cfcea2-88e8-4783-bc06-640c67f1d5f3"
    }
   },
   {
@@ -1191,7 +1191,7 @@
       "0"
      ],
      [
-      "019cb68c-edb8-433d-9309-de42282c29f5",
+      "97676b6c-8d39-4249-85f4-85fbafaec211",
       "tk",
       "INSERT",
       "{\"new\": {\"c1\": 1, \"c2\": \"x\", \"id\": 1}, \"old\": null}",
@@ -1230,8 +1230,8 @@
       },
       "trace_context": {
        "sampling_state": "1",
-       "span_id": "6f710d1689bd5bd8",
-       "trace_id": "bb377c38c112a2111305a19f7b443a81"
+       "span_id": "aa6c5875f9c03a4e",
+       "trace_id": "d6424b69da80e5ca67ba5c604f3de2ee"
       }
      },
      "delivered": false,
@@ -1262,8 +1262,8 @@
       },
       "trace_context": {
        "sampling_state": "1",
-       "span_id": "6f710d1689bd5bd8",
-       "trace_id": "bb377c38c112a2111305a19f7b443a81"
+       "span_id": "aa6c5875f9c03a4e",
+       "trace_id": "d6424b69da80e5ca67ba5c604f3de2ee"
       }
      },
      "delivered": false,
@@ -1314,8 +1314,8 @@
       },
       "trace_context": {
        "sampling_state": "1",
-       "span_id": "ea1ec0927e16435d",
-       "trace_id": "77ab20c9f37056b8560c0f89e52f52e6"
+       "span_id": "7db110e9ce526e26",
+       "trace_id": "ad6ecba12106bd74c28b82388983d393"
       }
      },
      "delivered": false,
@@ -1377,8 +1377,8 @@
       },
       "trace_context": {
        "sampling_state": "1",
-       "span_id": "6f710d1689bd5bd8",
-       "trace_id": "bb377c38c112a2111305a19f7b443a81"
+       "span_id": "aa6c5875f9c03a4e",
+       "trace_id": "d6424b69da80e5ca67ba5c604f3de2ee"
       }
      },
      "delivered": false,
@@ -1584,8 +1584,8 @@
       },
       "trace_context": {
        "sampling_state": "1",
-       "span_id": "6f710d1689bd5bd8",
-       "trace_id": "bb377c38c112a2111305a19f7b443a81"
+       "span_id": "aa6c5875f9c03a4e",
+       "trace_id": "d6424b69da80e5ca67ba5c604f3de2ee"
       }
      },
      "delivered": false,
@@ -1741,8 +1741,8 @@
       },
       "trace_context": {
        "sampling_state": "1",
-       "span_id": "6f710d1689bd5bd8",
-       "trace_id": "bb377c38c112a2111305a19f7b443a81"
+       "span_id": "aa6c5875f9c03a4e",
+       "trace_id": "d6424b69da80e5ca67ba5c604f3de2ee"
       }
      },
      "delivered": false,
@@ -1825,8 +1825,8 @@
       },
       "trace_context": {
        "sampling_state": "1",
-       "span_id": "6f710d1689bd5bd8",
-       "trace_id": "bb377c38c112a2111305a19f7b443a81"
+       "span_id": "aa6c5875f9c03a4e",
+       "trace_id": "d6424b69da80e5ca67ba5c604f3de2ee"
       }
      },
      "delivered": false,
@@ -2501,6 +2501,628 @@
     "args": {
      "name": "manual-1"
     }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "version": 3,
+    "sources": [
+     {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+       {
+        "table": {
+         "name": "ev_t1",
+         "schema": "public"
+        },
+        "event_triggers": [
+         {
+          "name": "tk",
+          "definition": {
+           "enable_manual": false,
+           "insert": {
+            "columns": "*"
+           }
+          },
+          "retry_conf": {
+           "interval_sec": 10,
+           "num_retries": 0,
+           "timeout_sec": 60
+          },
+          "webhook": "http://127.0.0.1:1/hook"
+         }
+        ]
+       },
+       {
+        "table": {
+         "name": "ev_t2",
+         "schema": "public"
+        }
+       }
+      ],
+      "configuration": {
+       "connection_info": {
+        "database_url": {
+         "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+        },
+        "isolation_level": "read-committed",
+        "use_prepared_statements": false
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": null,
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: parsing String failed, expected String, but encountered Null",
+    "path": "$.args.name",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "tf",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "retry_conf": {
+      "num_retries": 1.5,
+      "interval_sec": 10
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: parsing Int failed, value is either floating or will cause over or underflow 1.5",
+    "path": "$.args.retry_conf.num_retries",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "tf",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "retry_conf": {
+      "num_retries": 1.0,
+      "interval_sec": 10
+     }
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "tc",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "delete": 1,
+     "enable_manual": "x",
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: parsing Hasura.RQL.Types.EventTrigger.SubscribeOpSpec(SubscribeOpSpec) failed, expected Object, but encountered Number",
+    "path": "$.args.delete",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "tc",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "cleanup_config": {
+      "schedule": "garbage",
+      "clear_older_than": 1
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: Failed reading: takeWhile1",
+    "path": "$.args.cleanup_config.schedule",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "th",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "headers": [
+      {
+       "name": "a",
+       "value": "b",
+       "extra": 1
+      }
+     ]
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "version": 3,
+    "sources": [
+     {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+       {
+        "table": {
+         "name": "ev_t1",
+         "schema": "public"
+        },
+        "event_triggers": [
+         {
+          "name": "tf",
+          "definition": {
+           "enable_manual": false,
+           "insert": {
+            "columns": "*"
+           }
+          },
+          "retry_conf": {
+           "interval_sec": 10,
+           "num_retries": 1
+          },
+          "webhook": "http://127.0.0.1:1/hook"
+         },
+         {
+          "name": "th",
+          "definition": {
+           "enable_manual": false,
+           "insert": {
+            "columns": "*"
+           }
+          },
+          "retry_conf": {
+           "interval_sec": 10,
+           "num_retries": 0,
+           "timeout_sec": 60
+          },
+          "webhook": "http://127.0.0.1:1/hook",
+          "headers": [
+           {
+            "name": "a",
+            "value": "b"
+           }
+          ]
+         },
+         {
+          "name": "tk",
+          "definition": {
+           "enable_manual": false,
+           "insert": {
+            "columns": "*"
+           }
+          },
+          "retry_conf": {
+           "interval_sec": 10,
+           "num_retries": 0,
+           "timeout_sec": 60
+          },
+          "webhook": "http://127.0.0.1:1/hook"
+         }
+        ]
+       },
+       {
+        "table": {
+         "name": "ev_t2",
+         "schema": "public"
+        }
+       }
+      ],
+      "configuration": {
+       "connection_info": {
+        "database_url": {
+         "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+        },
+        "isolation_level": "read-committed",
+        "use_prepared_statements": false
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_delete_event_trigger",
+    "args": {
+     "name": "th"
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_delete_event_trigger",
+    "args": {
+     "name": "tf"
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pause_event_trigger_cleanups",
+    "args": {
+     "event_triggers": [
+      {
+       "event_triggers": [
+        "zzz"
+       ]
+      }
+     ]
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "event trigger \"zzz\" does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_get_event_logs",
+    "args": {
+     "name": "tk",
+     "source": "nope"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "source with name \"nope\" does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_get_event_by_id",
+    "args": {
+     "event_id": "x",
+     "source": "nope"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "source with name \"nope\" does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_redeliver_event",
+    "args": {
+     "event_id": "x",
+     "source": "nope"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "source with name \"nope\" does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "td",
+     "table": {
+      "schema": "public",
+      "name": "ev_t2"
+     },
+     "enable_manual": true,
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_invoke_event_trigger",
+    "args": {
+     "name": "td",
+     "payload": {
+      "a": 1
+     }
+    }
+   },
+   "status": 200,
+   "response": {
+    "event_id": "668c0d6e-fa17-4a54-8900-f05471c6fc52"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "SELECT payload->>'op', archived FROM hdb_catalog.event_log WHERE trigger_name = 'td'"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "TuplesOk",
+    "result": [
+     [
+      "?column?",
+      "archived"
+     ],
+     [
+      "MANUAL",
+      "f"
+     ]
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_delete_event_trigger",
+    "args": {
+     "name": "td"
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "SELECT archived, count(*) FROM hdb_catalog.event_log WHERE trigger_name = 'td' GROUP BY 1"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "TuplesOk",
+    "result": [
+     [
+      "archived",
+      "count"
+     ],
+     [
+      "t",
+      "1"
+     ]
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "tx",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "update": {
+      "columns": [
+       "c2"
+      ]
+     },
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "ALTER TABLE ev_t1 DROP COLUMN c2",
+     "check_metadata_consistency": false
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "reload_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "inconsistent_objects": [
+     {
+      "definition": {
+       "configuration": {
+        "definition": {
+         "enable_manual": false,
+         "update": {
+          "columns": [
+           "c2"
+          ]
+         }
+        },
+        "name": "tx",
+        "retry_conf": {
+         "interval_sec": 10,
+         "num_retries": 0,
+         "timeout_sec": 60
+        },
+        "webhook": "http://127.0.0.1:1/hook"
+       },
+       "table": {
+        "name": "ev_t1",
+        "schema": "public"
+       }
+      },
+      "name": "event_trigger tx in table ev_t1 in source default",
+      "reason": "Inconsistent object: table \"ev_t1\" has no field named \"c2\"",
+      "type": "event_trigger"
+     }
+    ],
+    "is_consistent": false,
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_inconsistent_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "inconsistent_objects": [
+     {
+      "definition": {
+       "configuration": {
+        "definition": {
+         "enable_manual": false,
+         "update": {
+          "columns": [
+           "c2"
+          ]
+         }
+        },
+        "name": "tx",
+        "retry_conf": {
+         "interval_sec": 10,
+         "num_retries": 0,
+         "timeout_sec": 60
+        },
+        "webhook": "http://127.0.0.1:1/hook"
+       },
+       "table": {
+        "name": "ev_t1",
+        "schema": "public"
+       }
+      },
+      "name": "event_trigger tx in table ev_t1 in source default",
+      "reason": "Inconsistent object: table \"ev_t1\" has no field named \"c2\"",
+      "type": "event_trigger"
+     }
+    ],
+    "is_consistent": false
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "drop_inconsistent_metadata",
+    "args": {}
    },
    "status": 200,
    "response": {
