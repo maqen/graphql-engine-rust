@@ -1,0 +1,4 @@
+table:
+  name: size
+  schema: other
+is_enum: true

@@ -146,6 +146,7 @@ impl Parser<'_> {
                     nullable: true,
                     description: None,
                     mutable: false,
+                    enum_ref: None,
                 };
                 let exp = self.column(table, root, &as_column, value)?;
                 computed_comparison(exp, &call)
@@ -305,6 +306,17 @@ impl Parser<'_> {
                     _ => CompareOp::HasKeysAll(value(v, &text.array_of())?),
                 })
             }
+            "jsonb_path_exists" | "jsonb_path_match" => {
+                if !scalars::is_jsonb(ty) {
+                    return Err(format!("operator {op} is only supported on jsonb columns"));
+                }
+                let v = value(v, &ColumnType::builtin("jsonpath"))?;
+                cmp(if name == "jsonb_path_exists" {
+                    CompareOp::JsonbPathExists(v)
+                } else {
+                    CompareOp::JsonbPathMatch(v)
+                })
+            }
             "ceq" | "cne" | "cneq" | "cgt" | "clt" | "cgte" | "clte" => {
                 let op = match name {
                     "ceq" => ColumnCompareOp::Eq,
@@ -354,12 +366,10 @@ impl Parser<'_> {
                 })
             }
             "cast" => self.cast(table, root, col, v),
-            "jsonb_path_exists" | "jsonb_path_match" | "ancestor" | "ancestor_any"
-            | "descendant" | "descendant_any" | "matches" | "matches_any" | "matches_fulltext" => {
-                Err(format!(
-                    "the operator {op} is not supported in permissions yet"
-                ))
-            }
+            "ancestor" | "ancestor_any" | "descendant" | "descendant_any" | "matches"
+            | "matches_any" | "matches_fulltext" => Err(format!(
+                "the operator {op} is not supported in permissions yet"
+            )),
             _ if name.starts_with("st_") => {
                 let adapt = |v: &Json, ty: &ColumnType, _: &str| {
                     value(v, ty).map_err(hge_core::Error::validation)

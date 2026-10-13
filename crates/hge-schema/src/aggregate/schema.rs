@@ -32,22 +32,21 @@ impl Builder<'_> {
         }
         self.ensure_table_types(table);
         let ty = self.ensure_aggregate_types(table);
-        let description = table
-            .root_fields
-            .select_aggregate_comment
-            .clone()
-            .unwrap_or_else(|| {
-                format!(
+        let description = crate::tables::comment_or(
+            table.root_fields.select_aggregate_comment.as_deref(),
+            || {
+                Some(format!(
                     "fetch aggregated fields from the table: \"{}\"",
                     table.display_name()
-                )
-            });
+                ))
+            },
+        );
         let field = FieldDef::new(
             table.root_fields.select_aggregate.clone(),
             TypeRef::nn(ty),
             FieldKind::SelectAggregate(table.clone()),
         )
-        .describe(description);
+        .describe_opt(description);
         let field = self.with_select_args(field, table);
         root.fields.insert(field.name.clone(), field);
     }
@@ -408,7 +407,7 @@ impl Builder<'_> {
 }
 
 /// The columns an aggregate function applies to (V2: numeric for the statistical functions
-/// and `sum`, comparable for `max` and `min`).
+/// and `sum`, comparable for `max` and `min`; never columns referencing enum tables).
 fn applicable_columns(columns: &[ColumnInfo], function: AggregateFunction) -> Vec<&ColumnInfo> {
     let applies = |ty: &ColumnType| {
         if function.is_comparison() {
@@ -417,7 +416,10 @@ fn applicable_columns(columns: &[ColumnInfo], function: AggregateFunction) -> Ve
             scalars::is_numeric(ty)
         }
     };
-    columns.iter().filter(|c| applies(&c.ty)).collect()
+    columns
+        .iter()
+        .filter(|c| c.enum_ref.is_none() && applies(&c.ty))
+        .collect()
 }
 
 fn insert_input(fields: &mut IndexMap<String, InputValueDef>, field: InputValueDef) {

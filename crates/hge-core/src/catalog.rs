@@ -23,6 +23,17 @@ pub struct SourceCatalog {
     /// The outcome of preparing each native query's validation statement: the result
     /// columns, or V2's `error` object.
     pub native_queries: HashMap<NativeQueryCheck, Result<Vec<ResultColumn>, serde_json::Value>>,
+    /// Rows of the tables tracked with `is_enum`, or why they could not be read. Unlike the
+    /// rest of the catalog they are not re-read on every introspection: V2 keeps them until
+    /// the metadata is reloaded or the table first becomes an enum table.
+    pub enum_tables: HashMap<QualifiedTable, Result<Vec<EnumTableRow>, String>>,
+}
+
+/// One row of an enum table: the primary key value and the comment column, if any.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnumTableRow {
+    pub value: String,
+    pub comment: Option<String>,
 }
 
 impl SourceCatalog {
@@ -101,7 +112,7 @@ pub enum TableKind {
     PartitionedTable,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TableCatalog {
     pub name: QualifiedTable,
     pub kind: TableKind,
@@ -117,7 +128,7 @@ pub struct TableCatalog {
     pub mutability: TableMutability,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UniqueConstraint {
     pub name: String,
     /// Indexed columns in index order (empty for expression indexes).
@@ -143,9 +154,32 @@ impl TableCatalog {
     pub fn column(&self, name: &str) -> Option<&ColumnInfo> {
         self.columns.get(name)
     }
+
+    /// The columns an enum table's rows are read from: its primary key when that is a single
+    /// `text` column, and the comment column when there is exactly one other column and it
+    /// is `text` too. `None` when the table cannot be an enum table at all (schema
+    /// resolution reports why).
+    pub fn enum_columns(&self) -> Option<(&str, Option<&str>)> {
+        let is_text =
+            |c: &ColumnInfo| c.ty.kind == TypeKind::Base && !c.ty.is_array() && c.ty.name == "text";
+        let [key] = self.primary_key.as_deref()? else {
+            return None;
+        };
+        let key = self.column(key).filter(|c| is_text(c))?;
+        let others: Vec<&ColumnInfo> = self
+            .columns
+            .values()
+            .filter(|c| c.name != key.name)
+            .collect();
+        let comment = match others.as_slice() {
+            [c] if is_text(c) => Some(c.name.as_str()),
+            _ => None,
+        };
+        Some((key.name.as_str(), comment))
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ColumnInfo {
     pub name: String,
     pub ty: ColumnType,
@@ -219,7 +253,7 @@ impl ColumnType {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ForeignKey {
     pub constraint: String,
     pub ref_table: QualifiedTable,

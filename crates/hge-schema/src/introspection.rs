@@ -19,66 +19,65 @@ fn include_deprecated() -> InputValueDef {
     }
 }
 
-/// The introspection types of the GraphQL spec.
+/// The introspection types, declared exactly as V2 declares them. V2's declarations are not the
+/// spec's (lists show as plain objects, most scalars as `String!`, no `specifiedByURL` or
+/// `__DirectiveLocation`; `isDeprecated` is `String!` yet returns a boolean), but the values
+/// returned are the spec's. Don't "correct" them: the declarations show in introspection.
 pub fn add_introspection_types(schema: &mut Schema) {
     let s = |n: &str| TypeRef::named(n);
     let nn = |n: &str| TypeRef::nn(n);
 
     schema.add(TypeDef::Object(
         ObjectDef::new("__Schema", None)
-            .field(intro("description", s("String")))
-            .field(intro("types", TypeRef::nn_list_nn("__Type")))
-            .field(intro("queryType", nn("__Type")))
+            .field(intro("description", nn("String")))
+            .field(intro("types", s("__Type")))
+            .field(intro("queryType", s("__Type")))
             .field(intro("mutationType", s("__Type")))
             .field(intro("subscriptionType", s("__Type")))
-            .field(intro("directives", TypeRef::nn_list_nn("__Directive"))),
+            .field(intro("directives", s("__Directive"))),
     ));
     schema.add(TypeDef::Object(
         ObjectDef::new("__Type", None)
             .field(intro("kind", nn("__TypeKind")))
-            .field(intro("name", s("String")))
-            .field(intro("description", s("String")))
-            .field(intro("specifiedByURL", s("String")))
-            .field(intro("fields", TypeRef::nn("__Field").list()).arg(include_deprecated()))
-            .field(intro("interfaces", TypeRef::nn("__Type").list()))
-            .field(intro("possibleTypes", TypeRef::nn("__Type").list()))
-            .field(intro("enumValues", TypeRef::nn("__EnumValue").list()).arg(include_deprecated()))
-            .field(intro("inputFields", TypeRef::nn("__InputValue").list()))
+            .field(intro("name", nn("String")))
+            .field(intro("description", nn("String")))
+            .field(intro("fields", s("__Field")).arg(include_deprecated()))
+            .field(intro("interfaces", s("__Type")))
+            .field(intro("possibleTypes", s("__Type")))
+            .field(intro("enumValues", s("__EnumValue")).arg(include_deprecated()))
+            .field(intro("inputFields", s("__InputValue")))
             .field(intro("ofType", s("__Type"))),
     ));
     schema.add(TypeDef::Object(
         ObjectDef::new("__Field", None)
             .field(intro("name", nn("String")))
-            .field(intro("description", s("String")))
-            .field(intro("args", TypeRef::nn_list_nn("__InputValue")))
-            .field(intro("type", nn("__Type")))
-            .field(intro("isDeprecated", nn("Boolean")))
-            .field(intro("deprecationReason", s("String"))),
+            .field(intro("description", nn("String")))
+            .field(intro("args", s("__InputValue")))
+            .field(intro("type", s("__Type")))
+            .field(intro("isDeprecated", nn("String")))
+            .field(intro("deprecationReason", nn("String"))),
     ));
     schema.add(TypeDef::Object(
         ObjectDef::new("__InputValue", None)
             .field(intro("name", nn("String")))
-            .field(intro("description", s("String")))
-            .field(intro("type", nn("__Type")))
-            .field(intro("defaultValue", s("String"))),
+            .field(intro("description", nn("String")))
+            .field(intro("type", s("__Type")))
+            .field(intro("defaultValue", nn("String"))),
     ));
     schema.add(TypeDef::Object(
         ObjectDef::new("__EnumValue", None)
             .field(intro("name", nn("String")))
-            .field(intro("description", s("String")))
-            .field(intro("isDeprecated", nn("Boolean")))
-            .field(intro("deprecationReason", s("String"))),
+            .field(intro("description", nn("String")))
+            .field(intro("isDeprecated", nn("String")))
+            .field(intro("deprecationReason", nn("String"))),
     ));
     schema.add(TypeDef::Object(
         ObjectDef::new("__Directive", None)
             .field(intro("name", nn("String")))
-            .field(intro("description", s("String")))
+            .field(intro("description", nn("String")))
             .field(intro("isRepeatable", nn("Boolean")))
-            .field(intro(
-                "locations",
-                TypeRef::nn_list_nn("__DirectiveLocation"),
-            ))
-            .field(intro("args", TypeRef::nn_list_nn("__InputValue"))),
+            .field(intro("locations", nn("String")))
+            .field(intro("args", s("__InputValue"))),
     ));
     let enum_def = |name: &str, values: &[&str]| {
         TypeDef::Enum(EnumDef {
@@ -112,39 +111,16 @@ pub fn add_introspection_types(schema: &mut Schema) {
             "NON_NULL",
         ],
     ));
-    schema.add(enum_def(
-        "__DirectiveLocation",
-        &[
-            "QUERY",
-            "MUTATION",
-            "SUBSCRIPTION",
-            "FIELD",
-            "FRAGMENT_DEFINITION",
-            "FRAGMENT_SPREAD",
-            "INLINE_FRAGMENT",
-            "VARIABLE_DEFINITION",
-            "SCHEMA",
-            "SCALAR",
-            "OBJECT",
-            "FIELD_DEFINITION",
-            "ARGUMENT_DEFINITION",
-            "INTERFACE",
-            "UNION",
-            "ENUM",
-            "ENUM_VALUE",
-            "INPUT_OBJECT",
-            "INPUT_FIELD_DEFINITION",
-        ],
-    ));
 }
 
 /// `@include`, `@skip` and V2's `@cached`.
 pub fn standard_directives() -> Vec<DirectiveDef> {
-    let if_arg = |desc: &str| {
+    // V2 gives `if` no description.
+    let if_arg = || {
         let mut args = IndexMap::new();
         args.insert(
             "if".to_owned(),
-            InputValueDef::new("if", TypeRef::nn("Boolean")).describe(desc),
+            InputValueDef::new("if", TypeRef::nn("Boolean")),
         );
         args
     };
@@ -172,14 +148,14 @@ pub fn standard_directives() -> Vec<DirectiveDef> {
             name: "include".to_owned(),
             description: Some("whether this query should be included".to_owned()),
             locations: vec!["FIELD", "FRAGMENT_SPREAD", "INLINE_FRAGMENT"],
-            args: if_arg("Included when true."),
+            args: if_arg(),
             is_repeatable: false,
         },
         DirectiveDef {
             name: "skip".to_owned(),
             description: Some("whether this query should be skipped".to_owned()),
             locations: vec!["FIELD", "FRAGMENT_SPREAD", "INLINE_FRAGMENT"],
-            args: if_arg("Skipped when true."),
+            args: if_arg(),
             is_repeatable: false,
         },
         DirectiveDef {
@@ -310,7 +286,6 @@ fn type_object(schema: &Schema, ty: &TypeRef, selection: &[SelectedField<'_>]) -
                 "kind" => Json::String(def.kind().to_owned()),
                 "name" => Json::String(name.clone()),
                 "description" => opt_str(def.description()),
-                "specifiedByURL" => Json::Null,
                 "fields" => match def {
                     TypeDef::Object(obj) => {
                         let with_deprecated = include_deprecated_arg(sel);

@@ -3,9 +3,9 @@
 use std::collections::HashMap;
 
 use hge_core::{
-    ColumnInfo, ColumnType, Error, ForeignKey, FunctionArg, FunctionCatalog, QualifiedFunction,
-    QualifiedTable, SourceCatalog, TableCatalog, TableKind, TableMutability, TypeKind,
-    UniqueConstraint, Volatility,
+    ColumnInfo, ColumnType, EnumTableRow, Error, ForeignKey, FunctionArg, FunctionCatalog,
+    QualifiedFunction, QualifiedTable, SourceCatalog, TableCatalog, TableKind, TableMutability,
+    TypeKind, UniqueConstraint, Volatility,
 };
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -16,6 +16,7 @@ SELECT coalesce(json_agg(json_build_object(
   'schema', n.nspname,
   'name', c.relname,
   'kind', c.relkind::text,
+  'description', pg_catalog.obj_description(c.oid, 'pg_class'),
   'columns', (
     SELECT coalesce(json_agg(json_build_object(
       'name', a.attname,
@@ -27,7 +28,8 @@ SELECT coalesce(json_agg(json_build_object(
       'has_default', a.atthasdef,
       'is_identity', a.attidentity <> '',
       'is_generated', a.attgenerated <> '',
-      'is_identity_always', a.attidentity = 'a'
+      'is_identity_always', a.attidentity = 'a',
+      'description', pg_catalog.col_description(c.oid, a.attnum)
     ) ORDER BY a.attnum), '[]')
     FROM pg_catalog.pg_attribute a
     JOIN (SELECT ty.oid, ty.typname, ty.typtype, ty.typelem, ty.typcategory, ty.typbasetype,
@@ -197,6 +199,8 @@ struct RawTable {
     schema: String,
     name: String,
     kind: String,
+    #[serde(default)]
+    description: Option<String>,
     columns: Vec<RawColumn>,
     primary_key: Option<Vec<String>>,
     unique_constraints: Vec<Option<Vec<String>>>,
@@ -218,6 +222,8 @@ struct RawColumn {
     is_identity: bool,
     is_generated: bool,
     is_identity_always: bool,
+    #[serde(default)]
+    description: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -334,7 +340,7 @@ pub fn parse_catalog(tables_json: &str, enums_json: &str) -> Result<SourceCatalo
                         is_identity: c.is_identity,
                         is_generated: c.is_generated,
                         is_identity_always: c.is_identity_always,
-                        description: None,
+                        description: c.description,
                     },
                 )
             })
@@ -353,7 +359,7 @@ pub fn parse_catalog(tables_json: &str, enums_json: &str) -> Result<SourceCatalo
             TableCatalog {
                 name,
                 kind,
-                description: None,
+                description: t.description,
                 columns,
                 primary_key: t.primary_key,
                 unique_constraints: t.unique_constraints.into_iter().flatten().collect(),
@@ -377,4 +383,31 @@ pub fn parse_catalog(tables_json: &str, enums_json: &str) -> Result<SourceCatalo
         functions: HashMap::new(),
         ..Default::default()
     })
+}
+
+/// The query reading an enum table's rows (V2's `fetchEnumValuesFromDb`): the key and the
+/// comment column (or `NULL`), both as text.
+pub fn enum_rows_sql(table: &QualifiedTable, key: &str, comment: Option<&str>) -> String {
+    let mut sql = "SELECT ".to_owned();
+    crate::sql::push_ident(&mut sql, key);
+    sql.push_str("::text, ");
+    match comment {
+        Some(c) => crate::sql::push_ident(&mut sql, c),
+        None => sql.push_str("NULL"),
+    }
+    sql.push_str("::text FROM ");
+    crate::sql::push_ident(&mut sql, &table.schema);
+    sql.push('.');
+    crate::sql::push_ident(&mut sql, &table.name);
+    sql
+}
+
+/// The rows returned by [`enum_rows_sql`].
+pub fn enum_rows(rows: Vec<Vec<Option<String>>>) -> Vec<EnumTableRow> {
+    rows.into_iter()
+        .map(|mut r| EnumTableRow {
+            comment: r.pop().flatten(),
+            value: r.pop().flatten().unwrap_or_default(),
+        })
+        .collect()
 }

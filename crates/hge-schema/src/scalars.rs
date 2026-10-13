@@ -9,7 +9,7 @@ use crate::model::TypeRef;
 pub const BUILTIN_SCALARS: &[&str] = &["Boolean", "Float", "ID", "Int", "String"];
 
 /// Canonical V2 name of a Postgres type, resolving aliases (`int4` → `integer`, …).
-fn canonical(name: &str) -> &str {
+pub(crate) fn canonical(name: &str) -> &str {
     match name {
         "int2" | "smallint" => "smallint",
         "int4" | "int" | "integer" | "serial" => "integer",

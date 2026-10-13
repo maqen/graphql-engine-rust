@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use deadpool_postgres::{Object, Pool};
 use hge_core::{
-    Code, Error, NativeQueryCheck, QualifiedFunction, QualifiedTable, Session, SourceCatalog,
+    Code, EnumTableRow, Error, NativeQueryCheck, QualifiedFunction, QualifiedTable, Session,
+    SourceCatalog,
 };
 use hge_ir::{BoxFuture, MultiplexedQuery, MultiplexedRow, Mutation, QueryRoot, SourceExecutor};
 use serde_json::json;
@@ -99,6 +100,19 @@ impl PgSource {
             guard.disarm();
         }
         Ok(catalog)
+    }
+
+    /// The rows of an enum table: its primary key column and its comment column, if any
+    /// (V2's `fetchEnumValuesFromDb`).
+    pub async fn enum_table_rows(
+        &self,
+        table: &QualifiedTable,
+        key: &str,
+        comment: Option<&str>,
+    ) -> Result<Vec<EnumTableRow>, Error> {
+        let sql = introspect::enum_rows_sql(table, key, comment);
+        let rows = self.query_rows(&sql, &[]).await?;
+        Ok(introspect::enum_rows(rows))
     }
 
     /// Run a statement returning (at most) one row with one text column.

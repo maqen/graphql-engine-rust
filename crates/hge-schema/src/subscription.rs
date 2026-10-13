@@ -14,7 +14,6 @@ use crate::lower::{Lowerer, non_negative, to_value};
 use crate::model::*;
 use crate::normalize::SelectedField;
 use crate::permissions::SelectAccess;
-use crate::scalars;
 use crate::tables::TableInfo;
 
 pub const SUBSCRIPTION_ROOT: &str = "subscription_root";
@@ -101,14 +100,10 @@ impl Builder<'_> {
             if !access.allows_column(&col.name) {
                 continue;
             }
-            self.note_scalar(&col.ty);
+            let ty = self.column_value_type(col, true);
             values.insert(
                 col.gql_name.clone(),
-                InputValueDef::new(
-                    col.gql_name.clone(),
-                    scalars::column_type_ref(&col.ty, true),
-                )
-                .describe_opt(col.description.clone()),
+                InputValueDef::new(col.gql_name.clone(), ty).describe_opt(col.description.clone()),
             );
         }
         self.schema.add(TypeDef::InputObject(InputObjectDef {

@@ -152,6 +152,8 @@ pub(crate) fn table_schema_names(tables: &Tables) -> TableSchemaNames {
                 )
             })
             .map(|(name, ty)| (name.clone(), matches!(ty, TypeDef::Scalar(_))))
+            // Built-in scalars are reserved even when no table uses them (and so pruned).
+            .chain(BUILTIN_SCALARS.iter().map(|s| ((*s).to_owned(), true)))
             .collect(),
     }
 }
@@ -296,13 +298,10 @@ impl Builder<'_> {
             TypeRef::nn_list_nn(table.type_name()),
             FieldKind::SelectMany(table.clone()),
         )
-        .describe(
-            table
-                .root_fields
-                .select_comment
-                .clone()
-                .unwrap_or_else(|| format!("fetch data from the table: \"{display}\"")),
-        );
+        .describe_opt(crate::tables::comment_or(
+            table.root_fields.select_comment.as_deref(),
+            || Some(format!("fetch data from the table: \"{display}\"")),
+        ));
         let select = self.with_select_args(select, table);
         if access.query_root_fields.select {
             root.fields.insert(select.name.clone(), select);
@@ -317,21 +316,17 @@ impl Builder<'_> {
                 TypeRef::named(table.type_name()),
                 FieldKind::SelectByPk(table.clone()),
             )
-            .describe(
-                table
-                    .root_fields
-                    .select_by_pk_comment
-                    .clone()
-                    .unwrap_or_else(|| {
-                        format!(
-                            "fetch data from the table: \"{display}\" using primary key columns"
-                        )
-                    }),
-            );
+            .describe_opt(crate::tables::comment_or(
+                table.root_fields.select_by_pk_comment.as_deref(),
+                || {
+                    Some(format!(
+                        "fetch data from the table: \"{display}\" using primary key columns"
+                    ))
+                },
+            ));
             for col in pk {
                 let col = &table.columns[col];
-                let ty = scalars::column_type_ref(&col.ty, false);
-                self.note_scalar(&col.ty);
+                let ty = self.column_value_type(col, false);
                 by_pk = by_pk.arg(InputValueDef::new(col.gql_name.clone(), ty));
             }
             root.fields.insert(by_pk.name.clone(), by_pk);
@@ -434,14 +429,10 @@ impl Builder<'_> {
             if !access.allows_column(&col.name) {
                 continue;
             }
-            self.note_scalar(&col.ty);
             let mut field = FieldDef::new(
                 col.gql_name.clone(),
                 // Inherited-role redaction can null any column.
-                scalars::column_type_ref(
-                    &col.ty,
-                    col.nullable || access.redaction(&col.name).is_some(),
-                ),
+                self.column_value_type(col, col.nullable || access.redaction(&col.name).is_some()),
                 FieldKind::Column {
                     column: col.name.clone(),
                     ty: col.ty.clone(),
@@ -456,7 +447,7 @@ impl Builder<'_> {
             }
             obj.fields.insert(field.name.clone(), field);
 
-            let cmp = self.ensure_comparison_exp(&col.ty);
+            let cmp = self.column_comparison_exp(col);
             bool_exp.fields.insert(
                 col.gql_name.clone(),
                 InputValueDef::new(col.gql_name.clone(), TypeRef::named(cmp)),
@@ -595,7 +586,7 @@ impl Builder<'_> {
                     self.with_select_args(field, &target)
                 }
             };
-            field.description = Some(cf.description.clone());
+            field.description = cf.description.clone();
             if cf.has_input_args() {
                 let name = self.ensure_computed_field_args(table, &cf);
                 let ty = if cf.args_required() {
@@ -918,6 +909,15 @@ impl Builder<'_> {
                 InputValueDef::new("_has_keys_any", TypeRef::nn("String").list())
                     .describe("do any of these strings exist as top-level keys in the column"),
             );
+            fields.push(
+                InputValueDef::new("_jsonb_path_exists", TypeRef::named("String"))
+                    .describe("does the jsonpath return any item for the specified JSON value"),
+            );
+            fields.push(
+                InputValueDef::new("_jsonb_path_match", TypeRef::named("String")).describe(
+                    "does the jsonpath predicate check return true for the specified JSON value",
+                ),
+            );
         }
         fields.sort_by(|a, b| a.name.cmp(&b.name));
 
@@ -934,6 +934,32 @@ impl Builder<'_> {
         name
     }
 
+    /// Names of every type some field, argument, input field or directive argument refers to.
+    fn referenced_types(&self) -> HashSet<String> {
+        let mut used = HashSet::new();
+        let add_args = |used: &mut HashSet<String>, args: &IndexMap<String, InputValueDef>| {
+            for arg in args.values() {
+                used.insert(arg.ty.base().to_owned());
+            }
+        };
+        for ty in self.schema.types.values() {
+            match ty {
+                TypeDef::Object(obj) => {
+                    for field in obj.fields.values() {
+                        used.insert(field.ty.base().to_owned());
+                        add_args(&mut used, &field.args);
+                    }
+                }
+                TypeDef::InputObject(obj) => add_args(&mut used, &obj.fields),
+                TypeDef::Enum(_) | TypeDef::Scalar(_) => {}
+            }
+        }
+        for directive in &self.schema.directives {
+            add_args(&mut used, &directive.args);
+        }
+        used
+    }
+
     fn finish(&mut self) {
         for name in std::mem::take(&mut self.scalars) {
             if self.schema.types.contains_key(&name) {
@@ -945,6 +971,12 @@ impl Builder<'_> {
                 description: None,
             }));
         }
+        // V2 lists only the types reachable from the roots: drop scalars nothing refers to
+        // (an unused `ID`, `Float`, …).
+        let used = self.referenced_types();
+        self.schema
+            .types
+            .retain(|name, ty| !matches!(ty, TypeDef::Scalar(_)) || used.contains(name.as_str()));
         // V2 lists types, fields, arguments, input fields (and enum values) sorted by name.
         self.schema.types.sort_keys();
         for ty in self.schema.types.values_mut() {
@@ -955,7 +987,9 @@ impl Builder<'_> {
                         field.args.sort_keys();
                     }
                 }
-                TypeDef::InputObject(obj) => obj.fields.sort_keys(),
+                TypeDef::InputObject(obj) => {
+                    obj.fields.sort_keys();
+                }
                 // Enum values keep definition order; introspection sorts them.
                 TypeDef::Enum(_) => {}
                 TypeDef::Scalar(_) => {}

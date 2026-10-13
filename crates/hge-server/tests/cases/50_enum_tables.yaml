@@ -1,0 +1,198 @@
+config:
+  fixture: enums
+
+cases:
+  - description: an enum table's rows become a sorted enum type, described by the comment column
+    headers: { x-hasura-role: user }
+    query:
+      query: |
+        { __type(name: "colors_enum") { kind description enumValues { name description } } }
+    response:
+      data:
+        __type:
+          kind: ENUM
+          description: null
+          enumValues:
+            - { name: blue, description: null }
+            - { name: green, description: Green }
+            - { name: red, description: Red colour }
+
+  - description: referencing columns take the enum type, named after the custom name or schema
+    headers: { x-hasura-role: user }
+    query:
+      query: |
+        {
+          post: __type(name: "post") { fields { name type { name ofType { name } } } }
+          cmp: __type(name: "colors_enum_comparison_exp") { description inputFields { name type { name ofType { name ofType { name } } } } }
+        }
+    response:
+      data:
+        post:
+          fields:
+            - { name: color, type: { name: null, ofType: { name: colors_enum } } }
+            - { name: id, type: { name: null, ofType: { name: Int } } }
+            - { name: likes, type: { name: null, ofType: { name: Int } } }
+            - { name: shade, type: { name: hue_enum, ofType: null } }
+            - { name: size, type: { name: other_size_enum, ofType: null } }
+            - { name: title, type: { name: null, ofType: { name: String } } }
+        cmp:
+          description: "Boolean expression to compare columns of type \"colors_enum\". All fields are combined with logical 'AND'."
+          inputFields:
+            - { name: _eq, type: { name: colors_enum, ofType: null } }
+            - { name: _in, type: { name: null, ofType: { name: null, ofType: { name: colors_enum } } } }
+            - { name: _is_null, type: { name: Boolean, ofType: null } }
+            - { name: _neq, type: { name: colors_enum, ofType: null } }
+            - { name: _nin, type: { name: null, ofType: { name: null, ofType: { name: colors_enum } } } }
+
+  - description: the enum types are visible without access to the enum tables, but not without the columns
+    headers: { x-hasura-role: guest }
+    query:
+      query: |
+        { colors: __type(name: "colors") { name } enum: __type(name: "colors_enum") { name } }
+    response:
+      data: { colors: null, enum: null }
+
+  - description: enum columns are left out of max and min
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ __type(name: "post_max_fields") { fields { name } } }'
+    response:
+      data:
+        __type:
+          fields: [{ name: id }, { name: likes }, { name: title }]
+
+  - description: enum values filter and come back as text
+    headers: { x-hasura-role: user }
+    query:
+      query: |
+        {
+          reds: post(where: {color: {_eq: red}}, order_by: {id: asc}) { title color shade size }
+          others: post(where: {color: {_nin: [red]}, shade: {_is_null: true}}) { title }
+          dark: post(where: {shade: {_in: [dark, light]}, size: {_neq: large}}, order_by: {id: asc}) { title }
+        }
+    response:
+      data:
+        reds:
+          - { title: first, color: red, shade: dark, size: small }
+          - { title: third, color: red, shade: light, size: null }
+        others: [{ title: second }]
+        dark: [{ title: first }]
+
+  - description: variables of an enum type
+    headers: { x-hasura-role: user }
+    query:
+      query: |
+        query ($c: colors_enum!, $cs: [colors_enum!]) {
+          one: post(where: {color: {_eq: $c}}) { title }
+          many: post(where: {color: {_in: $cs}}, order_by: {id: asc}) { title }
+        }
+      variables: { c: blue, cs: [blue, green] }
+    response:
+      data:
+        one: [{ title: second }]
+        many: [{ title: second }]
+
+  - description: a bad enum value in a variable is reported where it is used
+    headers: { x-hasura-role: user }
+    query:
+      query: 'query ($cs: [colors_enum!]) { post(where: {color: {_in: $cs}}) { title } }'
+      variables: { cs: [blue, purple] }
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.post.args.where.color._in[1]", code: validation-failed }
+          message: "expected one of the values ['blue', 'green', 'red'] for type 'colors_enum', but found 'purple'"
+
+  - description: strings are not enum values
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ post(where: {shade: {_eq: "dark"}}) { title } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.post.args.where.shade._eq", code: validation-failed }
+          message: "expected an enum value for type 'hue_enum', but found a string"
+
+  - description: inserts and updates take enum values
+    headers: { x-hasura-role: user }
+    query:
+      query: |
+        mutation {
+          insert_post_one(object: {title: "fourth", color: green}) { title color }
+          update_post(where: {title: {_eq: "fourth"}}, _set: {color: blue}) { returning { title color } }
+        }
+    response:
+      data:
+        insert_post_one: { title: fourth, color: green }
+        update_post:
+          returning: [{ title: fourth, color: blue }]
+
+  - description: an unknown enum value in an insert
+    headers: { x-hasura-role: user }
+    query:
+      query: 'mutation { insert_post_one(object: {title: "x", color: purple}) { id } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_post_one.args.object.color", code: validation-failed }
+          message: "expected one of the values ['blue', 'green', 'red'] for type 'colors_enum', but found 'purple'"
+
+  - description: the enum tables stay ordinary tables for the admin
+    query:
+      query: '{ colors(order_by: {value: asc}) { value comment } hue(where: {name: {_like: "d%"}}) { name } }'
+    response:
+      data:
+        colors:
+          - { value: blue, comment: null }
+          - { value: green, comment: Green }
+          - { value: red, comment: Red colour }
+        hue: [{ name: dark }]
+
+  # The cases below replace the fixture's metadata.
+  - description: an enum table without a primary key is inconsistent
+    url: /v1/metadata
+    query:
+      type: replace_metadata
+      args:
+        allow_inconsistent_metadata: true
+        metadata:
+          version: 3
+          sources:
+            - name: default
+              kind: postgres
+              configuration:
+                connection_info:
+                  database_url: { from_env: HASURA_GRAPHQL_DATABASE_URL }
+              tables:
+                - { table: { schema: public, name: weekday }, is_enum: true }
+                - { table: { schema: public, name: shift } }
+    response:
+      is_consistent: false
+      inconsistent_objects:
+        - definition: { name: weekday, schema: public }
+          name: table weekday in source default
+          reason: 'Inconsistent object: the table "weekday" cannot be used as an enum because the table must have a primary key'
+          type: table
+
+  - description: run_sql that makes it valid reads its rows in its own transaction
+    url: /v2/query
+    query:
+      type: run_sql
+      args:
+        sql: |
+          ALTER TABLE weekday ADD PRIMARY KEY (name);
+          ALTER TABLE shift ADD FOREIGN KEY (day) REFERENCES weekday (name);
+    response: { result_type: CommandOk, result: null }
+
+  - description: the enum type now has the table's rows
+    query:
+      query: |
+        {
+          shift: __type(name: "shift") { fields { name type { ofType { name } } } }
+          weekday: __type(name: "weekday_enum") { enumValues { name } }
+        }
+    response:
+      data:
+        shift:
+          fields:
+            - { name: day, type: { ofType: { name: weekday_enum } } }
+            - { name: id, type: { ofType: { name: Int } } }
+        weekday:
+          enumValues: [{ name: friday }, { name: monday }]

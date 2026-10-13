@@ -211,6 +211,10 @@ impl Translator<'_> {
             HasKey(v) => (" ? ", v, ""),
             HasKeysAny(v) => (" ?| ", v, ""),
             HasKeysAll(v) => (" ?& ", v, ""),
+            // V2 uses the operators, which yield NULL (not an error) on strict-mode or
+            // non-boolean paths, and can use a `jsonb_path_ops` index.
+            JsonbPathExists(v) => (" @? ", v, ""),
+            JsonbPathMatch(v) => (" @@ ", v, ""),
             IsNull(_) | Cast { .. } | Spatial(..) | DWithin(_) => {
                 unreachable!("handled above")
             }

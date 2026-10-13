@@ -26,6 +26,8 @@ pub struct ColumnInfo {
     pub description: Option<String>,
     /// Can be inserted / updated (not generated, not `GENERATED ALWAYS AS IDENTITY`).
     pub mutable: bool,
+    /// The enum table this column references, whose enum type it takes in GraphQL.
+    pub enum_ref: Option<Arc<crate::enums::EnumReference>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,6 +82,8 @@ pub struct TableInfo {
     /// A logical model (see [`crate::native`]): no table behind it, only the rows of the
     /// native queries returning it.
     pub logical_model: bool,
+    /// The rows of an enum table, sorted by value (`None` unless `is_enum`).
+    pub enum_values: Option<Vec<hge_core::EnumTableRow>>,
     /// The metadata entry, for permission lookups.
     pub entry: TableEntry,
     /// Resolved permissions by role (filled by [`crate::permissions::resolve_permissions`]).
@@ -129,11 +133,33 @@ impl TableInfo {
 
     /// The table name as V2 prints it in descriptions (schema omitted when `public`).
     pub fn display_name(&self) -> String {
-        if self.name.schema == "public" || self.logical_model {
+        if self.logical_model {
             self.name.name.clone()
         } else {
-            format!("{}.{}", self.name.schema, self.name.name)
+            display_name(&self.name)
         }
+    }
+}
+
+/// A description from a metadata comment, as V2 resolves its `Comment`: an explicit comment
+/// wins, and an empty one means no description; without one, `default`.
+pub(crate) fn comment_or(
+    comment: Option<&str>,
+    default: impl FnOnce() -> Option<String>,
+) -> Option<String> {
+    match comment {
+        Some("") => None,
+        Some(c) => Some(c.to_owned()),
+        None => default(),
+    }
+}
+
+/// How V2 names a table in descriptions: unqualified in `public`, else `schema.name`.
+fn display_name(table: &QualifiedTable) -> String {
+    if table.schema == "public" {
+        table.name.clone()
+    } else {
+        format!("{}.{}", table.schema, table.name)
     }
 }
 
@@ -273,17 +299,29 @@ fn resolve_table(
         ));
     }
 
+    let enum_values = if entry.is_enum {
+        Some(crate::enums::resolve_enum_values(
+            &entry.table,
+            cat,
+            catalog,
+        )?)
+    } else {
+        None
+    };
+
     let mut columns = IndexMap::new();
     for col in cat.columns.values() {
         let gql = config.column_name(&col.name).to_owned();
         if !is_valid_name(&gql) {
             continue;
         }
-        let description = config
-            .column_config
-            .get(&col.name)
-            .and_then(|c| c.comment.clone())
-            .or_else(|| col.description.clone());
+        let description = comment_or(
+            config
+                .column_config
+                .get(&col.name)
+                .and_then(|c| c.comment.as_deref()),
+            || col.description.clone(),
+        );
         columns.insert(
             col.name.clone(),
             ColumnInfo {
@@ -293,6 +331,7 @@ fn resolve_table(
                 nullable: col.nullable,
                 description,
                 mutable: col.is_mutable(),
+                enum_ref: None,
             },
         );
     }
@@ -412,7 +451,15 @@ fn resolve_table(
         source: source.clone(),
         name: entry.table.clone(),
         gql_name,
-        description: config.comment.clone().or_else(|| cat.description.clone()),
+        // The metadata comment, else the database comment, else V2's default.
+        description: comment_or(config.comment.as_deref(), || {
+            Some(cat.description.clone().unwrap_or_else(|| {
+                format!(
+                    "columns and relationships of \"{}\"",
+                    display_name(&entry.table)
+                )
+            }))
+        }),
         columns,
         primary_key: cat.primary_key.clone(),
         constraints: cat.constraints.clone(),
@@ -423,6 +470,7 @@ fn resolve_table(
         root_fields,
         is_enum: entry.is_enum,
         logical_model: false,
+        enum_values,
         entry: entry.clone(),
         permissions: HashMap::new(),
     })
@@ -597,6 +645,12 @@ pub fn drop_conflicting(tables: &mut Tables, inconsistencies: &mut Vec<Inconsist
             ));
             type_names.push(format!("{pred}_arguments"));
             type_names.push(pred);
+        }
+        // An enum table also generates its enum type.
+        if table.enum_values.is_some() {
+            for suffix in ["_enum", "_enum_comparison_exp"] {
+                type_names.push(format!("{}{suffix}", table.gql_name));
+            }
         }
         let rf = &table.root_fields;
         let root_names = [&rf.select, &rf.select_by_pk, &rf.select_aggregate];

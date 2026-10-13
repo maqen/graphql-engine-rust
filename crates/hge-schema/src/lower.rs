@@ -628,6 +628,12 @@ impl Lowerer<'_> {
                 "_has_key" => CompareOp::HasKey(val(&text_ty)?),
                 "_has_keys_any" => CompareOp::HasKeysAny(val(&text_ty.array_of())?),
                 "_has_keys_all" => CompareOp::HasKeysAll(val(&text_ty.array_of())?),
+                "_jsonb_path_exists" => {
+                    CompareOp::JsonbPathExists(val(&ColumnType::builtin("jsonpath"))?)
+                }
+                "_jsonb_path_match" => {
+                    CompareOp::JsonbPathMatch(val(&ColumnType::builtin("jsonpath"))?)
+                }
                 other => {
                     return Err(Error::new(
                         hge_core::Code::NotSupported,
