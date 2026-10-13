@@ -560,6 +560,14 @@ pub fn nullify_missing_in_select(select: &mut Select, session: &hge_core::Sessio
                     nullify_missing_session_variables(condition, session);
                     break;
                 }
+                OrderByTarget::ArrayAggregate {
+                    permission_filter, ..
+                } => {
+                    if let Some(f) = permission_filter {
+                        nullify_missing_session_variables(f, session);
+                    }
+                    break;
+                }
                 OrderByTarget::Column(_) => break,
             }
         }
@@ -574,7 +582,8 @@ pub fn nullify_missing_in_select(select: &mut Select, session: &hge_core::Sessio
                     nullify_missing_session_variables(cond, session);
                 }
             }
-            Field::Typename(_) => {}
+            // `/v1/query` builds no aggregate fields.
+            Field::Typename(_) | Field::ArrayAggregate(_) => {}
         }
     }
 }
