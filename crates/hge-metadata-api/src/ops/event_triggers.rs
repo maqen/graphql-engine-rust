@@ -26,9 +26,6 @@ use crate::runtime::Runtime;
 
 type Obj = Map<String, Value>;
 
-/// The session an API-created event records: the admin calling the metadata API.
-const ADMIN_SESSION: &str = r#"{"x-hasura-role":"admin"}"#;
-
 const DEFAULT_LIMIT: i64 = 100;
 
 // ---------------------------------------------------------------------------------------
@@ -577,7 +574,7 @@ pub async fn invoke_event_trigger<R: Runtime>(
         &table,
         &name,
         &payload.to_string(),
-        ADMIN_SESSION,
+        &crate::run_sql::session_json(ctx.session),
         &hge_events::delivery::new_trace_context(),
     )
     .await

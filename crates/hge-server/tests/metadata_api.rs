@@ -113,14 +113,41 @@ async fn metadata_api_matches_v2() {
         failures.join("\n")
     );
 
+    session_recorded(&router).await;
     replicas_sync(&router, config).await;
 }
 
+/// run_sql records the caller's session variables for event triggers, as V2 does.
+async fn session_recorded(router: &axum::Router) {
+    let query =
+        json!({"type": "run_sql", "args": {"sql": "select current_setting('hasura.user')"}});
+    let (status, body) =
+        post_with(router, "/v2/query", &query, &[("x-hasura-user-id", "42")]).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        body["result"][1][0],
+        r#"{"x-hasura-role":"admin","x-hasura-user-id":"42"}"#
+    );
+}
+
 async fn post(router: &axum::Router, url: &str, body: &Value) -> (u16, Value) {
-    let req = Request::builder()
+    post_with(router, url, body, &[]).await
+}
+
+async fn post_with(
+    router: &axum::Router,
+    url: &str,
+    body: &Value,
+    headers: &[(&str, &str)],
+) -> (u16, Value) {
+    let mut req = Request::builder()
         .method("POST")
         .uri(url)
-        .header("content-type", "application/json")
+        .header("content-type", "application/json");
+    for (k, v) in headers {
+        req = req.header(*k, *v);
+    }
+    let req = req
         .body(Body::from(serde_json::to_vec(body).unwrap()))
         .unwrap();
     let resp = router.clone().oneshot(req).await.unwrap();

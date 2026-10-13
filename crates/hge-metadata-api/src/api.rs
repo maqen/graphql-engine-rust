@@ -166,14 +166,18 @@ pub fn modifies_metadata(cmd: &Command) -> bool {
 }
 
 /// Handle a `/v1/metadata` request body (the caller has checked the admin role).
-pub async fn handle_metadata<R: Runtime>(rt: &R, body: &[u8]) -> ApiResponse {
-    match handle(rt, body).await {
+pub async fn handle_metadata<R: Runtime>(
+    rt: &R,
+    session: &hge_core::Session,
+    body: &[u8],
+) -> ApiResponse {
+    match handle(rt, session, body).await {
         Ok(v) => ApiResponse::ok(v),
         Err(e) => e.to_response(),
     }
 }
 
-async fn handle<R: Runtime>(rt: &R, body: &[u8]) -> ApiResult<Value> {
+async fn handle<R: Runtime>(rt: &R, session: &hge_core::Session, body: &[u8]) -> ApiResult<Value> {
     let value: Value = serde_json::from_slice(body)
         .map_err(|e| ApiError::bad(Code::InvalidJson, format!("Error in $: {e}")))?;
     let (cmd, resource_version) = parse_envelope(&value)?;
@@ -184,7 +188,7 @@ async fn handle<R: Runtime>(rt: &R, body: &[u8]) -> ApiResult<Value> {
             "metadata cannot be modified in read-only mode",
         ));
     }
-    let mut ctx = Ctx::begin(rt, modifies).await?;
+    let mut ctx = Ctx::begin(rt, session, modifies).await?;
     if modifies {
         ctx.expect_version(resource_version)?;
     }

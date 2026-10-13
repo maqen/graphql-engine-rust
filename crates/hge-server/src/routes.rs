@@ -300,7 +300,7 @@ async fn run(
 }
 
 /// Admin-only APIs (`/v1/metadata`, `/v2/query`): resolve the session and insist on `admin`.
-async fn require_admin(engine: &Engine, headers: &HeaderMap) -> Result<(), Box<Response>> {
+async fn require_admin(engine: &Engine, headers: &HeaderMap) -> Result<Session, Box<Response>> {
     let api_error = |status: u16, err: &Error| {
         let status = StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST);
         Box::new(json_response(
@@ -310,7 +310,7 @@ async fn require_admin(engine: &Engine, headers: &HeaderMap) -> Result<(), Box<R
         ))
     };
     match engine.auth.authenticate(headers, None).await {
-        Ok(auth) if auth.session.role.is_admin() => Ok(()),
+        Ok(auth) if auth.session.role.is_admin() => Ok(auth.session),
         Ok(_) => Err(api_error(
             400,
             &Error::new(Code::AccessDenied, "restricted access : admin only").with_path("$.args"),
@@ -330,17 +330,19 @@ async fn metadata_post(
     body: Bytes,
 ) -> Response {
     let rid = request_id(&headers);
-    if let Err(resp) = require_admin(&engine, &headers).await {
-        return *resp;
-    }
+    let session = match require_admin(&engine, &headers).await {
+        Ok(s) => s,
+        Err(resp) => return *resp,
+    };
     // Run to completion even if the client goes away: a metadata change must not stop
     // between writing the store and installing the new schema.
     let before = engine.state.load().resource_version;
     let task_engine = engine.clone();
-    let resp =
-        tokio::spawn(async move { hge_metadata_api::handle_metadata(&*task_engine, &body).await })
-            .await
-            .unwrap_or_else(|e| panic_response(&e));
+    let resp = tokio::spawn(async move {
+        hge_metadata_api::handle_metadata(&*task_engine, &session, &body).await
+    })
+    .await
+    .unwrap_or_else(|e| panic_response(&e));
     // Like V2, subscriptions do not outlive a metadata change made on this instance.
     if engine.config.websocket.close_on_metadata_change
         && engine.state.load().resource_version != before
@@ -364,11 +366,15 @@ async fn query_post(
     body: Bytes,
 ) -> Response {
     let rid = request_id(&headers);
-    if let Err(resp) = require_admin(&engine, &headers).await {
-        return *resp;
-    }
+    let session = match require_admin(&engine, &headers).await {
+        Ok(s) => s,
+        Err(resp) => return *resp,
+    };
     // See `metadata_post`: run_sql commits DDL before the metadata catches up.
-    let resp = tokio::spawn(async move { hge_metadata_api::handle_query(&*engine, &body).await })
+    let resp =
+        tokio::spawn(
+            async move { hge_metadata_api::handle_query(&*engine, &session, &body).await },
+        )
         .await
         .unwrap_or_else(|e| panic_response(&e));
     api_response(resp, rid)
