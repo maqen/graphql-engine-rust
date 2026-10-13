@@ -18,6 +18,7 @@ pub mod native;
 pub mod normalize;
 pub mod operators;
 pub mod permissions;
+pub mod relay;
 pub mod remote;
 pub mod scalars;
 pub mod subscription;
@@ -34,6 +35,7 @@ use serde_json::{Map, Value as Json};
 pub use actions::{ResolvedActions, resolve_actions};
 pub use build::{RoleSchema, SchemaOptions, build_role_schema};
 pub use remote::{RemoteSchemaInfo, RemoteSchemas};
+pub use relay::build_relay_role_schema;
 pub use tables::{TableInfo, Tables};
 
 /// Join metadata with the database catalogs. Returns the tables and a list of

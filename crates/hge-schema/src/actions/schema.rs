@@ -32,6 +32,8 @@ pub(crate) fn add_root_fields(
             field = field.arg(input_value(arg));
         }
         match action.root {
+            // The Relay schema has action mutations only.
+            ActionRoot::Query if b.relay => {}
             ActionRoot::Query => {
                 ensure_type(b, actions, action.output_type.base());
                 query_root.fields.insert(field.name.clone(), field);
@@ -44,6 +46,9 @@ pub(crate) fn add_root_fields(
                 field.ty = TypeRef::nn("uuid");
                 b.scalars.insert("uuid".to_owned());
                 mutation_root.fields.insert(field.name.clone(), field);
+                if b.relay {
+                    continue;
+                }
                 let query = async_query_field(b, actions, action);
                 query_root.fields.insert(query.name.clone(), query);
             }

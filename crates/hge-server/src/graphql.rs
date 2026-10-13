@@ -25,6 +25,9 @@ pub struct GraphQLRequest {
     /// Received over `GET`: mutations are refused (they would be open to CSRF).
     #[serde(skip)]
     pub read_only: bool,
+    /// Sent to a Relay endpoint: planned against the Relay schema.
+    #[serde(skip)]
+    pub relay: bool,
 }
 
 /// A request body: one request or a batch.
@@ -33,6 +36,16 @@ pub struct GraphQLRequest {
 pub enum GraphQLBody {
     Single(GraphQLRequest),
     Batch(Vec<GraphQLRequest>),
+}
+
+impl GraphQLBody {
+    /// Plan every request against the Relay schema.
+    pub fn set_relay(&mut self) {
+        match self {
+            GraphQLBody::Single(r) => r.relay = true,
+            GraphQLBody::Batch(rs) => rs.iter_mut().for_each(|r| r.relay = true),
+        }
+    }
 }
 
 /// A response body plus headers to add to the HTTP response.
@@ -200,7 +213,7 @@ pub fn plan(state: &AppState, session: &Session, req: GraphQLRequest) -> Result<
             return Err(Error::validation("variables must be an object").with_path("$.variables"));
         }
     };
-    let rs = state.role_schema(&session.role, session.backend_only);
+    let rs = state.role_schema_of_kind(&session.role, session.backend_only, req.relay);
     let doc = hge_schema::parse_query(query)?;
     crate::policies::check_allowlist(state, session, &doc, query)?;
     let op = hge_schema::plan(&rs, &doc, req.operation_name.as_deref(), &variables)?;

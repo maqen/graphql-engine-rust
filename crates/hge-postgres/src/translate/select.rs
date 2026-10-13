@@ -405,6 +405,8 @@ impl<'s> Translator<'s> {
                 self.select_many(select, Some((alias, &[])))?;
                 self.b.push(")");
             }
+            Field::NodeId(id) => self.node_id(id, alias),
+            Field::ArrayConnection(rel) => self.relationship_connection(rel, alias)?,
         }
         Ok(())
     }

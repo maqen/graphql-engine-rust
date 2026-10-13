@@ -11,6 +11,7 @@ pub mod backend;
 pub mod count;
 pub mod mutation;
 pub mod permissions;
+pub mod relay;
 pub mod remote;
 pub mod select;
 pub mod stream;
@@ -24,6 +25,7 @@ pub use backend::{BoxFuture, MultiplexedQuery, MultiplexedRow, SourceExecutor};
 pub use count::Count;
 pub use mutation::*;
 pub use permissions::*;
+pub use relay::*;
 pub use remote::*;
 pub use select::*;
 pub use stream::*;
@@ -82,4 +84,6 @@ pub enum QueryRoot {
     Stream(Box<StreamSelect>),
     /// `author_aggregate { … }`: a single JSON object.
     Aggregate(AggregateSelect),
+    /// `author_connection { … }` (Relay): a single JSON object.
+    Connection(Box<ConnectionSelect>),
 }
