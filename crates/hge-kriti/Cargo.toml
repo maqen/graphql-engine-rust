@@ -1,0 +1,15 @@
+[package]
+name = "hge-kriti"
+description = "Kriti template language (v0.3.3) used by Hasura webhook request/response transforms"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
