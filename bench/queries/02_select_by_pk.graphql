@@ -1,0 +1,11 @@
+#@ description: Primary-key lookup with variables
+#@ variables: {"id": 4242}
+query TrackByPk($id: Int!) {
+  track_by_pk(track_id: $id) {
+    track_id
+    name
+    composer
+    milliseconds
+    unit_price
+  }
+}

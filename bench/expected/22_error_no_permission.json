@@ -1,0 +1,14 @@
+{
+  "status": 200,
+  "body": {
+    "errors": [
+      {
+        "message": "field 'employee' not found in type: 'query_root'",
+        "extensions": {
+          "path": "$.selectionSet.employee",
+          "code": "validation-failed"
+        }
+      }
+    ]
+  }
+}

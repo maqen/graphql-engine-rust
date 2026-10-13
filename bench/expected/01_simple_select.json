@@ -1,0 +1,49 @@
+{
+  "status": 200,
+  "body": {
+    "data": {
+      "artist": [
+        {
+          "artist_id": 1,
+          "name": "Artist 0001"
+        },
+        {
+          "artist_id": 2,
+          "name": "Artist 0002"
+        },
+        {
+          "artist_id": 3,
+          "name": "Artist 0003"
+        },
+        {
+          "artist_id": 4,
+          "name": "Artist 0004"
+        },
+        {
+          "artist_id": 5,
+          "name": "Artist 0005"
+        },
+        {
+          "artist_id": 6,
+          "name": "Artist 0006"
+        },
+        {
+          "artist_id": 7,
+          "name": "Artist 0007"
+        },
+        {
+          "artist_id": 8,
+          "name": "Artist 0008"
+        },
+        {
+          "artist_id": 9,
+          "name": "Artist 0009"
+        },
+        {
+          "artist_id": 10,
+          "name": "Artist 0010"
+        }
+      ]
+    }
+  }
+}

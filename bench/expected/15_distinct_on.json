@@ -1,0 +1,134 @@
+{
+  "status": 200,
+  "body": {
+    "data": {
+      "track": [
+        {
+          "genre_id": 1,
+          "track_id": 19451,
+          "milliseconds": 359687
+        },
+        {
+          "genre_id": 2,
+          "track_id": 19452,
+          "milliseconds": 359724
+        },
+        {
+          "genre_id": 3,
+          "track_id": 19453,
+          "milliseconds": 359761
+        },
+        {
+          "genre_id": 4,
+          "track_id": 19454,
+          "milliseconds": 359798
+        },
+        {
+          "genre_id": 5,
+          "track_id": 19455,
+          "milliseconds": 359835
+        },
+        {
+          "genre_id": 6,
+          "track_id": 19456,
+          "milliseconds": 359872
+        },
+        {
+          "genre_id": 7,
+          "track_id": 19457,
+          "milliseconds": 359909
+        },
+        {
+          "genre_id": 8,
+          "track_id": 19458,
+          "milliseconds": 359946
+        },
+        {
+          "genre_id": 9,
+          "track_id": 19459,
+          "milliseconds": 359983
+        },
+        {
+          "genre_id": 10,
+          "track_id": 6485,
+          "milliseconds": 359945
+        },
+        {
+          "genre_id": 11,
+          "track_id": 6486,
+          "milliseconds": 359982
+        },
+        {
+          "genre_id": 12,
+          "track_id": 25937,
+          "milliseconds": 359669
+        },
+        {
+          "genre_id": 13,
+          "track_id": 25938,
+          "milliseconds": 359706
+        },
+        {
+          "genre_id": 14,
+          "track_id": 25939,
+          "milliseconds": 359743
+        },
+        {
+          "genre_id": 15,
+          "track_id": 25940,
+          "milliseconds": 359780
+        },
+        {
+          "genre_id": 16,
+          "track_id": 25941,
+          "milliseconds": 359817
+        },
+        {
+          "genre_id": 17,
+          "track_id": 25942,
+          "milliseconds": 359854
+        },
+        {
+          "genre_id": 18,
+          "track_id": 25943,
+          "milliseconds": 359891
+        },
+        {
+          "genre_id": 19,
+          "track_id": 25944,
+          "milliseconds": 359928
+        },
+        {
+          "genre_id": 20,
+          "track_id": 25945,
+          "milliseconds": 359965
+        },
+        {
+          "genre_id": 21,
+          "track_id": 12971,
+          "milliseconds": 359927
+        },
+        {
+          "genre_id": 22,
+          "track_id": 12972,
+          "milliseconds": 359964
+        },
+        {
+          "genre_id": 23,
+          "track_id": 19448,
+          "milliseconds": 359576
+        },
+        {
+          "genre_id": 24,
+          "track_id": 19449,
+          "milliseconds": 359613
+        },
+        {
+          "genre_id": 25,
+          "track_id": 19450,
+          "milliseconds": 359650
+        }
+      ]
+    }
+  }
+}

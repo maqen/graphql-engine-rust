@@ -1,0 +1,14 @@
+{
+  "status": 200,
+  "body": {
+    "errors": [
+      {
+        "message": "field 'nope' not found in type: 'artist'",
+        "extensions": {
+          "path": "$.selectionSet.artist.selectionSet.nope",
+          "code": "validation-failed"
+        }
+      }
+    ]
+  }
+}

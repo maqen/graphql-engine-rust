@@ -1,0 +1,7 @@
+#@ description: Update of a row outside the permission filter returns null
+#@ role: user
+#@ user_id: 5
+#@ bench: false
+mutation {
+  update_customer_by_pk(pk_columns: {customer_id: 6}, _set: {first_name: "nope"}) { customer_id }
+}

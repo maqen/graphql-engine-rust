@@ -1,0 +1,19 @@
+{
+  "status": 200,
+  "body": {
+    "data": {
+      "insert_playlist_one": {
+        "name": "bench-tmp",
+        "owner_id": 77
+      },
+      "delete_playlist": {
+        "affected_rows": 1,
+        "returning": [
+          {
+            "name": "bench-tmp"
+          }
+        ]
+      }
+    }
+  }
+}

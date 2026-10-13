@@ -1,0 +1,2 @@
+#@ description: REST endpoint backed by a query collection
+#@ rest: GET /api/rest/artist/3

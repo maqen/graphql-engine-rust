@@ -1,0 +1,14 @@
+{
+  "status": 200,
+  "body": {
+    "data": {
+      "track_by_pk": {
+        "track_id": 4242,
+        "name": "Track 04242",
+        "composer": "Composer 42",
+        "milliseconds": 276954,
+        "unit_price": 1.99
+      }
+    }
+  }
+}

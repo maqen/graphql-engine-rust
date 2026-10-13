@@ -1,0 +1,48 @@
+table:
+  name: customer
+  schema: public
+object_relationships:
+  - name: support_rep
+    using:
+      foreign_key_constraint_on: support_rep_id
+array_relationships:
+  - name: invoices
+    using:
+      foreign_key_constraint_on:
+        column: customer_id
+        table:
+          name: invoice
+          schema: public
+  - name: playlists
+    using:
+      foreign_key_constraint_on:
+        column: owner_id
+        table:
+          name: playlist
+          schema: public
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - country
+        - customer_id
+        - email
+        - first_name
+        - last_name
+        - metadata
+        - updated_at
+      filter:
+        customer_id:
+          _eq: X-Hasura-User-Id
+update_permissions:
+  - role: user
+    permission:
+      columns:
+        - first_name
+        - last_name
+      filter:
+        customer_id:
+          _eq: X-Hasura-User-Id
+      check:
+        customer_id:
+          _eq: X-Hasura-User-Id

@@ -1,0 +1,13 @@
+#@ description: Permissioned update (idempotent: sets constant values)
+#@ role: user
+#@ user_id: 42
+mutation {
+  update_customer(where: {}, _set: {first_name: "Cust42"}) {
+    affected_rows
+    returning { customer_id first_name }
+  }
+  update_customer_by_pk(pk_columns: {customer_id: 42}, _set: {last_name: "Omer42"}) {
+    customer_id
+    last_name
+  }
+}

@@ -1,0 +1,32 @@
+table:
+  name: artist_stats
+  schema: public
+configuration:
+  column_config:
+    album_count:
+      custom_name: albumCount
+    track_count:
+      custom_name: trackCount
+  custom_column_names:
+    album_count: albumCount
+    track_count: trackCount
+  custom_root_fields: {}
+object_relationships:
+  - name: artist
+    using:
+      manual_configuration:
+        column_mapping:
+          artist_id: artist_id
+        insertion_order: null
+        remote_table:
+          name: artist
+          schema: public
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - album_count
+        - artist_id
+        - name
+        - track_count
+      filter: {}

@@ -1,0 +1,12 @@
+#@ description: 1000 rows with an object relationship (serialization throughput)
+query {
+  track(order_by: {track_id: asc}, limit: 1000) {
+    track_id
+    name
+    composer
+    milliseconds
+    bytes
+    unit_price
+    album { title }
+  }
+}

@@ -1,0 +1,10 @@
+table:
+  name: media_type
+  schema: public
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - media_type_id
+        - name
+      filter: {}

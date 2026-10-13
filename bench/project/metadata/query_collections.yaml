@@ -1,0 +1,15 @@
+- name: allowed-queries
+  definition:
+    queries:
+      - name: artist_by_id
+        query: |
+          query artist_by_id($id: Int!) {
+            artist_by_pk(artist_id: $id) {
+              artist_id
+              name
+              albums(order_by: {album_id: asc}) {
+                album_id
+                title
+              }
+            }
+          }

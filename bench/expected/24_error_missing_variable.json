@@ -1,0 +1,14 @@
+{
+  "status": 200,
+  "body": {
+    "errors": [
+      {
+        "message": "expecting a value for non-nullable variable: \"id\"",
+        "extensions": {
+          "path": "$",
+          "code": "validation-failed"
+        }
+      }
+    ]
+  }
+}

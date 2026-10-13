@@ -1,0 +1,3 @@
+#@ description: Required variable not provided
+#@ bench: false
+query TrackByPk($id: Int!) { track_by_pk(track_id: $id) { name } }

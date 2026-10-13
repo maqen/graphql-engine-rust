@@ -1,0 +1,3 @@
+#@ description: Syntax error in the query document
+#@ bench: false
+query { artist(limit: 1) { name }

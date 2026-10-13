@@ -1,0 +1,18 @@
+#@ description: Five levels deep, mixing object and array relationships
+query {
+  customer(order_by: {customer_id: asc}, limit: 5) {
+    first_name
+    support_rep { first_name manager { first_name } }
+    invoices(order_by: {invoice_id: asc}, limit: 3) {
+      invoice_id
+      total
+      lines(order_by: {invoice_line_id: asc}) {
+        quantity
+        track {
+          name
+          album { title artist { name } }
+        }
+      }
+    }
+  }
+}
