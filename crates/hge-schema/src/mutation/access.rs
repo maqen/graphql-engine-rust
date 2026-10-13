@@ -1,13 +1,12 @@
 //! What a role may insert, update and delete.
 //!
-//! The *Permissions & roles* workstream owns the rules; until its conversion of metadata
-//! permissions (bool exps with session variables, presets) lands here, only `admin` can
-//! mutate. Everything downstream (schema, lowering, SQL) already honours columns, presets,
-//! filters and checks.
+//! A view of the role's resolved [`hge_ir::TablePermissions`] (owned by the *Permissions &
+//! roles* workstream) shaped for mutation schema building and lowering.
 
 use hge_core::RoleName;
 use hge_ir::{BoolExp, Value};
 
+use crate::permissions::table_permissions;
 use crate::tables::TableInfo;
 
 #[derive(Debug, Clone, Default)]
@@ -73,28 +72,36 @@ impl UpdateAccess {
     }
 }
 
+/// What `role` may insert, update and delete in `table`, from its resolved permissions
+/// (`admin` has a synthesised full permission).
 pub fn mutation_access(table: &TableInfo, role: &RoleName) -> MutationAccess {
-    if !role.is_admin() {
+    let Some(p) = table_permissions(table, role) else {
         return MutationAccess::default();
-    }
-    let all: Vec<String> = table.columns.keys().cloned().collect();
+    };
+    // An always-true check or filter is no check at all.
+    let condition = |e: &BoolExp| (!e.is_true()).then(|| e.clone());
+    let presets = |p: &indexmap::IndexMap<String, Value>| {
+        p.iter().map(|(c, v)| (c.clone(), v.clone())).collect()
+    };
     MutationAccess {
-        insert: Some(InsertAccess {
-            columns: all.clone(),
-            presets: vec![],
-            check: None,
-            backend_only: false,
+        insert: p.insert.as_ref().map(|i| InsertAccess {
+            columns: i.columns.clone(),
+            presets: presets(&i.presets),
+            check: condition(&i.check),
+            backend_only: i.backend_only,
         }),
-        update: Some(UpdateAccess {
-            columns: all,
-            presets: vec![],
-            filter: None,
-            check: None,
-            backend_only: false,
+        update: p.update.as_ref().map(|u| UpdateAccess {
+            columns: u.columns.clone(),
+            presets: presets(&u.presets),
+            filter: condition(&u.filter),
+            // Kept even when always true: upserts then skip the insert check on updated
+            // rows, as V2 does.
+            check: u.check.clone(),
+            backend_only: u.backend_only,
         }),
-        delete: Some(DeleteAccess {
-            filter: None,
-            backend_only: false,
+        delete: p.delete.as_ref().map(|d| DeleteAccess {
+            filter: condition(&d.filter),
+            backend_only: d.backend_only,
         }),
     }
 }

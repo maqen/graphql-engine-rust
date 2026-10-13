@@ -107,9 +107,21 @@ impl Builder<'_> {
                 let a = self.access(table).expect("selectable");
                 pk.iter().all(|c| a.allows_column(c))
             });
-        // `where` arguments use the table's bool_exp, built with the select types.
+        // `where` arguments use the table's bool_exp, built with the select types. Without
+        // a select permission, V2 still offers update and delete with a bool_exp that has
+        // only `_and`, `_not` and `_or`.
         if selectable {
             self.ensure_table_types(table);
+        } else if ma
+            .update
+            .as_ref()
+            .is_some_and(|a| !a.backend_only && table.mutability.updatable)
+            || ma
+                .delete
+                .as_ref()
+                .is_some_and(|a| !a.backend_only && table.mutability.insertable)
+        {
+            self.ensure_bare_bool_exp(table);
         }
 
         if let Some(ia) = ma.insert.as_ref().filter(|a| !a.backend_only)
@@ -157,10 +169,8 @@ impl Builder<'_> {
             }
         }
 
-        // TODO(permissions): V2 offers update/delete `where` without a select permission.
         if let Some(ua) = ma.update.as_ref().filter(|a| !a.backend_only)
             && table.mutability.updatable
-            && selectable
         {
             let response = self.ensure_mutation_response(table, selectable);
             let ops = self.ensure_update_operators(table, ua);
@@ -222,10 +232,7 @@ impl Builder<'_> {
         }
 
         // V2 quirk: deletes from views are gated on the view being insertable.
-        if ma.delete.as_ref().is_some_and(|a| !a.backend_only)
-            && table.mutability.insertable
-            && selectable
-        {
+        if ma.delete.as_ref().is_some_and(|a| !a.backend_only) && table.mutability.insertable {
             let response = self.ensure_mutation_response(table, selectable);
             let f = FieldDef::new(
                 names.delete.0.clone(),
@@ -257,6 +264,25 @@ impl Builder<'_> {
                 root.fields.insert(f.name.clone(), f);
             }
         }
+    }
+
+    /// `t_bool_exp` with only the logical operators, for a role that cannot select `table`.
+    fn ensure_bare_bool_exp(&mut self, table: &TableInfo) {
+        let name = table.bool_exp_name();
+        if self.schema.types.contains_key(&name) {
+            return;
+        }
+        let fields = vec![
+            InputValueDef::new("_and", TypeRef::nn(name.clone()).list()),
+            InputValueDef::new("_not", TypeRef::named(name.clone())),
+            InputValueDef::new("_or", TypeRef::nn(name.clone()).list()),
+        ];
+        let description = format!(
+            "Boolean expression to filter rows from the table \"{}\". All fields are combined with a logical 'AND'.",
+            table.display_name()
+        );
+        self.schema
+            .add(input_object(name, Some(description), fields));
     }
 
     /// `t_mutation_response`; returns its name.

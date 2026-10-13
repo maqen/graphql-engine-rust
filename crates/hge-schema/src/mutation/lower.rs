@@ -420,8 +420,8 @@ impl MutationLowerer<'_, '_> {
             for c in cols {
                 let name = c.as_str().unwrap_or_default();
                 let col = table.column_by_gql_name(name).ok_or_else(|| {
-                    Error::validation("erroneous column name")
-                        .with_path(format!("{path}.update_columns"))
+                    // Also the answer to the `_PLACEHOLDER` value.
+                    Error::validation("erroneous column name").with_path(path.to_owned())
                 })?;
                 update_columns.push(col.name.clone());
             }
@@ -430,15 +430,27 @@ impl MutationLowerer<'_, '_> {
             Some(Json::Object(w)) => self.lw.bool_exp(table, w, &format!("{path}.where"))?,
             _ => None,
         };
-        let (presets, filter) = match (
-            update_columns.is_empty(),
-            self.access(table)?.update.as_ref(),
-        ) {
-            (false, Some(ua)) => (
+        let (presets, filter) = if update_columns.is_empty() {
+            (vec![], user_where)
+        } else {
+            // Only columns the role may update (a column literally named `_PLACEHOLDER`
+            // must not slip through for a role without update permission).
+            let ua = self
+                .access(table)?
+                .update
+                .as_ref()
+                .filter(|ua| {
+                    update_columns
+                        .iter()
+                        .all(|c| ua.input_columns(table).any(|col| &col.name == c))
+                })
+                .ok_or_else(|| {
+                    Error::validation("erroneous column name").with_path(path.to_owned())
+                })?;
+            (
                 ua.presets.clone(),
                 BoolExp::and(ua.filter.clone(), user_where),
-            ),
-            _ => (vec![], user_where),
+            )
         };
         Ok(OnConflict {
             constraint,
@@ -577,7 +589,7 @@ impl MutationLowerer<'_, '_> {
             set,
             filter: BoolExp::and(ua.filter.clone(), user_filter)
                 .unwrap_or_else(BoolExp::always_true),
-            check: ua.check.clone(),
+            check: ua.check.clone().filter(|c| !c.is_true()),
             output,
         })
     }
