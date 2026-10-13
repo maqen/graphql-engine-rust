@@ -46,12 +46,19 @@ pub(crate) fn parse(value: &str) -> Result<CacheControl, String> {
 pub(crate) fn jwk_expiry(cc: &CacheControl, now: SystemTime) -> Option<SystemTime> {
     let max_age = cc.max_age.or(cc.s_max_age);
     if cc.must_revalidate {
-        Some(now + Duration::from_secs(max_age.unwrap_or(0)))
+        Some(add_secs(now, max_age.unwrap_or(0)))
     } else if cc.no_cache || cc.no_store {
         Some(now)
     } else {
-        max_age.map(|s| now + Duration::from_secs(s))
+        max_age.map(|s| add_secs(now, s))
     }
+}
+
+/// `now + secs`, saturating far in the future instead of overflowing on huge ages.
+pub(crate) fn add_secs(now: SystemTime, secs: u64) -> SystemTime {
+    // Ten thousand years is "never" for any cache.
+    now.checked_add(Duration::from_secs(secs.min(315_360_000_000)))
+        .unwrap_or(now)
 }
 
 /// Parse an HTTP date (`Expires`).
@@ -81,6 +88,7 @@ mod tests {
         assert_eq!(at("no-store"), Some(now));
         assert_eq!(at("public"), None);
         assert!(parse("max-age=abc").is_err());
+        assert!(at("max-age=18446744073709551615").unwrap() > now);
         assert!(parse_http_date("Wed, 21 Oct 2015 07:28:00 GMT").is_ok());
         assert!(parse_http_date("tomorrow").is_err());
     }

@@ -597,3 +597,29 @@ async fn multiple_configs_by_issuer() {
         .unwrap_err();
     assert_eq!(err(e).2, "Could not verify JWT: Multiple JWTs found");
 }
+
+#[tokio::test]
+async fn hostile_but_signed_claims_do_not_panic() {
+    let a = jwt_auth(hs_config()).await;
+    // A non-ASCII key whose 9th byte is inside a character.
+    let c = claims(&["user"], "user", json!({"x-hasuraé": "1"}));
+    assert!(
+        run(&a, &[("authorization", &bearer(&hs(&c)))])
+            .await
+            .is_ok()
+    );
+    // An `exp` beyond any Duration.
+    let mut c = claims(&["user"], "user", json!({}));
+    c["exp"] = json!(1e20);
+    let ok = run(&a, &[("authorization", &bearer(&hs(&c)))])
+        .await
+        .unwrap();
+    assert_eq!(ok.expires_at, None);
+    // jose rejects an empty audience list.
+    let mut c = claims(&["user"], "user", json!({}));
+    c["aud"] = json!([]);
+    let e = run(&a, &[("authorization", &bearer(&hs(&c)))])
+        .await
+        .unwrap_err();
+    assert_eq!(err(e).2, "Could not verify JWT: JWTNotInAudience");
+}

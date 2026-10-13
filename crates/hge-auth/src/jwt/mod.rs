@@ -165,7 +165,8 @@ pub(crate) fn authenticate(
         .get("exp")
         .and_then(Value::as_f64)
         .filter(|e| *e >= 0.0)
-        .and_then(|e| UNIX_EPOCH.checked_add(Duration::from_secs_f64(e)));
+        .and_then(|e| Duration::try_from_secs_f64(e).ok())
+        .and_then(|d| UNIX_EPOCH.checked_add(d));
     let session = claims::session(&ctx.config, &token.claims, headers)?;
     Ok(Authenticated {
         session,
@@ -277,6 +278,10 @@ fn numeric_date(claims: &Map<String, Value>, name: &str) -> Result<Option<f64>, 
     }
 }
 
+fn claims_decode_error(name: &str) -> String {
+    format!("JWTClaimsSetDecodeError \"Error in $.{name}: unexpected value\"")
+}
+
 pub(crate) fn validate_claims(
     config: &JwtConfig,
     claims: &Map<String, Value>,
@@ -296,6 +301,7 @@ pub(crate) fn validate_claims(
     match claims.get("iss") {
         None | Some(Value::Null) if config.require_issuer => return Err("JWTNotInIssuer".into()),
         None | Some(Value::Null) => {}
+        Some(iss) if !iss.is_string() => return Err(claims_decode_error("iss")),
         Some(iss) => {
             if let Some(want) = &config.issuer
                 && iss.as_str() != Some(want.as_str())
@@ -307,11 +313,18 @@ pub(crate) fn validate_claims(
     let token_aud: Option<Vec<&str>> = match claims.get("aud") {
         None | Some(Value::Null) => None,
         Some(Value::String(s)) => Some(vec![s.as_str()]),
-        Some(Value::Array(a)) => Some(a.iter().filter_map(Value::as_str).collect()),
-        Some(_) => return Err("JWTNotInAudience".into()),
+        Some(Value::Array(a)) => Some(
+            a.iter()
+                .map(|v| v.as_str().ok_or(()))
+                .collect::<Result<_, _>>()
+                .map_err(|()| claims_decode_error("aud"))?,
+        ),
+        Some(_) => return Err(claims_decode_error("aud")),
     };
     match (token_aud, &config.audience) {
         (None, _) if config.require_audience => return Err("JWTNotInAudience".into()),
+        // jose: an empty audience list never matches.
+        (Some(auds), _) if auds.is_empty() => return Err("JWTNotInAudience".into()),
         (Some(auds), Some(allowed)) if !auds.iter().any(|a| allowed.iter().any(|b| a == b)) => {
             return Err("JWTNotInAudience".into());
         }

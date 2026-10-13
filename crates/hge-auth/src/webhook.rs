@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use hge_core::{Code, RoleName, SessionVariables};
 use http::{HeaderMap, HeaderValue, header};
@@ -102,12 +102,14 @@ impl Webhook {
                         Value::String(String::from_utf8_lossy(value.as_bytes()).into_owned()),
                     );
                 }
-                let mut body = Map::new();
-                body.insert("headers".into(), Value::Object(forwarded));
+                // Written by hand so the (possibly large) request is not cloned.
+                let mut body = String::from("{\"headers\":");
+                body.push_str(&Value::Object(forwarded).to_string());
                 if self.config.send_request_body {
-                    body.insert("request".into(), request.cloned().unwrap_or(Value::Null));
+                    body.push_str(",\"request\":");
+                    body.push_str(&request.map_or_else(|| "null".to_owned(), Value::to_string));
                 }
-                let body = Value::Object(body).to_string();
+                body.push('}');
                 let key = self
                     .cache
                     .as_ref()
@@ -233,7 +235,7 @@ fn expiry(obj: &Map<String, Value>, now: SystemTime) -> Option<SystemTime> {
         match cache_control::parse(cc) {
             Ok(cc) => {
                 if let Some(age) = cc.max_age {
-                    return Some(now + Duration::from_secs(age));
+                    return Some(cache_control::add_secs(now, age));
                 }
             }
             Err(e) => {

@@ -118,5 +118,6 @@ mod tests {
         assert!(is_session_variable("X-Hasura-Role"));
         assert!(!is_session_variable("authorization"));
         assert!(!is_session_variable("12345678é"));
+        assert!(!is_session_variable("x-hasuraé-role"));
     }
 }
