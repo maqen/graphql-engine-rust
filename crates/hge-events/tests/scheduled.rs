@@ -73,8 +73,20 @@ async fn scheduled_events_end_to_end() {
         )
         .await
         .unwrap();
-    scheduled::ensure_catalog(&pool).await.unwrap();
-    scheduled::ensure_catalog(&pool).await.unwrap();
+    // The server's metadata catalog creates these; here the same DDL from V2's initialise.sql.
+    assert!(scheduled::check_catalog(&pool).await.is_err());
+    pool.get()
+        .await
+        .unwrap()
+        .batch_execute(concat!(
+            "CREATE SCHEMA IF NOT EXISTS hdb_catalog;
+             CREATE OR REPLACE FUNCTION hdb_catalog.gen_hasura_uuid() RETURNS uuid AS
+             'select gen_random_uuid()' LANGUAGE SQL;",
+            include_str!("fixtures/scheduled_catalog.sql")
+        ))
+        .await
+        .unwrap();
+    scheduled::check_catalog(&pool).await.unwrap();
 
     let calls: Calls = Arc::default();
     let app = Router::new()

@@ -29,9 +29,6 @@ use crate::processor::EventingConfig;
 use crate::store::{AfterFailure, InvocationRecord};
 use crate::webhook::WebhookClient;
 
-/// Cron and one-off event tables (from V2's `initialise.sql`).
-pub const SCHEDULED_CATALOG: &str = include_str!("sql/scheduled_catalog.sql");
-
 /// Upcoming events kept per cron trigger.
 pub const CRON_EVENTS_AHEAD: usize = 100;
 const GENERATOR_INTERVAL: Duration = Duration::from_secs(60);
@@ -165,19 +162,13 @@ fn now_secs() -> i64 {
         .unwrap_or(0)
 }
 
-/// Create the cron / one-off tables in the metadata database if they are missing.
-pub async fn ensure_catalog(pool: &Pool) -> Result<(), String> {
-    let mut client = pool.get().await.map_err(|e| e.to_string())?;
-    let tx = client.transaction().await.map_err(pg_err)?;
-    tx.execute(
-        "SELECT pg_advisory_xact_lock($1)",
-        &[&0x4855_5241_5343_4844_i64],
-    )
-    .await
-    .map_err(pg_err)?;
+/// Check that the cron / one-off tables exist. They belong to the metadata catalog, which
+/// the server creates or upgrades (V2's `initialise.sql`) before workers start.
+pub async fn check_catalog(pool: &Pool) -> Result<(), String> {
+    let client = pool.get().await.map_err(|e| e.to_string())?;
     let mut missing = vec![];
     for table in CATALOG_TABLES {
-        let present: bool = tx
+        let present: bool = client
             .query_one(
                 "SELECT to_regclass('hdb_catalog.' || $1) IS NOT NULL",
                 &[&table],
@@ -189,25 +180,14 @@ pub async fn ensure_catalog(pool: &Pool) -> Result<(), String> {
             missing.push(table);
         }
     }
-    if !missing.is_empty() && missing.len() < CATALOG_TABLES.len() {
-        return Err(format!(
-            "the scheduled events catalog is incomplete, missing: hdb_catalog.{}",
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "the metadata catalog has no hdb_catalog.{}",
             missing.join(", hdb_catalog.")
-        ));
+        ))
     }
-    if missing.len() == CATALOG_TABLES.len() {
-        tx.batch_execute(
-            "CREATE SCHEMA IF NOT EXISTS hdb_catalog;
-             CREATE OR REPLACE FUNCTION hdb_catalog.gen_hasura_uuid() RETURNS uuid AS
-             'select gen_random_uuid()' LANGUAGE SQL;",
-        )
-        .await
-        .map_err(pg_err)?;
-        tx.batch_execute(SCHEDULED_CATALOG).await.map_err(pg_err)?;
-        info!(target: "startup", "created the scheduled events catalog");
-    }
-    tx.commit().await.map_err(pg_err)?;
-    Ok(())
 }
 
 /// Insert cron events (`ON CONFLICT DO NOTHING` relies on the partial unique index).
@@ -829,7 +809,7 @@ pub fn spawn(
         pool,
     });
     tokio::spawn(async move {
-        if let Err(e) = ensure_catalog(&ctx.pool).await {
+        if let Err(e) = check_catalog(&ctx.pool).await {
             error!(target: "scheduled-trigger", "scheduled events disabled: {e}");
             return;
         }

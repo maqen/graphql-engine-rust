@@ -39,9 +39,9 @@ was killed are picked up again after 30 minutes (V2's rule).
 
 ## Cron triggers and one-off scheduled events
 
-These live in the metadata database (`hdb_catalog.hdb_cron_events`,
-`hdb_scheduled_events` and their invocation logs; the tables are created if missing, with
-V2's definitions). Every instance that processes events runs:
+These live in the metadata database (`hdb_catalog.hdb_cron_events`, `hdb_scheduled_events`
+and their invocation logs, part of the V2 metadata catalog). Every instance that processes
+events runs:
 
 * a generator (every minute) that keeps 100 upcoming events per cron trigger, using V2's
   cron syntax (5 fields, UTC), and drops future events of removed triggers or of a changed
@@ -57,10 +57,6 @@ V2's definitions). Every instance that processes events runs:
 
 On shutdown, an instance stops fetching, gives running deliveries
 `HASURA_GRAPHQL_GRACEFUL_SHUTDOWN_TIMEOUT`, and puts unfinished events back to `scheduled`.
-
-The tables are created only when all four are missing; a partial set is an error. Created
-this way (without V2's `hdb_version` bookkeeping), switching the database back to V2
-requires dropping them first, since V2's catalog set-up creates them itself.
 
 The same Cloud Run advice applies: the instances that deliver need CPU between requests.
 
