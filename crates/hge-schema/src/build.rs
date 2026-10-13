@@ -230,6 +230,14 @@ fn build_schema(
         }
     }
     b.access = access;
+    // Async actions' `<action>(id:)` result fields can be subscribed to as well.
+    for field in query_root.fields.values() {
+        if matches!(field.kind, FieldKind::AsyncActionQuery(_)) {
+            subscription_root
+                .fields
+                .insert(field.name.clone(), field.clone());
+        }
+    }
     if !subscription_root.fields.is_empty() {
         subscription_root.fields.sort_keys();
         b.schema.subscription_type = Some(crate::subscription::SUBSCRIPTION_ROOT.to_owned());

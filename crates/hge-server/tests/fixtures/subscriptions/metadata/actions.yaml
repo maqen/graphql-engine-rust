@@ -1,0 +1,26 @@
+actions:
+  # Never called: the test writes the action log itself.
+  - name: asyncTask
+    definition:
+      kind: asynchronous
+      handler: http://127.0.0.1:9/task
+    permissions:
+      - role: user
+  - name: asyncLink
+    definition:
+      kind: asynchronous
+      handler: http://127.0.0.1:9/link
+    permissions:
+      - role: user
+custom_types:
+  objects:
+    - name: TaskResult
+    - name: TaskLink
+      relationships:
+        - name: message
+          type: object
+          remote_table:
+            schema: public
+            name: message
+          field_mapping:
+            messageId: id

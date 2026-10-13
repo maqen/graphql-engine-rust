@@ -8,6 +8,8 @@
 //! own, so a slow query does not hold up `stop` messages; subscriptions start inline, so a
 //! `stop` always finds the subscription its `start` registered.
 
+mod async_actions;
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -20,14 +22,14 @@ use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use futures::{SinkExt, StreamExt};
 use hge_core::{Code, Error, Session};
-use hge_ir::{OperationKind, QueryRoot, RootField, SourceExecutor};
+use hge_ir::{ActionCall, ActionRootField, OperationKind, QueryRoot, RootField, SourceExecutor};
 pub use hge_subscriptions::PollerOptions;
 use hge_subscriptions::protocol::{
     self, ClientMessage, GRAPHQL_TRANSPORT_WS, GRAPHQL_WS, Protocol, StartPayload,
 };
 use hge_subscriptions::{Registry, Subscriber, SubscriptionHandle};
 use serde_json::Value as Json;
-use tokio::sync::mpsc;
+use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
 
 use crate::graphql::{self, GraphQLRequest};
@@ -74,6 +76,8 @@ pub struct WebSockets {
     connections: Mutex<HashMap<u64, mpsc::UnboundedSender<Event>>>,
     next_connection: AtomicU64,
     shutting_down: AtomicBool,
+    /// Bounds the async action subscriptions reading the action log at once.
+    async_action_polls: Arc<Semaphore>,
 }
 
 impl WebSockets {
@@ -84,6 +88,7 @@ impl WebSockets {
             connections: Mutex::new(HashMap::new()),
             next_connection: AtomicU64::new(1),
             shutting_down: AtomicBool::new(false),
+            async_action_polls: Arc::new(Semaphore::new(async_actions::CONCURRENT_POLLS)),
         }
     }
 
@@ -254,6 +259,17 @@ enum Event {
     /// A subscription's results overflowed the send queue: (operation id, generation, the
     /// cursor to resume a stream from).
     Overflow(String, u64, Option<Json>),
+    /// An operation ended on its own (an async action subscription completed or failed):
+    /// (operation id, generation).
+    Finished(String, u64),
+}
+
+/// A running subscription.
+enum Running {
+    /// A live query or stream, in a poller.
+    Poller(#[allow(dead_code)] SubscriptionHandle),
+    /// An async action subscription's task.
+    Task(async_actions::TaskHandle),
 }
 
 /// Frames for the writer.
@@ -354,7 +370,7 @@ struct Connection {
     upgrade_headers: HeaderMap,
     state: ConnState,
     /// Running subscriptions by operation id, with the generation they were started with.
-    subscriptions: HashMap<String, (u64, SubscriptionHandle)>,
+    subscriptions: HashMap<String, (u64, Running)>,
     next_generation: u64,
     queries: JoinSet<()>,
     /// Set once the server sent a close frame: wait for the client's reply.
@@ -434,6 +450,7 @@ impl Connection {
                 Some(event) = events_rx.recv() => match event {
                     Event::Close(code, reason) => conn.close(code, reason),
                     Event::Overflow(op, generation, cursor) => conn.on_overflow(&op, generation, cursor),
+                    Event::Finished(op, generation) => conn.on_finished(&op, generation),
                 },
                 () = &mut init_deadline, if matches!(conn.state, ConnState::NotInitialised) && !conn.closing => {
                     let code = match protocol {
@@ -589,6 +606,12 @@ impl Connection {
     }
 
     async fn on_start(&mut self, id: String, payload: StartPayload) {
+        // A task that completed may not have reported it yet: its id is free.
+        if let Some((_, Running::Task(t))) = self.subscriptions.get(&id)
+            && t.is_released()
+        {
+            self.subscriptions.remove(&id);
+        }
         if self.subscriptions.contains_key(&id) {
             return self.start_error(
                 &id,
@@ -621,6 +644,12 @@ impl Connection {
             Err(e) => return self.request_error(&id, &e),
         };
         let is_mutation = op.kind == OperationKind::Mutation;
+        // Action handlers raise errors with the same codes as planning (an unparsable
+        // response body, a missing header template), so only database operations qualify.
+        let has_actions = op
+            .root_fields
+            .iter()
+            .any(|(_, rf)| matches!(rf, RootField::Action(_)));
         if op.kind != OperationKind::Subscription {
             // Forget finished queries, so a long-lived connection does not accumulate them.
             while self.queries.try_join_next().is_some() {}
@@ -642,6 +671,16 @@ impl Connection {
                             ));
                         }
                     }
+                    // An error V2 would have raised while planning (such as a missing session
+                    // variable) is an `error` message; one from running it is `data`.
+                    Err(e) if !has_actions && is_planning_error(&e) => {
+                        out.control(error_message(
+                            protocol,
+                            endpoint,
+                            &id,
+                            error_json(&e, endpoint),
+                        ));
+                    }
                     Err(e) => {
                         let errors = [error_json(&e, endpoint)];
                         out.control(protocol.execution_error(&id, &errors));
@@ -660,23 +699,68 @@ impl Connection {
         }
         let generation = self.next_generation;
         self.next_generation += 1;
-        match self.subscribe(&state, &session, &id, generation, &op).await {
-            Ok(handle) => {
-                self.subscriptions.insert(id, (generation, handle));
+        let running = match subscription_plan(&op) {
+            Err(e) => Err(e),
+            Ok(Plan::Live {
+                source,
+                fields,
+                layout,
+            }) => self
+                .subscribe(&state, &session, &id, generation, source, fields, layout)
+                .await
+                .map(Running::Poller),
+            Ok(Plan::AsyncActions { fields, live }) => Ok(Running::Task(
+                async_actions::AsyncActionSubscription {
+                    engine: self.engine.clone(),
+                    state: state.clone(),
+                    session,
+                    headers,
+                    query,
+                    fields: fields
+                        .into_iter()
+                        .map(|(alias, f)| (alias.to_owned(), f.clone()))
+                        .collect(),
+                    live,
+                    id: id.clone(),
+                    generation,
+                    protocol: self.protocol,
+                    endpoint: self.endpoint,
+                    out: self.out.clone(),
+                    events: self.events.clone(),
+                    polls: self.engine.ws.async_action_polls.clone(),
+                }
+                .spawn(),
+            )),
+        };
+        match running {
+            Ok(running) => {
+                self.subscriptions.insert(id, (generation, running));
             }
             Err(e) => self.request_error(&id, &e),
         }
     }
 
+    fn on_finished(&mut self, id: &str, generation: u64) {
+        if self
+            .subscriptions
+            .get(id)
+            .is_some_and(|(g, _)| *g == generation)
+        {
+            self.subscriptions.remove(id);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
     async fn subscribe(
         &self,
         state: &AppState,
         session: &Session,
         id: &str,
         generation: u64,
-        op: &hge_ir::Operation,
+        source: &str,
+        fields: Vec<&QueryRoot>,
+        layout: Layout,
     ) -> Result<SubscriptionHandle, Error> {
-        let (source, fields, layout) = subscription_fields(op)?;
         let executor: Arc<dyn SourceExecutor> = state
             .sources
             .get(source)
@@ -748,6 +832,17 @@ impl Connection {
     }
 }
 
+/// Whether an error from executing a database query or mutation is one V2 reports before
+/// executing (its planner resolves session variables and validates arguments, which happens
+/// here while translating to SQL); database errors have other codes and are execution errors.
+fn is_planning_error(e: &Error) -> bool {
+    e.extensions.is_none()
+        && matches!(
+            e.code,
+            Code::NotFound | Code::ValidationFailed | Code::NotSupported | Code::ParseFailed
+        )
+}
+
 /// An `error` message: the bare legacy object on `/v1alpha1/graphql`, the protocol's errors
 /// payload otherwise.
 fn error_message(protocol: Protocol, endpoint: Endpoint, id: &str, error: Json) -> String {
@@ -796,8 +891,24 @@ impl Layout {
     }
 }
 
-/// Check V2's subscription restrictions (spec 09 §5) and collect the database root fields.
-fn subscription_fields(op: &hge_ir::Operation) -> Result<(&str, Vec<&QueryRoot>, Layout), Error> {
+/// How a subscription runs.
+enum Plan<'a> {
+    /// Database root fields of one source, multiplexed in a poller.
+    Live {
+        source: &'a str,
+        fields: Vec<&'a QueryRoot>,
+        layout: Layout,
+    },
+    /// Async actions' results, by response key. `live`: some output type has
+    /// relationships, so V2 runs it as a live query (it never completes).
+    AsyncActions {
+        fields: Vec<(&'a str, &'a ActionRootField)>,
+        live: bool,
+    },
+}
+
+/// Check V2's subscription restrictions (spec 09 §5) and collect the root fields.
+fn subscription_plan(op: &hge_ir::Operation) -> Result<Plan<'_>, Error> {
     if op.root_fields.len() != 1 && !op.multiple_top_level_fields {
         return Err(Error::validation(
             "subscriptions must select one top level field",
@@ -806,6 +917,7 @@ fn subscription_fields(op: &hge_ir::Operation) -> Result<(&str, Vec<&QueryRoot>,
     let mut sources = vec![];
     let mut fields = vec![];
     let mut layout = vec![];
+    let mut actions = vec![];
     for (alias, rf) in &op.root_fields {
         match rf {
             RootField::Database(db) => {
@@ -819,14 +931,58 @@ fn subscription_fields(op: &hge_ir::Operation) -> Result<(&str, Vec<&QueryRoot>,
                     "Introspection at root field level is not supported over subscriptions",
                 ));
             }
-            // Async action subscriptions are not wired up yet.
-            RootField::Mutation(_) | RootField::Action(_) => {
+            RootField::Action(a) => actions.push((alias.as_str(), &**a)),
+            RootField::Mutation(_) => {
                 return Err(Error::new(
                     Code::NotSupported,
                     "not supported over subscriptions",
                 ));
             }
         }
+    }
+    if !actions.is_empty() {
+        let (mut live, mut plain) = (false, false);
+        for (_, a) in &actions {
+            match &a.call {
+                ActionCall::AsyncQuery {
+                    has_relationships, ..
+                } => {
+                    live |= *has_relationships;
+                    plain |= !*has_relationships;
+                }
+                ActionCall::Sync { .. } => {
+                    return Err(Error::new(
+                        Code::NotSupported,
+                        "query actions cannot be run as a subscription",
+                    ));
+                }
+                ActionCall::AsyncMutation { .. } => {
+                    return Err(Error::new(
+                        Code::NotSupported,
+                        "not supported over subscriptions",
+                    ));
+                }
+            }
+        }
+        // V2 runs actions with relationships in a live query, apart from the others.
+        if plain && (live || !fields.is_empty()) {
+            return Err(Error::new(
+                Code::NotSupported,
+                "async action queries with no relationships aren't expected to mix with normal source database queries",
+            ));
+        }
+        // V2 also lets them share a live query with database fields of the same source;
+        // here they run in their own task.
+        if !fields.is_empty() {
+            return Err(Error::new(
+                Code::NotSupported,
+                "async action queries with relationships cannot be mixed with database queries in one subscription",
+            ));
+        }
+        return Ok(Plan::AsyncActions {
+            fields: actions,
+            live,
+        });
     }
     let streams = fields
         .iter()
@@ -853,7 +1009,11 @@ fn subscription_fields(op: &hge_ir::Operation) -> Result<(&str, Vec<&QueryRoot>,
             "all fields of a subscription must be from the same source",
         ));
     }
-    Ok((source, fields, Layout(layout)))
+    Ok(Plan::Live {
+        source,
+        fields,
+        layout: Layout(layout),
+    })
 }
 
 /// The overflow error of a stream: it says which cursor to resume from (spec 09 §1.6).

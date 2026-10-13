@@ -1,0 +1,12 @@
+type Mutation {
+  asyncTask(n: Int!): TaskResult
+  asyncLink(n: Int!): TaskLink
+}
+
+type TaskResult {
+  label: String!
+}
+
+type TaskLink {
+  messageId: Int!
+}
