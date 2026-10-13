@@ -12,6 +12,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use serde_json::{Value, json};
+
 use super::JwtContext;
 use super::keys::{self, KeySet};
 use crate::cache_control;
@@ -21,6 +23,8 @@ const TICK: Duration = Duration::from_secs(60);
 
 pub(crate) struct JwkSource {
     url: String,
+    /// `url` for logs: a password shows as `...`, like V2's `Show URI`.
+    display_url: String,
     client: reqwest::Client,
     user_agent: String,
     /// When the keys expire, in Unix milliseconds; 0 = unknown (never refresh).
@@ -28,6 +32,16 @@ pub(crate) struct JwkSource {
     /// When the last fetch started, in Unix milliseconds.
     last_attempt_ms: AtomicU64,
     refreshing: AtomicBool,
+}
+
+fn display_url(url: &str) -> String {
+    match reqwest::Url::parse(url) {
+        Ok(mut u) if u.password().is_some() => {
+            let _ = u.set_password(Some("..."));
+            u.to_string()
+        }
+        _ => url.to_owned(),
+    }
 }
 
 fn now_ms() -> u64 {
@@ -47,6 +61,7 @@ fn to_ms(t: SystemTime) -> u64 {
 impl JwkSource {
     pub(crate) fn new(url: String, client: reqwest::Client, user_agent: String) -> Self {
         JwkSource {
+            display_url: display_url(&url),
             url,
             client,
             user_agent,
@@ -57,17 +72,23 @@ impl JwkSource {
     }
 
     /// The startup fetch: retried with exponential backoff from 200 ms, at most 5 retries;
-    /// failure is fatal. Unlike V2 the result is kept rather than refetched.
+    /// failure is fatal. Unlike V2 the result (and its expiry) is kept rather than
+    /// refetched. Each attempt logs as V2's `fetchJwk` does.
     pub(crate) async fn fetch_at_startup(&self) -> Result<KeySet, String> {
         let mut delay = Duration::from_millis(200);
         let mut attempt = 0;
         loop {
             self.last_attempt_ms.store(now_ms(), Ordering::Relaxed);
             match self.fetch().await {
-                Ok(keys) => return Ok(keys),
+                Ok((keys, headers)) => {
+                    // V2's `withJwkError` ignores expiry problems at startup.
+                    if let Some(expiry) = expiry_from_headers(&headers, SystemTime::now()) {
+                        self.expires_ms.store(to_ms(expiry), Ordering::Relaxed);
+                    }
+                    return Ok(keys);
+                }
                 Err(e) if attempt >= 5 => return Err(e),
-                Err(e) => {
-                    tracing::warn!(target: "jwk-refresh-log", url = %self.url, error = %e, "retrying JWK fetch");
+                Err(_) => {
                     tokio::time::sleep(delay).await;
                     delay *= 2;
                     attempt += 1;
@@ -76,8 +97,28 @@ impl JwkSource {
         }
     }
 
-    /// Fetch and parse the key set, recording the expiry from the response headers.
-    async fn fetch(&self) -> Result<KeySet, String> {
+    /// V2's `fetchJwk`: log the attempt, fetch and parse the key set. Failures are logged
+    /// at V2's `critical` level; the error is V2's friendly message.
+    async fn fetch(&self) -> Result<(KeySet, http::HeaderMap), String> {
+        log_info(json!({
+            "message": format!("Refreshing JWK from endpoint: {}", self.display_url),
+            "error": null,
+        }));
+        let critical = |error: Value, message: String| {
+            tracing::error!(
+                target: "jwk-refresh-log",
+                level = "critical",
+                detail = %json!({"message": null, "error": error})
+            );
+            message
+        };
+        let http_exception = |e: reqwest::Error| {
+            let error = json!({
+                "http_exception": crate::http_exception::to_json(&e, "GET", &self.url),
+            });
+            let message = format!("Error fetching JWK: {}", e.without_url());
+            critical(error, message)
+        };
         let resp = self
             .client
             .get(&self.url)
@@ -85,26 +126,32 @@ impl JwkSource {
             .header(http::header::USER_AGENT, &self.user_agent)
             .send()
             .await
-            .map_err(|e| format!("Error fetching JWK: {e}"))?;
-        if !resp.status().is_success() {
-            return Err(format!(
-                "Non-2xx response on fetching JWK from: {}",
-                self.url
+            .map_err(http_exception)?;
+        let status = resp.status();
+        let headers = resp.headers().clone();
+        let body = resp.bytes().await.map_err(http_exception)?;
+        if !status.is_success() {
+            let error = json!({
+                "status_code": status.as_u16(),
+                "url": self.display_url,
+                "response": String::from_utf8_lossy(&body),
+            });
+            return Err(critical(
+                error,
+                format!(
+                    "Non-2xx response on fetching JWK from: {}",
+                    self.display_url
+                ),
             ));
         }
-        let headers = resp.headers().clone();
-        let body = resp
-            .bytes()
-            .await
-            .map_err(|e| format!("Error fetching JWK: {e}"))?;
-        let keys = keys::parse_jwk_set(&body).map_err(|e| {
-            tracing::warn!(target: "jwk-refresh-log", error = %e, "invalid JWK set");
-            format!("Error parsing JWK from url: {}", self.url)
-        })?;
-        if let Some(expiry) = expiry_from_headers(&headers, SystemTime::now()) {
-            self.expires_ms.store(to_ms(expiry), Ordering::Relaxed);
+        let message = format!("Error parsing JWK from url: {}", self.display_url);
+        match keys::parse_jwk_set(&body) {
+            Ok(keys) => Ok((keys, headers)),
+            Err(e) => Err(critical(
+                json!({"error": e, "message": message}),
+                message.clone(),
+            )),
         }
-        Ok(keys)
     }
 
     /// Start a background refresh if one is due. Cheap enough for every request.
@@ -128,18 +175,30 @@ impl JwkSource {
         runtime.spawn(async move {
             let Some(ctx) = ctx.upgrade() else { return };
             let Some(jwk) = &ctx.jwk else { return };
-            match jwk.fetch().await {
-                Ok(keys) => {
-                    ctx.keys.store(Arc::new(keys));
-                    tracing::info!(target: "jwk-refresh-log", url = %jwk.url, "JWK set refreshed");
-                }
-                Err(e) => {
-                    tracing::error!(target: "jwk-refresh-log", url = %jwk.url, error = %e, "JWK refresh failed")
+            // V2's `fetchAndUpdateJWKs`: failures were logged by `fetch`.
+            if let Ok((keys, headers)) = jwk.fetch().await {
+                ctx.keys.store(Arc::new(keys));
+                match expiry_from_headers(&headers, SystemTime::now()) {
+                    Some(expiry) => jwk.expires_ms.store(to_ms(expiry), Ordering::Relaxed),
+                    // The previous expiry is kept.
+                    None => log_info(json!({"message": NO_EXPIRY_NOTICE, "error": null})),
                 }
             }
             jwk.refreshing.store(false, Ordering::Release);
         });
     }
+}
+
+/// V2's notice after a refresh without a usable expiry. The advice is
+/// `"retrying again after " <> tshow sleepSeconds <> " seconds"` where `sleepSeconds` is a
+/// `Seconds` with a derived `Show`, verbatim.
+const NO_EXPIRY_NOTICE: &str = "Either the expiry is not present or cannot be parsed \
+     (retrying again after Seconds {seconds = 60s} seconds)";
+
+/// A V2 `jwk-refresh-log` (`Hasura.Server.Auth.JWT.Logging.JwkRefreshLog`):
+/// `{"message": text|null, "error": JwkFetchError|null}`.
+fn log_info(detail: Value) {
+    tracing::info!(target: "jwk-refresh-log", detail = %detail);
 }
 
 /// V2's 60 s refresh ticker; stops when the context is dropped.
@@ -158,7 +217,8 @@ pub(super) fn spawn_refresh_ticker(ctx: Weak<JwtContext>) {
 }
 
 /// V2's `determineJwkExpiryLifetime`: `Cache-Control` first, then `Expires`. Parse
-/// failures are logged and give no expiry (the previous one is kept).
+/// failures are logged at info (`logAndThrowInfo`) and give no expiry (the previous one is
+/// kept).
 pub(crate) fn expiry_from_headers(
     headers: &http::HeaderMap,
     now: SystemTime,
@@ -175,7 +235,10 @@ pub(crate) fn expiry_from_headers(
                 }
             }
             Err(e) => {
-                tracing::warn!(target: "jwk-refresh-log", error = %e, "Failed parsing Cache-Control header from JWK response");
+                log_info(json!({"message": null, "error": {
+                    "error": e,
+                    "message": "Failed parsing Cache-Control header from JWK response",
+                }}));
                 return None;
             }
         }
@@ -188,7 +251,10 @@ pub(crate) fn expiry_from_headers(
     {
         Ok(t) => Some(t),
         Err(_) => {
-            tracing::warn!(target: "jwk-refresh-log", "Failed parsing Expires header from JWK response. Value of header is not a valid timestamp");
+            log_info(json!({"message": null, "error": {
+                "error": null,
+                "message": "Failed parsing Expires header from JWK response. Value of header is not a valid timestamp",
+            }}));
             None
         }
     }
@@ -202,6 +268,18 @@ mod tests {
 
     use super::*;
     use crate::jwt::JwtConfig;
+
+    #[test]
+    fn display_url_hides_the_password() {
+        assert_eq!(
+            display_url("https://u:pw@example.com/jwks"),
+            "https://u:...@example.com/jwks"
+        );
+        assert_eq!(
+            display_url("https://example.com/jwks"),
+            "https://example.com/jwks"
+        );
+    }
 
     fn jwk(kid: &str) -> Value {
         json!({"kty": "oct", "kid": kid, "k": "c2VjcmV0LXNlY3JldC1zZWNyZXQtc2VjcmV0LXNlY3JldA"})

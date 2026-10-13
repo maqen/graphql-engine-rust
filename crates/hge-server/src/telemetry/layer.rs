@@ -69,10 +69,15 @@ impl<S: Subscriber> Layer<S> for V2Layer {
 
     fn on_event(&self, event: &Event<'_>, _: Context<'_, S>) {
         let meta = event.metadata();
-        let level = Level::from_tracing(meta.level());
         let ty = log_type(meta.target());
         let mut fields = Fields::default();
         event.record(&mut fields);
+        // `level = "critical"` raises an event to V2's `LevelOther "critical"`, above
+        // error (so it passes every level filter an error event passes).
+        let level = match fields.level.take().as_deref() {
+            Some("critical") => Level::Critical,
+            _ => Level::from_tracing(meta.level()),
+        };
         let detail = fields.into_detail(ty, meta.target());
         self.logger
             .write_with(ty.as_str(), level, |buf| match detail {
@@ -96,6 +101,7 @@ struct Fields {
     message: Option<String>,
     detail: Option<String>,
     kind: Option<String>,
+    level: Option<String>,
     other: Map<String, Value>,
 }
 
@@ -105,6 +111,7 @@ impl Fields {
             ("message", Value::String(s)) => self.message = Some(s),
             ("detail", Value::String(s)) => self.detail = Some(s),
             ("kind", Value::String(s)) => self.kind = Some(s),
+            ("level", Value::String(s)) => self.level = Some(s),
             (name, v) => {
                 self.other.insert(name.to_owned(), v);
             }
@@ -308,6 +315,26 @@ mod tests {
         });
         assert_eq!(logs[0]["detail"], serde_json::json!({"a": 1}));
         assert_eq!(logs[1]["detail"], serde_json::json!({"b": 2}));
+    }
+
+    #[test]
+    fn critical_level() {
+        let config = LogConfig {
+            level: Level::Error,
+            types: LogTypes::parse("jwk-refresh-log").unwrap().0,
+        };
+        let logs = capture(config, || {
+            tracing::error!(target: "jwk-refresh-log", level = "critical", detail = r#"{"message":null}"#);
+            tracing::warn!(target: "jwk-refresh-log", level = "critical", detail = "{}");
+        });
+        assert_eq!(
+            logs.len(),
+            1,
+            "a critical event is still filtered by its tracing level"
+        );
+        assert_eq!(logs[0]["level"], "critical");
+        assert_eq!(logs[0]["type"], "jwk-refresh-log");
+        assert_eq!(logs[0]["detail"], serde_json::json!({"message": null}));
     }
 
     #[test]

@@ -3,13 +3,17 @@
 
 use std::fmt;
 
-/// Log levels, ordered as V2 orders them (`debug < info < warn < error`).
+/// Log levels, ordered as V2 orders them (`debug < info < warn < error < other`).
+/// `Critical` is V2's `LevelOther "critical"` (failed JWK fetches); it cannot be chosen
+/// with `HASURA_GRAPHQL_LOG_LEVEL`, and `tracing` has no such level, so an event asks for
+/// it with a `level = "critical"` field (see the layer).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Level {
     Debug,
     Info,
     Warn,
     Error,
+    Critical,
 }
 
 impl Level {
@@ -19,6 +23,7 @@ impl Level {
             Level::Info => "info",
             Level::Warn => "warn",
             Level::Error => "error",
+            Level::Critical => "critical",
         }
     }
 
@@ -243,5 +248,7 @@ mod tests {
             "Valid log levels: debug, info, warn or error"
         );
         assert!(Level::Debug < Level::Info && Level::Warn < Level::Error);
+        assert!(Level::Error < Level::Critical);
+        assert!(Level::parse("critical").is_err());
     }
 }
