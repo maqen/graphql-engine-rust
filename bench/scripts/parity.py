@@ -214,6 +214,8 @@ def main():
     ap.add_argument("--no-events", action="store_true", help="skip the event-trigger delivery check")
     ap.add_argument("--loose-numbers", action="store_true", help="compare numbers by value, not text")
     ap.add_argument("--report", help="write a markdown report to this path")
+    ap.add_argument("--known-failures", help="file of case names expected to fail (one per line, # comments); "
+                    "only failures not listed, or listed cases that now pass, make the exit status non-zero")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
@@ -275,12 +277,39 @@ def main():
         failures += bool(diffs)
         rows.append(("event_trigger_deliveries", diffs))
 
+    known = set()
+    if args.known_failures:
+        for line in Path(args.known_failures).read_text().splitlines():
+            line = line.split("#", 1)[0].strip()
+            if line:
+                known.add(line)
+
+    # Checked after the report is written, so CI still publishes it.
+    unknown = sorted(known - {label for label, _ in rows}) if not (args.only or args.no_events) else []
+
+    def verdict(label, diffs):
+        if label in known:
+            return "XFAIL" if diffs else "XPASS"
+        return "FAIL" if diffs else "PASS"
+
     passed = len(rows) - failures
     print(f"parity {name_ref} (A) vs {name_cmp} (B): {passed}/{len(rows)} match")
     for label, diffs in rows:
-        print(f"  {'FAIL' if diffs else 'PASS'}  {label}")
+        print(f"  {verdict(label, diffs):5} {label}")
         for d in diffs[: (MAX_DIFFS if args.verbose else 5)]:
             print(f"          {d}")
+
+    new_failures = [label for label, diffs in rows if verdict(label, diffs) == "FAIL"]
+    flipped = [label for label, diffs in rows if verdict(label, diffs) == "XPASS"]
+    if known:
+        print(f"known failures: {sum(verdict(l, d) == 'XFAIL' for l, d in rows)} still failing, "
+              f"{len(new_failures)} new failures, {len(flipped)} now passing")
+        for label in new_failures:
+            print(f"  REGRESSION: {label} fails and is not in {args.known_failures}")
+        for label in flipped:
+            print(f"  NOW PASSING: delete {label} from {args.known_failures} in this PR")
+        for label in unknown:
+            print(f"  UNKNOWN CASE: {label} is listed in {args.known_failures} but not in the suite")
 
     if args.report:
         lines = [
@@ -291,12 +320,15 @@ def main():
             "| case | result | first difference |",
             "|---|---|---|",
         ]
+        labels = {"PASS": "pass", "FAIL": "**fail**", "XFAIL": "known gap", "XPASS": "**now passes, delete from known failures**"}
         for label, diffs in rows:
             first = diffs[0].replace("|", "\\|") if diffs else ""
-            lines.append(f"| {label} | {'**fail**' if diffs else 'pass'} | {first} |")
+            lines.append(f"| {label} | {labels[verdict(label, diffs)]} | {first} |")
         Path(args.report).parent.mkdir(parents=True, exist_ok=True)
         Path(args.report).write_text("\n".join(lines) + "\n")
 
+    if known:
+        return 1 if new_failures or flipped or unknown else 0
     return 1 if failures else 0
 
 

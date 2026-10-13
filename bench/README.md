@@ -65,6 +65,12 @@ python3 scripts/run.py \
   --concurrency 32 --concurrency 128 --label 2026-10-20-compare
 ```
 
+CI (`rust-engine-parity`) runs the golden check with
+`--known-failures bench/parity-known-failures.txt`: cases listed there are reported
+as known gaps, and the job fails only when an unlisted case fails (a
+regression) or a listed case starts passing. A PR that fixes a listed case
+deletes its line in the same PR.
+
 If Docker Hub rate-limits pulls, use the mirror images:
 `docker compose --env-file .env.mirror ...` and pass
 `--compose-arg=--env-file=.env.mirror` to `run.py`.
@@ -147,3 +153,48 @@ python3 scripts/parity.py --a hasura=http://localhost:8080 --record
   the highest sample, not a true peak.
 - GraphQL errors come back as HTTP 200; `run.py` checks each case returns
   data without `errors` before loading it and skips it otherwise.
+
+## Subscriptions (`scripts/subbench.py`)
+
+Holds thousands of websocket subscribers open on one engine at a time,
+then writes to Postgres directly (a long-lived `psql` on the published
+port, so the write path is the same for every engine) and measures how
+fast each subscriber sees the change.
+
+```sh
+python3 scripts/subbench.py \
+  --engine hasura=http://localhost:8080@hasura \
+  --engine rust=http://localhost:8081@rust-engine \
+  --subscribers 1000 --subscribers 5000 --label 2026-10-20-subs
+```
+
+- Live queries cycle through four shapes: `user`-role rows (20 distinct
+  `X-Hasura-User-Id`s, so 20 cohorts), admin `playlist_by_pk` with 100
+  distinct variables, a `user`-role relationship + aggregate, and one query
+  every subscriber shares. Every write renames playlists 1-100 with a token,
+  which changes every shape's result.
+- 50 streaming subscribers (`playlist_stream` from id 900000) receive rows
+  inserted during the run.
+- Reported per engine and subscriber count: time to connect everyone and
+  get every initial result; memory per subscriber (steady subscribed memory
+  minus idle memory, divided by subscribers); CPU while subscribed but idle
+  (pure polling cost) and during writes; Postgres transactions/s in the
+  engine's database (its polling load); commit-to-delivery latency
+  p50/p95/p99/max and subscribers that never saw a write; stream delivery
+  latency.
+- Latency includes each engine's refetch interval
+  (`HASURA_GRAPHQL_LIVE_QUERIES_MULTIPLEXED_REFETCH_INTERVAL`, 1 s by
+  default for both), so up to 1 s of each figure is the poll interval. Writes
+  are spaced `--write-interval` plus a random 0-1 s, so they do not lock
+  onto the poll tick and the median samples the whole interval.
+- Subscribers connect to the container's address on the compose network,
+  not the published port: Docker's userland port proxy falls over at a few
+  thousand sockets and adds a hop. `--via-proxy` restores the old path;
+  `run.py` does the same for HTTP load (startup timing still uses the
+  published port).
+- Each run restarts the engine first. Memory per subscriber is measured
+  against that freshly started container.
+- The client is stdlib asyncio (`scripts/wsclient.py`, both
+  `graphql-transport-ws` and Apollo `graphql-ws` via `--protocol`) spread
+  over `--workers` processes. Raise `ulimit -n` above the subscriber count.
+- Data is restored after each run, so parity goldens keep matching.
