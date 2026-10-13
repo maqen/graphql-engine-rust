@@ -218,6 +218,8 @@ pub struct Prepared {
     pub remotes: HashMap<String, crate::remote::PreparedRemote>,
     /// The remote schemas in the GraphQL schema.
     pub remote_schemas: hge_schema::RemoteSchemas,
+    /// The admin schema, when preparing needed it (to validate query collections).
+    pub admin_schema: Option<Arc<hge_schema::RoleSchema>>,
     pub inconsistencies: Vec<InconsistentObject>,
 }
 
@@ -366,7 +368,26 @@ pub async fn prepare(
     )
     .await;
     inconsistencies.extend(remote_issues);
+    // V2 validates every collection query against the admin schema.
+    let admin_schema = metadata
+        .query_collections
+        .iter()
+        .any(|c| !c.definition.queries.is_empty())
+        .then(|| {
+            Arc::new(hge_schema::build_role_schema(
+                &tables,
+                &actions,
+                &remote_schemas,
+                &hge_core::RoleName::admin(),
+                false,
+                &schema_options(config),
+            ))
+        });
+    if let Some(admin) = &admin_schema {
+        inconsistencies.extend(hge_rest::collection_issues(metadata, &admin.schema, &rest));
+    }
     Prepared {
+        admin_schema,
         rest: Arc::new(rest),
         allowlist: config
             .enable_allowlist

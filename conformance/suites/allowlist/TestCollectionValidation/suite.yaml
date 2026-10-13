@@ -1,0 +1,6 @@
+description: Hand-written. Query collection queries are validated against the admin schema (V2's getInconsistentQueryCollections / Hasura.GraphQL.Analyse), with the REST endpoint and allowlist notes in the reason.
+upstream:
+  file: test_endpoints.py
+  by_hand: true
+admin_secret: true
+isolation: none

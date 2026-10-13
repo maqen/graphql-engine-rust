@@ -7,6 +7,7 @@
 
 pub mod allowlist;
 mod build;
+mod validate;
 mod variables;
 
 use std::collections::HashMap;
@@ -16,6 +17,7 @@ use hge_core::{Code, Error};
 use hge_metadata::EndpointMethod;
 
 pub use build::build;
+pub use validate::{collection_issues, diagnose};
 pub use variables::{QueryParams, parse_query_string};
 
 /// The order of V2's `Allowed methods: …` list (checked against v2.51.0-ce).
@@ -94,6 +96,10 @@ impl<'a> RequestMethod<'a> {
 impl RestEndpoints {
     pub fn is_empty(&self) -> bool {
         self.by_len.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Endpoint> {
+        self.by_len.values().flatten()
     }
 
     /// Match `path` (the raw, still percent-encoded part after `/api/rest/`). Returns the

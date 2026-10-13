@@ -125,6 +125,13 @@ impl AppState {
         // These need a schema of their own (without introspection), even with no permissions.
         known_roles.extend(introspection_disabled.iter().cloned());
         let backend_only_roles = backend_only_roles(&prepared.tables);
+        // Reuse the admin schema built while preparing (same tables, actions and options).
+        let mut schemas = HashMap::new();
+        if let Some(admin) = prepared.admin_schema.clone()
+            && !introspection_disabled.contains(&RoleName::admin())
+        {
+            schemas.insert(Some((RoleName::admin(), false)), admin);
+        }
         let state = AppState {
             known_roles,
             backend_only_roles,
@@ -144,7 +151,7 @@ impl AppState {
             scheduled_triggers: prepared.scheduled_triggers.clone(),
             prepared,
             options,
-            schemas: RwLock::new(HashMap::new()),
+            schemas: RwLock::new(schemas),
         };
         // Build the admin schema eagerly so the first request is fast and errors surface early.
         state.role_schema(&RoleName::admin(), false);

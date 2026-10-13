@@ -32,23 +32,9 @@ impl Allowlist {
     /// CE uses only the collections with `scope.global = true` (`AllowlistModeGlobalOnly`);
     /// role-scoped entries are ignored.
     pub fn build(metadata: &Metadata) -> Self {
-        let mut queries = HashSet::new();
-        for entry in metadata.allowlist.iter().filter(|e| e.scope.is_global()) {
-            let Some(collection) = metadata
-                .query_collections
-                .iter()
-                .find(|c| c.name == entry.collection)
-            else {
-                continue;
-            };
-            for q in &collection.definition.queries {
-                // Documents the request parser rejects can never match a request.
-                if let Ok(doc) = async_graphql_parser::parse_query(&q.query) {
-                    queries.insert(canonical(&doc, &q.query));
-                }
-            }
+        Allowlist {
+            queries: global_queries(metadata),
         }
-        Allowlist { queries }
     }
 
     pub fn allows(&self, doc: &ExecutableDocument, text: &str) -> bool {
@@ -63,6 +49,27 @@ impl Allowlist {
             Err(not_allowed())
         }
     }
+}
+
+/// The canonical forms of the queries in globally allowlisted collections.
+pub(crate) fn global_queries(metadata: &Metadata) -> HashSet<String> {
+    let mut queries = HashSet::new();
+    for entry in metadata.allowlist.iter().filter(|e| e.scope.is_global()) {
+        let Some(collection) = metadata
+            .query_collections
+            .iter()
+            .find(|c| c.name == entry.collection)
+        else {
+            continue;
+        };
+        for q in &collection.definition.queries {
+            // Documents the request parser rejects can never match a request.
+            if let Ok(doc) = async_graphql_parser::parse_query(&q.query) {
+                queries.insert(canonical(&doc, &q.query));
+            }
+        }
+    }
+    queries
 }
 
 /// V2's error for a query outside the allowlist.
