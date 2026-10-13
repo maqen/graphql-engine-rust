@@ -5,7 +5,7 @@ use std::future::Future;
 use std::sync::{Arc, RwLock};
 
 use arc_swap::ArcSwap;
-use hge_actions::ActionRegistry;
+use hge_actions::{ActionLogStore, ActionRegistry};
 use hge_auth::Authenticator;
 use hge_core::{InconsistentObject, RoleName, SourceCatalog};
 use hge_metadata::Metadata;
@@ -194,6 +194,8 @@ pub struct Engine {
     metadata_lock: tokio::sync::Mutex<()>,
     /// WebSocket connections and subscription pollers.
     pub ws: crate::ws::WebSockets,
+    /// `hdb_catalog.hdb_action_log` (async actions); `None` without a metadata database.
+    pub action_log: Option<Arc<dyn ActionLogStore>>,
 }
 
 impl Engine {
@@ -215,6 +217,7 @@ impl Engine {
             instance_id: uuid::Uuid::new_v4().to_string(),
             api_settings,
             metadata_lock: tokio::sync::Mutex::new(()),
+            action_log: None,
         }
     }
 }

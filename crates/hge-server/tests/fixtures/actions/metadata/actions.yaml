@@ -46,6 +46,98 @@ actions:
       handler: '{{ACTION_BASE_URL}}/login'
     permissions:
       - role: public
+  - name: asyncRespond
+    definition:
+      kind: asynchronous
+      handler: '{{ACTION_BASE_URL}}/respond'
+    permissions:
+      - role: public
+  - name: asyncEcho
+    definition:
+      kind: asynchronous
+      handler: '{{ACTION_BASE_URL}}/echo'
+      forward_client_headers: true
+  - name: asyncAuthor
+    definition:
+      kind: asynchronous
+      handler: '{{ACTION_BASE_URL}}/author'
+    permissions:
+      - role: public
+  - name: asyncSlow
+    definition:
+      kind: asynchronous
+      handler: '{{ACTION_BASE_URL}}/slow'
+      timeout: 1
+  - name: transformRequest
+    definition:
+      kind: ""
+      handler: '{{ACTION_BASE_URL}}/raw'
+      request_transform:
+        version: 2
+        template_engine: Kriti
+        method: PUT
+        url: '{{$base_url}}/users/{{$body.input.id}}?dropped=1'
+        query_params:
+          id: '{{$body.input.id}}'
+          role: '{{$session_variables[''x-hasura-role'']}}'
+          gone: '{{$body.input.missing?}}'
+        request_headers:
+          add_headers:
+            X-User: 'user-{{getSessionVariable("x-hasura-user-id")}}'
+          remove_headers:
+            - user-agent
+        body:
+          action: transform
+          template: '{"action": {{$body.action.name}}, "name": {{$body.input.name}}, "base": {{$query_params}}}'
+    permissions:
+      - role: user
+  - name: transformForm
+    definition:
+      kind: ""
+      handler: '{{ACTION_BASE_URL}}/raw'
+      request_transform:
+        version: 2
+        request_headers:
+          add_headers:
+            content-type: application/x-www-form-urlencoded
+          remove_headers:
+            - content-type
+        body:
+          action: x_www_form_urlencoded
+          form_template:
+            foo: '{{$body.input.foo}}'
+            baz: world
+            missing: '{{$body.input.missing?}}'
+      response_transform:
+        version: 2
+        body:
+          action: transform
+          template: '{"handler": {{$body}}, "status": {{$response.status}}, "request_body": {{$request.body.body}}, "request_query": {{$request.query_params.query_params}}}'
+  - name: transformResponse
+    definition:
+      kind: ""
+      handler: '{{ACTION_BASE_URL}}/respond'
+      response_transform:
+        body: '{{ if $response.status == 200 }} {"authorId": {{$body.id}}, "label": {{$body.name}}} {{ else }} {"message": {{$body.error}}} {{ end }}'
+    permissions:
+      - role: user
+  - name: transformBroken
+    definition:
+      kind: ""
+      handler: '{{ACTION_BASE_URL}}/raw'
+      request_transform:
+        body: '{{ $body.world }}'
+        request_headers:
+          add_headers:
+            X-Broken: '{{ $body.input'
+  - name: asyncTransformed
+    definition:
+      kind: asynchronous
+      handler: '{{ACTION_BASE_URL}}/author'
+      request_transform:
+        body: '{"input": {"id": {{$body.input.other}}}}'
+      response_transform:
+        body: '{"authorId": {{$body.authorId}}, "label": "transformed {{$body.label}}"}'
 custom_types:
   enums:
     - name: Color
@@ -68,4 +160,15 @@ custom_types:
             authorId: author_id
     - name: Address
     - name: LoginOutput
+    - name: AsyncRespond
+    - name: AsyncEcho
+    - name: AsyncAuthor
+      relationships:
+        - name: author
+          type: object
+          remote_table:
+            schema: public
+            name: author
+          field_mapping:
+            authorId: id
   scalars: []

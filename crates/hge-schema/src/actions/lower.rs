@@ -1,6 +1,6 @@
 //! Lowering action root fields to IR.
 
-use hge_core::Error;
+use hge_core::{Code, Error};
 use hge_ir::action::{ActionCall, ActionField, ActionRelationship, ActionSelection, AsyncField};
 use hge_ir::{ActionRootField, RootField};
 use serde_json::{Map, Value as Json};
@@ -42,13 +42,7 @@ pub fn lower_async_query(
     action: &ActionInfo,
     field: &SelectedField<'_>,
 ) -> Result<RootField, Error> {
-    let id = field
-        .arg("id")
-        .and_then(Json::as_str)
-        .ok_or_else(|| {
-            Error::validation("missing required field 'id'").with_path(field.arg_path("id"))
-        })?
-        .to_owned();
+    let id = action_id(field)?;
     let Some(object) = &action.output_object else {
         // Scalar outputs resolve to an empty object in V2 (quirk Q7).
         return Ok(RootField::Static(Json::Object(Map::new())));
@@ -78,6 +72,37 @@ pub fn lower_async_query(
             has_relationships: !object.relationships.is_empty(),
         },
     })))
+}
+
+/// The `id: uuid!` argument, parsed like V2's `uuid` scalar parser: the aeson `UUID` instance
+/// (`Data.UUID.fromText`, the 36-character hyphenated form only), before any database access.
+fn action_id(field: &SelectedField<'_>) -> Result<String, Error> {
+    let path = field.arg_path("id");
+    match field.arg("id") {
+        Some(Json::String(s)) if is_uuid(s) => Ok(s.to_ascii_lowercase()),
+        Some(Json::String(_)) => Err(Error::new(Code::ParseFailed, "invalid UUID").with_path(path)),
+        Some(other) => Err(Error::validation(format!(
+            "expected a UUID for type 'uuid', but found {}",
+            match other {
+                Json::Null => "null",
+                Json::Bool(_) => "a boolean",
+                Json::Number(_) => "a number",
+                Json::Array(_) => "a list",
+                _ => "an object",
+            }
+        ))
+        .with_path(path)),
+        None => Err(Error::validation("missing required field 'id'").with_path(path)),
+    }
+}
+
+/// `Data.UUID.fromText`: 8-4-4-4-12 hex digits (either case).
+fn is_uuid(s: &str) -> bool {
+    s.len() == 36
+        && s.bytes().enumerate().all(|(i, b)| match i {
+            8 | 13 | 18 | 23 => b == b'-',
+            _ => b.is_ascii_hexdigit(),
+        })
 }
 
 fn unexpected_kind(kind: &FieldKind) -> Error {
@@ -139,4 +164,19 @@ fn object_fields(
         out.push((sel.alias.clone(), f));
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_uuid;
+
+    #[test]
+    fn uuids_are_hyphenated() {
+        assert!(is_uuid("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"));
+        assert!(is_uuid("A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11"));
+        assert!(!is_uuid("{a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11}"));
+        assert!(!is_uuid("a0eebc999c0b4ef8bb6d6bb9bd380a11"));
+        assert!(!is_uuid("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a1"));
+        assert!(!is_uuid("a0eebc99x9c0b-4ef8-bb6d-6bb9bd380a11"));
+    }
 }

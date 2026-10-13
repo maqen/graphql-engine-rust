@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 hge-core.workspace = true
+hge-transforms.workspace = true
 async-graphql-parser.workspace = true
 indexmap.workspace = true
 serde.workspace = true

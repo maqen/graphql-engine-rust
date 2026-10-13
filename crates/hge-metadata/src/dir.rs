@@ -108,7 +108,14 @@ pub fn load_dir_json(dir: &Path) -> Result<Json, LoadError> {
 /// Load and parse a metadata directory.
 pub fn load_dir(dir: &Path) -> Result<Metadata, LoadError> {
     let json = load_dir_json(dir)?;
-    crate::from_json(json).map_err(|e| LoadError::at(dir, e.message))
+    crate::from_json(json).map_err(|e| {
+        let message = if e.path == "$" {
+            e.message
+        } else {
+            format!("{} (at {})", e.message, e.path)
+        };
+        LoadError::at(dir, message)
+    })
 }
 
 fn read_optional(path: &Path) -> Result<Option<Json>, LoadError> {

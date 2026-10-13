@@ -81,14 +81,14 @@ async fn execute_one(
     headers: &HeaderMap,
     req: GraphQLRequest,
 ) -> (String, Vec<String>) {
-    match run(state, session, headers, req).await {
+    match run(engine, state, session, headers, req).await {
         Ok(out) => out,
         Err(e) => (error_body(&e, include_internal(engine, session)), vec![]),
     }
 }
 
-/// The engine's sources, for action relationships.
-struct StateSources<'a>(&'a AppState);
+/// Database access for action relationships (also used by async action subscriptions).
+pub(crate) struct StateSources<'a>(pub(crate) &'a AppState);
 
 impl hge_actions::Sources for StateSources<'_> {
     fn executor(&self, source: &str) -> Option<&dyn SourceExecutor> {
@@ -106,6 +106,7 @@ pub fn error_body(e: &Error, include_internal: bool) -> String {
 }
 
 async fn run(
+    engine: &Engine,
     state: &AppState,
     session: &Session,
     client_headers: &HeaderMap,
@@ -119,7 +120,15 @@ async fn run(
             "subscriptions are not supported over HTTP, use websockets instead",
         ));
     }
-    execute(state, session, client_headers, query.as_deref(), &op).await
+    execute(
+        engine,
+        state,
+        session,
+        client_headers,
+        query.as_deref(),
+        &op,
+    )
+    .await
 }
 
 /// Parse, validate and lower a request (everything that can fail before execution).
@@ -150,6 +159,7 @@ pub fn plan(state: &AppState, session: &Session, req: GraphQLRequest) -> Result<
 /// the `Set-Cookie` values of mutation actions. `query` is the request's query text, which
 /// action handlers receive.
 pub async fn execute(
+    engine: &Engine,
     state: &AppState,
     session: &Session,
     client_headers: &HeaderMap,
@@ -160,6 +170,8 @@ pub async fn execute(
         session,
         client_headers,
         query,
+        action_log: engine.action_log.as_deref(),
+        include_internal: include_internal(engine, session),
     };
     let sources = StateSources(state);
     let mut set_cookies = vec![];

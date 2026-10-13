@@ -10,6 +10,7 @@ rust-version.workspace = true
 hge-core.workspace = true
 hge-events.workspace = true
 hge-metadata.workspace = true
+hge-transforms.workspace = true
 hge-postgres.workspace = true
 deadpool-postgres.workspace = true
 futures.workspace = true

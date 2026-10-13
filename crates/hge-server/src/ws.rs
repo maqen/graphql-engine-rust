@@ -599,8 +599,10 @@ impl Connection {
             while self.queries.try_join_next().is_some() {}
             let out = self.out.clone();
             let (protocol, endpoint) = (self.protocol, self.endpoint);
+            let engine = self.engine.clone();
             let run = async move {
-                match graphql::execute(&state, &session, &headers, Some(&query), &op).await {
+                match graphql::execute(&engine, &state, &session, &headers, Some(&query), &op).await
+                {
                     // Like V2, `Set-Cookie` headers from actions are dropped over websockets.
                     Ok((body, _set_cookies)) => {
                         if !out.data(protocol.data(&id, &body)) {

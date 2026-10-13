@@ -182,7 +182,10 @@ pub fn export_json(metadata: &Metadata) -> Value {
                 return a;
             };
             if let Some(def) = obj.remove("definition") {
-                obj.insert("definition".into(), fixed(def, ACTION_DEF));
+                obj.insert(
+                    "definition".into(),
+                    fixed(typed_transforms(def), ACTION_DEF),
+                );
             }
             fixed(Value::Object(obj), ACTION)
         }),
@@ -202,6 +205,26 @@ pub fn export_json(metadata: &Metadata) -> Value {
         }
     }
     Value::Object(result)
+}
+
+/// Transforms go through their typed `ToJSON` (spec 06 §2.7): `version` and
+/// `template_engine` are always written, `request_headers` has both lists. Their keys are
+/// then sorted like every aeson object.
+fn typed_transforms(def: Value) -> Value {
+    let Value::Object(mut d) = def else {
+        return def;
+    };
+    if let Some(t) = d.get("request_transform")
+        && let Ok(t) = hge_transforms::RequestTransform::from_json(t)
+    {
+        d.insert("request_transform".into(), t.to_json());
+    }
+    if let Some(t) = d.get("response_transform")
+        && let Ok(t) = hge_transforms::ResponseTransform::from_json(t)
+    {
+        d.insert("response_transform".into(), t.to_json());
+    }
+    Value::Object(d)
 }
 
 fn export_source(source: Value) -> Value {
@@ -385,6 +408,26 @@ fn sort_text(v: &Value) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn transforms_export_through_their_typed_form() {
+        let md = crate::from_json(json!({
+            "version": 3, "sources": [],
+            "actions": [{"name": "a", "definition": {"handler": "http://h", "output_type": "String",
+                "request_transform": {"body": "{{ $body }}", "request_headers": {"add_headers": {"b": "1", "a": "2"}}},
+                "response_transform": {"version": 2, "body": {"action": "remove"}}}}]
+        }))
+        .unwrap();
+        let def = &export_json(&md)["actions"][0]["definition"];
+        assert_eq!(
+            def["request_transform"].to_string(),
+            r#"{"body":"{{ $body }}","request_headers":{"add_headers":{"a":"2","b":"1"},"remove_headers":[]},"template_engine":"Kriti","version":1}"#
+        );
+        assert_eq!(
+            def["response_transform"].to_string(),
+            r#"{"body":{"action":"remove"},"template_engine":"Kriti","version":2}"#
+        );
+    }
 
     #[test]
     fn export_orders_and_sorts() {

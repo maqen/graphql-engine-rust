@@ -3,7 +3,12 @@
 
 use std::collections::HashSet;
 
+use bytes::Bytes;
 use hge_core::{Code, Error, SessionVariables};
+use hge_transforms::{
+    Request as TransformRequest, RequestContext, RequestTransform, ResponseContext,
+    apply_request_transform, apply_response_transform,
+};
 use http::HeaderMap;
 use serde_json::{Map, Value, json};
 
@@ -142,10 +147,15 @@ fn request_headers(
         .collect())
 }
 
+/// The transformed request that was sent (its body moved out to the transport), if a
+/// request transform ran. Only rendered to JSON on error paths.
+type Transformed = Option<(TransformRequest, Bytes)>;
+
 /// Details attached to internal errors (`extensions.internal`), V2's `ActionInternalError`.
 fn internal(
     handler: &ActionHandler,
     call: &Call<'_>,
+    transformed: &Transformed,
     error: Value,
     response: Option<Value>,
 ) -> Value {
@@ -158,7 +168,9 @@ fn internal(
             "action": {"name": handler.name},
             "input": call.input,
             "request_query": call.request_query,
-            "transformed_request": null,
+            "transformed_request": transformed.as_ref().map(|(r, body)| {
+                r.to_json_with_body(body, Some(handler.timeout.as_micros()))
+            }),
         }),
     );
     if let Some(r) = response {
@@ -177,13 +189,43 @@ fn response_info(status: u16, headers: &reqwest::header::HeaderMap, body: Value)
 
 /// The request body: V2's payload with sorted keys.
 fn payload(action: &str, call: &Call<'_>) -> String {
+    payload_value(action, call).to_string()
+}
+
+fn payload_value(action: &str, call: &Call<'_>) -> Value {
     sorted(&json!({
         "action": {"name": action},
         "input": call.input,
         "request_query": call.request_query,
         "session_variables": call.session.to_json(),
     }))
-    .to_string()
+}
+
+/// A failed handler call, plus the `code` of V2's `QErr`: a 4xx handler's own `code` is only
+/// in [`Error::extensions`] (or dropped, when the handler sent `extensions`).
+#[derive(Debug)]
+pub struct CallError {
+    pub error: Error,
+    pub code: String,
+}
+
+impl CallError {
+    fn new(error: Error) -> Self {
+        let code = error.code.as_str().to_owned();
+        CallError { error, code }
+    }
+
+    /// The error as stored in `hdb_action_log.errors` (V2's `ToJSON QErr` with internal
+    /// errors hidden): the handler's `extensions` are dropped.
+    pub fn log_json(&self) -> Value {
+        json!({"error": self.error.message, "path": self.error.path, "code": self.code})
+    }
+}
+
+impl From<Error> for CallError {
+    fn from(error: Error) -> Self {
+        CallError::new(error)
+    }
 }
 
 /// Call the handler and validate its response.
@@ -194,24 +236,50 @@ pub async fn call(
     env: &dyn Environment,
     call: &Call<'_>,
 ) -> Result<HandlerResponse, Error> {
-    if handler.request_transform.is_some() || handler.response_transform.is_some() {
-        return Err(Error::new(
-            Code::NotSupported,
-            "request and response transforms are not supported yet",
-        ));
-    }
+    call_detailed(client, handler, config, env, call)
+        .await
+        .map_err(|e| e.error)
+}
+
+/// [`call`], keeping the error code a 4xx handler sent (for the async action log).
+pub async fn call_detailed(
+    client: &reqwest::Client,
+    handler: &ActionHandler,
+    config: &HandlerConfig,
+    env: &dyn Environment,
+    call: &Call<'_>,
+) -> Result<HandlerResponse, CallError> {
     let headers = request_headers(handler, config, env, call.client_headers)?;
-    let mut req = client.post(&handler.url).body(payload(&handler.name, call));
-    for (k, v) in &headers {
-        req = req.header(k, v);
-    }
+    let (req, transformed, session) = match &handler.request_transform {
+        None => {
+            let mut req = client.post(&handler.url).body(payload(&handler.name, call));
+            for (k, v) in &headers {
+                req = req.header(k, v);
+            }
+            (req, None, None)
+        }
+        Some(t) => {
+            let session = call.session.to_json();
+            let mut request = transform_request(handler, t, call, headers, session.clone())?;
+            // Validated by the transform.
+            let method = reqwest::Method::from_bytes(request.method.as_bytes())
+                .map_err(|e| Error::unexpected(e.to_string()))?;
+            let mut req = client.request(method, request.full_url());
+            for (k, v) in &request.headers {
+                req = req.header(k, v);
+            }
+            let body = Bytes::from(std::mem::take(&mut request.body));
+            (req.body(body.clone()), Some((request, body)), Some(session))
+        }
+    };
     // The timeout covers receiving the response headers, not the body (§7.2).
     let resp = match tokio::time::timeout(handler.timeout, req.send()).await {
         Ok(Ok(r)) => r,
         Err(_) => {
             let detail = json!({"type": "http_exception", "message": "Response timeout"});
             return Err(Error::unexpected("http exception when calling webhook")
-                .with_internal(internal(handler, call, detail, None)));
+                .with_internal(internal(handler, call, &transformed, detail, None))
+                .into());
         }
         Ok(Err(e)) => {
             let kind = if e.is_builder() {
@@ -221,7 +289,8 @@ pub async fn call(
             };
             let detail = json!({"type": kind, "message": http_error_message(&e)});
             return Err(Error::unexpected("http exception when calling webhook")
-                .with_internal(internal(handler, call, detail, None)));
+                .with_internal(internal(handler, call, &transformed, detail, None))
+                .into());
         }
     };
     let status = resp.status().as_u16();
@@ -231,11 +300,33 @@ pub async fn call(
         Err(e) => {
             let detail = json!({"type": "http_exception", "message": http_error_message(&e)});
             return Err(Error::unexpected("http exception when calling webhook")
-                .with_internal(internal(handler, call, detail, None)));
+                .with_internal(internal(handler, call, &transformed, detail, None))
+                .into());
         }
     };
-    let body: Value =
-        match serde_json::from_slice(&bytes) {
+    let body: Value = match &handler.response_transform {
+        Some(t) => {
+            let session = session.unwrap_or_else(|| call.session.to_json());
+            // `$request` is the context of the transformed request, if any (§10.5).
+            let request = transformed.as_ref().map_or(Value::Null, |(r, body)| {
+                let body = serde_json::from_slice(body).unwrap_or(Value::Null);
+                RequestContext::from_parts(
+                    body,
+                    &r.query,
+                    Some(&handler.url),
+                    Some(session.clone()),
+                )
+                .to_response_json()
+            });
+            let ctx = ResponseContext {
+                request,
+                status,
+                session_variables: session,
+            };
+            apply_response_transform(t, &bytes, ctx)
+                .map_err(|bundle| logged(bundle.response_failed()))?
+        }
+        None => match serde_json::from_slice(&bytes) {
             Ok(v) => v,
             Err(e) => {
                 let raw = Value::String(String::from_utf8_lossy(&bytes).into_owned());
@@ -243,23 +334,27 @@ pub async fn call(
                     .with_internal(internal(
                         handler,
                         call,
+                        &transformed,
                         Value::String(format!("invalid JSON: {e}")),
                         Some(response_info(status, &resp_headers, raw)),
-                    )));
+                    ))
+                    .into());
             }
-        };
+        },
+    };
     let info = |body: &Value| response_info(status, &resp_headers, body.clone());
     match status {
         200..=299 => {
             if let Err(message) = validate::validate(&handler.output, &body) {
-                return Err(
-                    Error::new(Code::Unexpected, message).with_internal(internal(
+                return Err(Error::new(Code::Unexpected, message)
+                    .with_internal(internal(
                         handler,
                         call,
+                        &transformed,
                         Value::String("unexpected response".into()),
                         Some(info(&body)),
-                    )),
-                );
+                    ))
+                    .into());
             }
             let set_cookies = resp_headers
                 .get_all(reqwest::header::SET_COOKIE)
@@ -268,21 +363,74 @@ pub async fn call(
                 .collect();
             Ok(HandlerResponse { body, set_cookies })
         }
-        400..=499 => Err(client_error(&body).with_internal(internal(
-            handler,
-            call,
-            Value::String("unexpected response".into()),
-            Some(info(&body)),
-        ))),
-        _ => Err(Error::unexpected("internal error").with_internal(internal(
-            handler,
-            call,
-            Value::String(format!(
-                "expecting 2xx or 4xx status code, but found {status}"
+        400..=499 => {
+            let error = client_error(&body).with_internal(internal(
+                handler,
+                call,
+                &transformed,
+                Value::String("unexpected response".into()),
+                Some(info(&body)),
+            ));
+            let code = match body.get("code") {
+                Some(Value::String(c)) if error.code != Code::ParseFailed => c.clone(),
+                _ => error.code.as_str().to_owned(),
+            };
+            Err(CallError { error, code })
+        }
+        _ => Err(CallError::new(
+            Error::unexpected("internal error").with_internal(internal(
+                handler,
+                call,
+                &transformed,
+                Value::String(format!(
+                    "expecting 2xx or 4xx status code, but found {status}"
+                )),
+                Some(info(&body)),
             )),
-            Some(info(&body)),
-        ))),
+        )),
     }
+}
+
+/// Log a transform failure at error level (§7.4) and pass it on.
+fn logged(e: Error) -> Error {
+    let errors = e.internal.as_deref().cloned().unwrap_or_default();
+    tracing::error!(%errors, "{}", e.message);
+    e
+}
+
+/// Apply the request transform to V2's request (§7.4). The transform sees the original
+/// payload, the resolved handler URL and its query parameters.
+fn transform_request(
+    handler: &ActionHandler,
+    transform: &RequestTransform,
+    call: &Call<'_>,
+    headers: Vec<(String, String)>,
+    session: Value,
+) -> Result<TransformRequest, Error> {
+    let parsed;
+    let base = match &handler.transform_base {
+        Some(base) => base,
+        None => {
+            parsed = TransformRequest::new("POST", &handler.url, vec![], vec![]);
+            &parsed
+        }
+    };
+    let mut request = base
+        .as_ref()
+        .map_err(|message| {
+            let detail = json!({"type": "invalid_url", "message": message});
+            Error::unexpected("http exception when calling webhook")
+                .with_internal(internal(handler, call, &None, detail, None))
+        })?
+        .clone();
+    // URL credentials (if any) come first, as in http-client's `applyBasicAuth`.
+    request.headers.extend(headers);
+    let payload = payload_value(&handler.name, call);
+    request.body = payload.to_string().into_bytes();
+    let ctx =
+        RequestContext::from_parts(payload, &request.query, Some(&handler.url), Some(session));
+    apply_request_transform(transform, request, ctx)
+        .map_err(|bundle| logged(bundle.request_failed()))
 }
 
 fn http_error_message(e: &reqwest::Error) -> String {
@@ -423,5 +571,180 @@ mod tests {
                 ("authorization".to_owned(), "Bearer t".to_owned()),
             ]
         );
+    }
+
+    /// A handler that reports what it received; paths containing `fail` answer 500.
+    async fn start_handler() -> std::net::SocketAddr {
+        async fn any(
+            method: http::Method,
+            uri: http::Uri,
+            headers: HeaderMap,
+            body: String,
+        ) -> (http::StatusCode, axum::Json<Value>) {
+            let mut names: Vec<(String, String)> = header_pairs(&headers)
+                .into_iter()
+                .filter(|(k, _)| !matches!(k.as_str(), "content-length" | "host" | "accept"))
+                .collect();
+            names.sort();
+            let status = if uri.path().contains("fail") {
+                http::StatusCode::INTERNAL_SERVER_ERROR
+            } else {
+                http::StatusCode::OK
+            };
+            let (method, uri) = (method.to_string(), uri.to_string());
+            let out = json!({"method": method, "uri": uri, "headers": names, "body": body});
+            (status, axum::Json(out))
+        }
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, axum::Router::new().fallback(any)).await });
+        addr
+    }
+
+    /// Calls a `json`-typed action with the given definition (handler URL included).
+    async fn run(definition: Value) -> Result<HandlerResponse, Error> {
+        let mut definition = definition;
+        definition["output_type"] = json!("json");
+        let metadata = hge_metadata::from_json(json!({
+            "version": 3, "sources": [],
+            "actions": [{"name": "act", "definition": definition}]
+        }))
+        .unwrap();
+        let output = std::sync::Arc::new(hge_ir::action::ActionOutput {
+            ty: hge_ir::action::OutputType::Named("json".into()),
+            base: hge_ir::action::OutputBase::CustomScalar,
+        });
+        let outputs = [("act".to_owned(), output)].into_iter().collect();
+        let config = HandlerConfig::default();
+        let built = crate::ActionRegistry::build(
+            &metadata,
+            &outputs,
+            std::sync::Arc::new(crate::ProcessEnv),
+            config.clone(),
+        );
+        assert!(
+            built.inconsistencies.is_empty(),
+            "{:?}",
+            built.inconsistencies
+        );
+        let handler = built.registry.get("act").unwrap();
+        let mut session = SessionVariables::new();
+        session.insert("x-hasura-role", "admin");
+        let input = json!({"id": 1});
+        let call_args = Call {
+            input: &input,
+            session: &session,
+            request_query: Some("q"),
+            client_headers: &HeaderMap::new(),
+        };
+        call(
+            &config.client,
+            handler,
+            &config,
+            &crate::ProcessEnv,
+            &call_args,
+        )
+        .await
+    }
+
+    fn internal_of(e: &Error) -> &Value {
+        e.internal.as_deref().unwrap()
+    }
+
+    #[tokio::test]
+    async fn without_transforms_requests_are_unchanged() {
+        let addr = start_handler().await;
+        let resp = run(json!({"handler": format!("http://{addr}/plain")}))
+            .await
+            .unwrap();
+        assert_eq!(resp.body["method"], "POST");
+        assert_eq!(
+            resp.body["body"],
+            r#"{"action":{"name":"act"},"input":{"id":1},"request_query":"q","session_variables":{"x-hasura-role":"admin"}}"#
+        );
+        let e = run(json!({"handler": format!("http://{addr}/fail")}))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            internal_of(&e)["request"]["transformed_request"],
+            Value::Null
+        );
+    }
+
+    #[tokio::test]
+    async fn transformed_request_is_reported_in_internal() {
+        let addr = start_handler().await;
+        let e = run(json!({
+            "handler": format!("http://{addr}/base"),
+            "timeout": 5,
+            "request_transform": {"version": 2, "method": "PUT", "url": "{{$base_url}}/fail",
+                "query_params": {"id": "{{$body.input.id}}"},
+                "request_headers": {"add_headers": {"X-A": "b"}, "remove_headers": ["user-agent"]},
+                "body": {"action": "transform", "template": "{\"id\": {{$body.input.id}}}"}}
+        }))
+        .await
+        .unwrap_err();
+        assert_eq!(e.message, "internal error");
+        assert_eq!(
+            internal_of(&e)["request"]["transformed_request"],
+            json!({
+                "url": format!("http://{addr}/base/fail"),
+                "method": "PUT",
+                "headers": [["Content-Type", "application/json"], ["X-A", "b"]],
+                "body": r#"{"id":1}"#,
+                "query_string": "?id=1",
+                "response_timeout": "5000000",
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn handler_url_credentials_survive_a_transform() {
+        let addr = start_handler().await;
+        let resp = run(json!({
+            "handler": format!("http://user:pa%20ss@{addr}/x"),
+            "request_transform": {"method": "PATCH"}
+        }))
+        .await
+        .unwrap();
+        assert_eq!(resp.body["method"], "PATCH");
+        assert_eq!(resp.body["uri"], "/x");
+        // base64("user:pa ss")
+        assert!(
+            resp.body["headers"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(["authorization", "Basic dXNlcjpwYSBzcw=="]))
+        );
+    }
+
+    #[tokio::test]
+    async fn unsafe_or_unsendable_transform_results_fail_the_transform() {
+        let addr = start_handler().await;
+        let handler = format!("http://{addr}/x");
+        for (transform, message) in [
+            (
+                json!({"url": "http://h@evil.com/"}),
+                "Invalid URL: http://h@evil.com/",
+            ),
+            (
+                json!({"url": format!("http://{}:70000/", addr.ip())}),
+                "Invalid URL: http://127.0.0.1:70000/",
+            ),
+            (
+                json!({"request_headers": {"add_headers": {"X-A": "a\r\nX-Evil: 1"}}}),
+                "Invalid header: X-A",
+            ),
+            (json!({"method": "G T"}), "Invalid HTTP method"),
+        ] {
+            let e = run(json!({"handler": handler, "request_transform": transform}))
+                .await
+                .unwrap_err();
+            assert_eq!(
+                (e.code, e.message.as_str()),
+                (Code::Unexpected, "Request Transformation Failed")
+            );
+            assert_eq!(internal_of(&e)[0]["message"], message);
+        }
     }
 }

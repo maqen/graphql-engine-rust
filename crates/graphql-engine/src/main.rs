@@ -1,6 +1,7 @@
 //! `graphql-engine`: a drop-in replacement for the Hasura V2 server binary.
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use anyhow::Context;
 use clap::{Args, Parser, Subcommand};
@@ -54,6 +55,36 @@ fn parse_bool(s: &str) -> Result<bool, String> {
         "false" | "f" | "0" | "no" | "n" | "off" | "" => Ok(false),
         other => Err(format!("expected a boolean, found '{other}'")),
     }
+}
+
+/// Milliseconds in Haskell `Double` syntax (`500`, `500.5`, `5e2`), as V2 reads its
+/// interval settings; must be non-negative.
+fn parse_millis(s: &str) -> Result<Duration, String> {
+    let (mantissa, exponent) = match s.split_once(['e', 'E']) {
+        Some((m, e)) => (m, Some(e)),
+        None => (s, None),
+    };
+    let digits = |t: &str| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit());
+    let mantissa_ok = match mantissa
+        .strip_prefix('-')
+        .unwrap_or(mantissa)
+        .split_once('.')
+    {
+        Some((i, f)) => digits(i) && digits(f),
+        None => digits(mantissa.strip_prefix('-').unwrap_or(mantissa)),
+    };
+    let exponent_ok = exponent.is_none_or(|e| digits(e.strip_prefix(['-', '+']).unwrap_or(e)));
+    let value: f64 = match (mantissa_ok && exponent_ok)
+        .then(|| s.parse().ok())
+        .flatten()
+    {
+        Some(v) => v,
+        None => return Err("Prelude.read: no parse".to_owned()),
+    };
+    if value < 0.0 {
+        return Err("Only expecting a non negative numeric".to_owned());
+    }
+    Duration::try_from_secs_f64(value / 1000.0).map_err(|_| "Prelude.read: no parse".to_owned())
 }
 
 #[derive(Args)]
@@ -161,6 +192,31 @@ struct ServeArgs {
     #[arg(long, env = "HASURA_GRAPHQL_CONFIGURED_HEADER_PRECEDENCE", value_parser = parse_bool, default_value = "false")]
     configured_header_precedence: bool,
 
+    /// Async action poll interval in milliseconds (0 disables the processor).
+    #[arg(
+        long,
+        env = "HASURA_GRAPHQL_ASYNC_ACTIONS_FETCH_INTERVAL",
+        default_value = "1000",
+        value_parser = parse_millis
+    )]
+    async_actions_fetch_interval: Duration,
+
+    /// Schema of the metadata database in which `pgcrypto` is created.
+    #[arg(
+        long,
+        env = "HASURA_GRAPHQL_METADATA_DATABASE_EXTENSIONS_SCHEMA",
+        default_value = "public"
+    )]
+    metadata_database_extensions_schema: String,
+
+    /// Async actions claimed (and processed concurrently) per poll.
+    #[arg(
+        long,
+        env = "HASURA_GRAPHQL_ASYNC_ACTIONS_FETCH_BATCH_SIZE",
+        default_value = "10"
+    )]
+    async_actions_fetch_batch_size: u32,
+
     /// Accepted for compatibility; the console is not served.
     #[arg(long, env = "HASURA_GRAPHQL_ENABLE_CONSOLE", value_parser = parse_bool, default_value = "false")]
     enable_console: bool,
@@ -196,7 +252,7 @@ struct ServeArgs {
     )]
     events_fetch_interval: u64,
 
-    /// Seconds to wait for in-flight deliveries on shutdown.
+    /// Seconds to wait for in-flight event deliveries and async actions on shutdown.
     #[arg(
         long,
         env = "HASURA_GRAPHQL_GRACEFUL_SHUTDOWN_TIMEOUT",
@@ -377,6 +433,9 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
             )
         },
         configured_header_precedence: args.configured_header_precedence,
+        async_actions_fetch_interval: args.async_actions_fetch_interval,
+        async_actions_fetch_batch_size: args.async_actions_fetch_batch_size,
+        metadata_database_extensions_schema: args.metadata_database_extensions_schema.clone(),
         ..ServerConfig::default()
     })
 }
@@ -450,5 +509,29 @@ fn main() -> anyhow::Result<()> {
                 Ok(())
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn millis_use_double_syntax() {
+        assert_eq!(parse_millis("1000"), Ok(Duration::from_secs(1)));
+        assert_eq!(parse_millis("500.5"), Ok(Duration::from_micros(500_500)));
+        assert_eq!(parse_millis("5e2"), Ok(Duration::from_millis(500)));
+        assert_eq!(parse_millis("0"), Ok(Duration::ZERO));
+        for bad in [".5", "5.", "", "abc", "1_000", "inf", "NaN", "1e"] {
+            assert_eq!(
+                parse_millis(bad),
+                Err("Prelude.read: no parse".to_owned()),
+                "{bad}"
+            );
+        }
+        assert_eq!(
+            parse_millis("-1"),
+            Err("Only expecting a non negative numeric".to_owned())
+        );
     }
 }

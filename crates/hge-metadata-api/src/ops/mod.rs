@@ -3,6 +3,7 @@
 //! A command is a function `(ctx, args) -> ApiResult<Value>` that edits `ctx.metadata` and
 //! then calls `ctx.check(..)` (modifying commands) or just reads state.
 
+pub mod actions;
 pub mod event_triggers;
 pub mod metadata;
 
@@ -195,6 +196,7 @@ pub async fn run_agnostic<R: Runtime>(ctx: &mut Ctx<'_, R>, cmd: &Command) -> Ap
         "resume_event_trigger_cleanups" => {
             event_triggers::switch_event_trigger_cleanups(ctx, args, false).await
         }
+        "test_webhook_transform" => actions::test_webhook_transform(args),
         name => Err(not_implemented(name)),
     }
 }
