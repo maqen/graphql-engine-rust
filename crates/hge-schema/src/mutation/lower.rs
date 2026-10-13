@@ -454,6 +454,7 @@ impl MutationLowerer<'_, '_> {
         };
         Ok(OnConflict {
             constraint,
+            target: None,
             update_columns,
             presets,
             filter,
