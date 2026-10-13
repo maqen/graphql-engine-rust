@@ -148,8 +148,9 @@ fn select_operation<'d>(
     }
 }
 
-/// Coerced variable values (`None`: not provided and no default), and whether the variable
-/// has a default value.
+/// Variable values as given (`None`: not provided and no default), and whether the variable
+/// has a default value. Like V2, values are coerced where they are used, so errors carry the
+/// path of the use.
 type Variables = HashMap<String, (TypeRef, Option<Json>, bool)>;
 
 fn coerce_variables(
@@ -181,15 +182,14 @@ fn coerce_variables(
             }
         }
         let value = match provided.get(&name) {
-            Some(v) => Some(coerce_json(schema, v, &ty, &path)?),
+            Some(v) => Some(v.clone()),
             None => match &def.default_value {
-                Some(d) => {
-                    let json =
-                        d.node.clone().into_json().map_err(|e| {
-                            Error::validation(e.to_string()).with_path(path.clone())
-                        })?;
-                    Some(coerce_json(schema, &json, &ty, &path)?)
-                }
+                Some(d) => Some(
+                    d.node
+                        .clone()
+                        .into_json()
+                        .map_err(|e| Error::validation(e.to_string()).with_path(path.clone()))?,
+                ),
                 None if ty.is_non_null() => {
                     return Err(Error::validation(format!(
                         "expecting a value for non-nullable variable: \"{name}\""
@@ -522,7 +522,10 @@ impl<'s, 'd> Context<'s, 'd> {
                 if ty.is_non_null() && matches!(var_value, Some(Json::Null)) {
                     return Err(null_error(ty, path));
                 }
-                Ok(var_value.clone())
+                var_value
+                    .as_ref()
+                    .map(|v| coerce_json(self.schema, v, var_ty, path))
+                    .transpose()
             }
             GqlValue::Null => {
                 if ty.is_non_null() {
