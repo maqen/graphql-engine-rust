@@ -346,7 +346,9 @@ async fn event_triggers_end_to_end() {
         json!({"data": {"message": "boom"}, "type": "client_error", "version": "2"})
     );
 
-    // Timed-out delivery: no response, status NULL, request payload kept.
+    // Timed-out delivery. The HTTP timeout and the processing bound are both `timeout_sec`
+    // and race, as in V2: either no response (status NULL, http_exception) or the engine's
+    // "timed out while processing" (status 500).
     let slow_log: Vec<_> = logs
         .as_array()
         .unwrap()
@@ -354,9 +356,14 @@ async fn event_triggers_end_to_end() {
         .filter(|l| l["trigger_name"] == "slow_ev")
         .collect();
     assert_eq!(slow_log.len(), 1);
-    assert_eq!(slow_log[0]["status"], Value::Null);
     let msg = slow_log[0]["response"]["data"]["message"].as_str().unwrap();
-    assert!(msg.contains("http_exception"), "{msg}");
+    match &slow_log[0]["status"] {
+        Value::Null => assert!(msg.contains("http_exception"), "{msg}"),
+        status => {
+            assert_eq!(status, 500);
+            assert!(msg.contains("timed out while processing"), "{msg}");
+        }
+    }
 
     let state = query(
         &pool,
