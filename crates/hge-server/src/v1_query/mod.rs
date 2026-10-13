@@ -84,7 +84,7 @@ pub async fn run(engine: &Engine, session: &Session, body: &[u8]) -> Result<Stri
     // Metadata changes (and `run_sql` that may change the schema) share one unit of work:
     // one lock, and the metadata stored once at the end, only if every query succeeded.
     let ctx = match query.metadata_access() {
-        Some(lock) => Some(Ctx::begin(engine, lock).await?),
+        Some(lock) => Some(Ctx::begin(engine, session, lock).await?),
         None => None,
     };
     let mut exec = Executor {
@@ -153,7 +153,7 @@ impl<'a> Executor<'a> {
                         Some(ctx) if args.checks_metadata() => {
                             run_sql::run_checked(ctx, args).await
                         }
-                        _ => run_sql::run_plain(self.engine, args).await,
+                        _ => run_sql::run_plain(self.engine, self.session, args).await,
                     };
                     result
                         .map(|v| v.to_string())
