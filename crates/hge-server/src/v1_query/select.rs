@@ -423,6 +423,7 @@ impl Lowerer<'_> {
                             ty: info.ty.clone(),
                             stringify: self.stringify(&info.ty),
                             json_path: None,
+                            redact: None,
                         }),
                     ));
                 }
