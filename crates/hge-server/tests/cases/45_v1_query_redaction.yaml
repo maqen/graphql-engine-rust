@@ -1,0 +1,75 @@
+# Inherited-role redaction on the legacy /v1/query select and count. Role `pab` sees every
+# article's title, but id and word_count only on published articles (2 and 4 are drafts).
+config:
+  fixture: permissions
+
+cases:
+  - description: redacted columns read as null on rows the role sees only partly
+    url: /v1/query
+    headers: { x-hasura-role: pab }
+    query:
+      type: select
+      args: { table: article, columns: [id, title, word_count], order_by: title }
+    response:
+      - { id: null, title: Alice draft, word_count: null }
+      - { id: 1, title: Alice published, word_count: 900 }
+      - { id: null, title: Bob draft, word_count: null }
+      - { id: 3, title: Bob published, word_count: 400 }
+      - { id: 5, title: Carol published, word_count: 50 }
+
+  - description: several operators on a redacted column each compare the redacted value
+    url: /v1/query
+    headers: { x-hasura-role: pab }
+    query:
+      type: select
+      args:
+        table: article
+        columns: [title]
+        where: { word_count: { $gt: 0, $lt: 1000 } }
+        order_by: title
+    response: [{ title: Alice published }, { title: Bob published }, { title: Carol published }]
+
+  - description: the null shorthand matches redacted values
+    url: /v1/query
+    headers: { x-hasura-role: pab }
+    query:
+      type: select
+      args: { table: article, columns: [title], where: { word_count: null }, order_by: title }
+    response: [{ title: Alice draft }, { title: Bob draft }]
+
+  - description: ordering sorts redacted values as null
+    url: /v1/query
+    headers: { x-hasura-role: pab }
+    query:
+      type: select
+      args: { table: article, columns: [title], order_by: [-word_count, title] }
+    response:
+      - { title: Alice draft }
+      - { title: Bob draft }
+      - { title: Alice published }
+      - { title: Bob published }
+      - { title: Carol published }
+
+  - description: a column comparison with a redacted side is refused
+    url: /v1/query
+    status: 400
+    headers: { x-hasura-role: pab }
+    query:
+      type: select
+      args: { table: article, columns: [title], where: { title: { $ceq: title }, word_count: { $cgt: id } } }
+    response:
+      path: $.args.where
+      error: column "word_count" is only partially visible to role "pab" and cannot be used in a column comparison
+      code: permission-denied
+
+  - description: count distinct on a redacted column is refused
+    url: /v1/query
+    status: 400
+    headers: { x-hasura-role: pab }
+    query:
+      type: count
+      args: { table: article, distinct: [word_count] }
+    response:
+      path: $.args.distinct[0]
+      error: column "word_count" is only partially visible to role "pab" and cannot be used in "distinct"
+      code: permission-denied

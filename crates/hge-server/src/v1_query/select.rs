@@ -419,11 +419,11 @@ impl Lowerer<'_> {
                     fields.push((
                         c.clone(),
                         Field::Column(ColumnField {
+                            redact: perm.redaction(&c).cloned().map(Box::new),
                             column: c,
                             ty: info.ty.clone(),
                             stringify: self.stringify(&info.ty),
                             json_path: None,
-                            redact: None,
                         }),
                     ));
                 }
@@ -520,7 +520,14 @@ impl Lowerer<'_> {
                         path,
                     ));
                 }
-                return Ok(OrderByTarget::Column(name.clone()));
+                // Inherited roles: a redacted column sorts as NULL where it is hidden.
+                return Ok(match perm.redaction(name) {
+                    None => OrderByTarget::Column(name.clone()),
+                    Some(condition) => OrderByTarget::RedactedColumn {
+                        column: name.clone(),
+                        condition: Box::new(condition.clone()),
+                    },
+                });
             }
             if table.relationship_by_name(name).is_some() {
                 return Err(err400(

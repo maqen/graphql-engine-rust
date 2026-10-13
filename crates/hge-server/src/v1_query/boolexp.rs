@@ -35,6 +35,7 @@ impl Lowerer<'_> {
             root: table,
             root_perm: perm,
             where_path,
+            redact: true,
         }
         .exp(table, perm, v, where_path)
     }
@@ -45,6 +46,9 @@ struct BoolExpLowerer<'a, 'l> {
     root: &'a TableInfo,
     root_perm: &'a SelectPermission,
     where_path: &'a Path,
+    /// Apply inherited-role redaction to compared columns (off inside `$exists`, whose
+    /// columns are checked against another table's permission).
+    redact: bool,
 }
 
 impl BoolExpLowerer<'_, '_> {
@@ -107,9 +111,13 @@ impl BoolExpLowerer<'_, '_> {
                 &o.at("_table"),
             )
         })?;
+        let inner = BoolExpLowerer {
+            redact: false,
+            ..*self
+        };
         Ok(BoolExp::Exists {
             table: target.name.clone(),
-            exp: Box::new(self.exp(target, perm, where_, &o.at("_where"))?),
+            exp: Box::new(inner.exp(target, perm, where_, &o.at("_where"))?),
         })
     }
 
@@ -124,7 +132,14 @@ impl BoolExpLowerer<'_, '_> {
     ) -> Result<BoolExp, ApiError> {
         if let Some(col) = table.columns.get(key) {
             self.lw.check_select_column(perm, key, self.where_path)?;
-            return self.column(table, perm, col, value, path);
+            let exp = self.column(table, perm, col, value, path)?;
+            // Inherited roles compare a redacted column as
+            // `CASE WHEN condition THEN col ELSE NULL END`, like V2's GraphQL API. V2's legacy
+            // `where` compares the raw value; we redact so a filter cannot reveal hidden values.
+            return Ok(match perm.redaction(key) {
+                Some(condition) if self.redact => redact_comparisons(exp, condition),
+                _ => exp,
+            });
         }
         if let Some(rel) = table.relationship_by_name(key) {
             let target = self.lw.rel_target(rel)?;
@@ -358,6 +373,22 @@ impl BoolExpLowerer<'_, '_> {
         })?;
         self.lw
             .check_select_column(other_perm, &other.name, self.where_path)?;
+        // A column comparison reads both columns raw; with a redacted side it would compare
+        // values the role cannot see.
+        if self.redact {
+            for (p, c) in [(perm, &col.name), (other_perm, &other.name)] {
+                if p.redaction(c).is_some() {
+                    return Err(err400(
+                        Code::PermissionDenied,
+                        format!(
+                            "column \"{c}\" is only partially visible to role \"{}\" and cannot be used in a column comparison",
+                            self.lw.role
+                        ),
+                        self.where_path,
+                    ));
+                }
+            }
+        }
         if other.ty != col.ty {
             return Err(err400(
                 Code::UnexpectedPayload,
@@ -452,6 +483,31 @@ fn not_supported_yet(op: &str, path: &Path) -> ApiError {
     )
 }
 
+/// Wrap every column comparison in `exp` (a lowered condition on one column) in
+/// [`BoolExp::Redacted`]; the translator redacts single comparisons, not whole subtrees.
+fn redact_comparisons(exp: BoolExp, condition: &BoolExp) -> BoolExp {
+    match exp {
+        BoolExp::And(items) => BoolExp::And(
+            items
+                .into_iter()
+                .map(|e| redact_comparisons(e, condition))
+                .collect(),
+        ),
+        BoolExp::Or(items) => BoolExp::Or(
+            items
+                .into_iter()
+                .map(|e| redact_comparisons(e, condition))
+                .collect(),
+        ),
+        BoolExp::Not(e) => BoolExp::Not(Box::new(redact_comparisons(*e, condition))),
+        cmp @ BoolExp::Compare { .. } => BoolExp::Redacted {
+            condition: Box::new(BoolExp::Rooted(Box::new(condition.clone()))),
+            exp: Box::new(cmp),
+        },
+        other => other,
+    }
+}
+
 /// Names of the session variables a boolean expression reads.
 pub fn session_variables(exp: &BoolExp, out: &mut Vec<String>) {
     let mut exp = exp.clone();
@@ -488,21 +544,37 @@ pub fn nullify_missing_in_select(select: &mut Select, session: &hge_core::Sessio
     }
     for ob in &mut select.args.order_by {
         let mut target = &mut ob.target;
-        while let OrderByTarget::ObjectRelationship {
-            filter,
-            target: next,
-            ..
-        } = target
-        {
-            if let Some(f) = filter {
-                nullify_missing_session_variables(f, session);
+        loop {
+            match target {
+                OrderByTarget::ObjectRelationship {
+                    filter,
+                    target: next,
+                    ..
+                } => {
+                    if let Some(f) = filter {
+                        nullify_missing_session_variables(f, session);
+                    }
+                    target = next;
+                }
+                OrderByTarget::RedactedColumn { condition, .. } => {
+                    nullify_missing_session_variables(condition, session);
+                    break;
+                }
+                OrderByTarget::Column(_) => break,
             }
-            target = next;
         }
     }
     for (_, field) in &mut select.fields {
-        if let Field::ObjectRelationship(rel) | Field::ArrayRelationship(rel) = field {
-            nullify_missing_in_select(&mut rel.select, session);
+        match field {
+            Field::ObjectRelationship(rel) | Field::ArrayRelationship(rel) => {
+                nullify_missing_in_select(&mut rel.select, session);
+            }
+            Field::Column(c) => {
+                if let Some(cond) = &mut c.redact {
+                    nullify_missing_session_variables(cond, session);
+                }
+            }
+            Field::Typename(_) => {}
         }
     }
 }
