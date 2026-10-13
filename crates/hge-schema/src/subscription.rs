@@ -227,6 +227,7 @@ pub(crate) fn lower_stream(
         batch_size,
         cursor: StreamCursor {
             column: col.name.clone(),
+            field: col.gql_name.clone(),
             ty: col.ty.clone(),
             direction,
             initial_value,

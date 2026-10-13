@@ -49,8 +49,10 @@ impl Default for PollerOptions {
 /// Receives the results of one subscription. Called while the poller's state is locked:
 /// implementations must not block or call back into the registry (queue the message).
 pub trait Subscriber: Send + Sync {
-    /// A new result: one JSON document per root field (`None` is `null`).
-    fn on_data(&self, fields: &[Option<String>]);
+    /// A new result: one JSON document per root field (`None` is `null`). For a stream,
+    /// `cursor` is the cursor value the batch was fetched from (to resume from if the batch
+    /// cannot be delivered).
+    fn on_data(&self, fields: &[Option<String>], cursor: Option<&str>);
     /// The poll failed; the subscription stays active.
     fn on_error(&self, error: &Error);
 }
@@ -170,12 +172,12 @@ impl Registry {
         let (fields, next_cursor) = split_cursor(row, cursor.is_some());
         let last_hash = match cursor {
             None => {
-                sink.on_data(&fields);
+                sink.on_data(&fields, None);
                 Some(hash(&fields))
             }
             Some(i) => {
                 if !is_empty_batch(&fields) {
-                    sink.on_data(&fields);
+                    sink.on_data(&fields, variables[i].as_deref());
                 }
                 if let Some(c) = next_cursor {
                     variables[i] = Some(c);
@@ -419,7 +421,7 @@ impl PollerState {
                 mixed = true;
                 continue;
             }
-            m.sink.on_data(fields);
+            m.sink.on_data(fields, None);
             m.last_hash = Some(h);
         }
         cohort.hash = Some(h);
@@ -463,7 +465,9 @@ impl PollerState {
             .map(|(id, _)| *id)
             .collect();
         for id in &polled {
-            cohort.subscribers[id].sink.on_data(fields);
+            cohort.subscribers[id]
+                .sink
+                .on_data(fields, values[cursor_index].as_deref());
         }
         let Some(cursor) = cursor else {
             return;

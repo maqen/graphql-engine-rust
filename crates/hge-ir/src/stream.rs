@@ -18,6 +18,8 @@ pub struct StreamSelect {
 pub struct StreamCursor {
     /// Database column name.
     pub column: String,
+    /// The column's GraphQL field name (for the resume cursor of an undeliverable batch).
+    pub field: String,
     pub ty: ColumnType,
     pub direction: OrderDirection,
     /// Where streaming starts (exclusive).

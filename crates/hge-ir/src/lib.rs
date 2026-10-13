@@ -40,6 +40,9 @@ pub enum OperationKind {
 pub struct Operation {
     pub kind: OperationKind,
     pub root_fields: Vec<(String, RootField)>,
+    /// `subscription @_multiple_top_level_fields`: V2's test-only directive that lifts the
+    /// one-root-field limit of subscriptions.
+    pub multiple_top_level_fields: bool,
 }
 
 /// What produces the value of one root field.
@@ -72,7 +75,7 @@ pub enum QueryRoot {
     /// Legacy `count` (`/v1/query`): a JSON number.
     Count(Count),
     /// `author_stream(...)` (subscriptions only): a JSON array of the next rows.
-    Stream(StreamSelect),
+    Stream(Box<StreamSelect>),
     /// `author_aggregate { … }`: a single JSON object.
     Aggregate(AggregateSelect),
 }

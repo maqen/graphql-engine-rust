@@ -68,7 +68,7 @@ impl SourceExecutor for Numbers {
 struct Sink(mpsc::UnboundedSender<String>);
 
 impl Subscriber for Sink {
-    fn on_data(&self, fields: &[Option<String>]) {
+    fn on_data(&self, fields: &[Option<String>], _cursor: Option<&str>) {
         let _ = self.0.send(fields[0].clone().unwrap_or_default());
     }
 
