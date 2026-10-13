@@ -2,6 +2,9 @@
 
 use serde_json::Value as Json;
 
+use hge_metadata_api::api::Command;
+use hge_metadata_api::run_sql::RunSql;
+
 use super::count::CountQuery;
 use super::json::{Obj, Path, parse_failed};
 use super::select::SelectQuery;
@@ -89,6 +92,41 @@ const V2_TYPES: &[&str] = &[
 /// Types any role may run (with its table permissions); everything else is admin only.
 const DML_TYPES: &[&str] = &["insert", "select", "update", "delete", "count"];
 
+/// Legacy types that are Postgres metadata commands (`track_table` → `pg_track_table`);
+/// the other metadata types keep their name on `/v1/metadata`.
+const PG_TYPES: &[&str] = &[
+    "track_table",
+    "untrack_table",
+    "set_table_is_enum",
+    "set_table_customization",
+    "set_table_custom_fields",
+    "track_function",
+    "untrack_function",
+    "create_object_relationship",
+    "create_array_relationship",
+    "drop_relationship",
+    "set_relationship_comment",
+    "rename_relationship",
+    "add_computed_field",
+    "drop_computed_field",
+    "create_remote_relationship",
+    "update_remote_relationship",
+    "delete_remote_relationship",
+    "create_insert_permission",
+    "create_select_permission",
+    "create_update_permission",
+    "create_delete_permission",
+    "drop_insert_permission",
+    "drop_select_permission",
+    "drop_update_permission",
+    "drop_delete_permission",
+    "set_permission_comment",
+    "create_event_trigger",
+    "delete_event_trigger",
+    "redeliver_event",
+    "invoke_event_trigger",
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Version {
     V1,
@@ -102,10 +140,20 @@ pub enum Query {
     Count(CountQuery),
     /// Sub-queries run in order; the first error aborts the request.
     Bulk(Vec<Query>),
+    RunSql {
+        args: RunSql,
+        /// Where the query's `args` sit (`$.args`, `$.args[1].args`).
+        path: Path,
+    },
+    /// A metadata command, run like on `/v1/metadata`.
+    Metadata {
+        command: Command,
+        /// Where the query's envelope sits (`$`, `$.args[1]`).
+        path: Path,
+    },
     /// A type this endpoint does not run yet.
     Other {
         ty: String,
-        version: Version,
         path: Path,
     },
 }
@@ -177,6 +225,29 @@ impl Query {
                 path,
             )
         })?;
+        if version == Version::V1 && ty == "run_sql" {
+            return serde_json::from_value(args.clone())
+                .map(|args| Query::RunSql {
+                    args,
+                    path: args_path.clone(),
+                })
+                .map_err(|e| {
+                    parse_failed(hge_metadata_api::response::aeson_message(&e), &args_path)
+                });
+        }
+        if version == Version::V2 || !DML_TYPES.contains(&ty) && ty != "bulk" {
+            return Ok(Query::Metadata {
+                command: Command {
+                    name: metadata_command(ty),
+                    args: args.clone(),
+                    version: match version {
+                        Version::V1 => 1,
+                        Version::V2 => 2,
+                    },
+                },
+                path: path.clone(),
+            });
+        }
         Ok(match (version, ty) {
             (Version::V1, "select") => Query::Select(SelectQuery::parse(args, &args_path)?),
             (Version::V1, "count") => Query::Count(CountQuery::parse(args, &args_path)?),
@@ -194,7 +265,6 @@ impl Query {
             },
             _ => Query::Other {
                 ty: ty.to_owned(),
-                version,
                 path: args_path,
             },
         })
@@ -204,11 +274,45 @@ impl Query {
     pub fn requires_admin(&self) -> bool {
         match self {
             Query::Select(_) | Query::Count(_) => false,
+            Query::RunSql { .. } | Query::Metadata { .. } => true,
             Query::Bulk(qs) => qs.iter().any(Query::requires_admin),
-            Query::Other { ty, version, .. } => {
-                *version == Version::V2 || !DML_TYPES.contains(&ty.as_str())
-            }
+            Query::Other { ty, .. } => !DML_TYPES.contains(&ty.as_str()),
         }
+    }
+
+    /// Whether the request needs a metadata unit of work (V2's `queryModifiesSchemaCache`),
+    /// and whether that one may write (so takes the metadata lock).
+    pub fn metadata_access(&self) -> Option<bool> {
+        match self {
+            Query::RunSql { args, .. } => args.checks_metadata().then_some(true),
+            Query::Metadata { command, .. } => {
+                Some(hge_metadata_api::api::modifies_metadata(command))
+            }
+            Query::Bulk(qs) => qs
+                .iter()
+                .filter_map(Query::metadata_access)
+                .reduce(|a, b| a || b),
+            Query::Select(_) | Query::Count(_) | Query::Other { .. } => None,
+        }
+    }
+
+    /// V2's `queryModifiesUserDB` (refused in read-only mode).
+    pub fn writes_data(&self) -> bool {
+        match self {
+            Query::RunSql { args, .. } => !args.read_only,
+            Query::Bulk(qs) => qs.iter().any(Query::writes_data),
+            Query::Other { ty, .. } => matches!(ty.as_str(), "insert" | "update" | "delete"),
+            Query::Select(_) | Query::Count(_) | Query::Metadata { .. } => false,
+        }
+    }
+}
+
+/// The `/v1/metadata` command for a legacy metadata type.
+fn metadata_command(ty: &str) -> String {
+    match ty {
+        "add_existing_table_or_view" => "pg_track_table".to_owned(),
+        t if PG_TYPES.contains(&t) => format!("pg_{t}"),
+        t => t.to_owned(),
     }
 }
 
@@ -283,7 +387,38 @@ mod tests {
     fn admin_only() {
         let dml = Query::parse(&json!({"type": "insert", "args": {}}), &Path::root()).unwrap();
         assert!(!dml.requires_admin());
-        let sql = Query::parse(&json!({"type": "run_sql", "args": {}}), &Path::root()).unwrap();
-        assert!(sql.requires_admin());
+        let sql = json!({"type": "run_sql", "args": {"sql": "select 1"}});
+        assert!(Query::parse(&sql, &Path::root()).unwrap().requires_admin());
+        let track = json!({"type": "track_table", "args": {"table": "a"}});
+        assert!(
+            Query::parse(&track, &Path::root())
+                .unwrap()
+                .requires_admin()
+        );
+    }
+
+    #[test]
+    fn run_sql_args_parse_up_front() {
+        let e = Query::parse(&json!({"type": "run_sql", "args": {}}), &Path::root()).unwrap_err();
+        assert_eq!(e.error.path, "$.args");
+    }
+
+    #[test]
+    fn legacy_metadata_names() {
+        let q = json!({"type": "create_select_permission", "args": {}});
+        let Query::Metadata { command, .. } = Query::parse(&q, &Path::root()).unwrap() else {
+            panic!("expected a metadata query");
+        };
+        assert_eq!(command.name, "pg_create_select_permission");
+        let q = json!({"type": "add_existing_table_or_view", "args": {}});
+        let Query::Metadata { command, .. } = Query::parse(&q, &Path::root()).unwrap() else {
+            panic!("expected a metadata query");
+        };
+        assert_eq!(command.name, "pg_track_table");
+        let q = json!({"type": "export_metadata", "args": {}});
+        let Query::Metadata { command, .. } = Query::parse(&q, &Path::root()).unwrap() else {
+            panic!("expected a metadata query");
+        };
+        assert_eq!(command.name, "export_metadata");
     }
 }
