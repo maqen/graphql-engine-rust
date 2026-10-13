@@ -30,6 +30,7 @@ use hge_metadata_api::run_sql;
 use crate::graphql::include_internal;
 use crate::routes::{json_response, request_id};
 use crate::state::{AppState, Engine};
+use crate::telemetry::http::{self as http_log, HttpLogInfo, RequestMode};
 use hge_metadata_api::ApiError;
 use json::{Path, err400};
 use lower::Lowerer;
@@ -42,15 +43,22 @@ pub async fn handler(
     body: Bytes,
 ) -> Response {
     let rid = request_id(&headers);
+    let log = http_log::wanted().then(|| HttpLogInfo::start(&rid).body(body.clone()));
     // Authenticate before looking at the body, as V2 does.
     let auth = match engine.auth.authenticate(&headers, None).await {
         Ok(auth) => auth,
         Err(e) => {
             let body = e.error.to_api_json(false).to_string();
-            return json_response(e.status, body, Some(rid));
+            let mut resp = json_response(e.status, body, Some(rid));
+            http_log::attach(
+                &mut resp,
+                log.map(|l| l.failed(&e.error, RequestMode::NonGraphql)),
+            );
+            return resp;
         }
     };
     let session = auth.session;
+    let log = log.map(|l| l.session(&session));
     let internal = include_internal(&engine, &session);
     match run(&engine, &session, &body).await {
         Ok(out) => {
@@ -58,11 +66,18 @@ pub async fn handler(
             for cookie in auth.set_cookies {
                 resp.headers_mut().append(header::SET_COOKIE, cookie);
             }
+            http_log::attach(&mut resp, log);
             resp
         }
         Err(e) => {
             let status = StatusCode::from_u16(e.status).unwrap_or(StatusCode::BAD_REQUEST);
-            json_response(status, e.error.to_api_json(internal).to_string(), Some(rid))
+            let mut resp =
+                json_response(status, e.error.to_api_json(internal).to_string(), Some(rid));
+            http_log::attach(
+                &mut resp,
+                log.map(|l| l.failed(&e.error, RequestMode::NonGraphql)),
+            );
+            resp
         }
     }
 }

@@ -1052,6 +1052,7 @@ dependencies = [
  "hge-subscriptions",
  "hge-testdb",
  "http",
+ "http-body",
  "indexmap",
  "ring",
  "serde",

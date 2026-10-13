@@ -150,7 +150,8 @@ pub async fn serve(engine: Arc<Engine>) -> std::io::Result<()> {
             shutdown.cancel();
         }
     };
-    let server = axum::serve(listener, routes::router(engine)).with_graceful_shutdown(signal);
+    let app = routes::router(engine).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let server = axum::serve(listener, app).with_graceful_shutdown(signal);
     let drain_deadline = async {
         shutdown.cancelled().await;
         tokio::time::sleep(HTTP_DRAIN_TIMEOUT).await;
