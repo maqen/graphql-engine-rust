@@ -183,6 +183,8 @@ pub struct Prepared {
     pub tables: Arc<Tables>,
     /// Deliverable event triggers.
     pub event_triggers: Arc<hge_events::EventTriggers>,
+    /// Resolved cron triggers.
+    pub scheduled_triggers: Arc<hge_events::scheduled::ScheduledTriggers>,
     pub inconsistencies: Vec<InconsistentObject>,
 }
 
@@ -291,10 +293,13 @@ pub async fn prepare(
     let (event_triggers, event_issues) =
         crate::events::prepare(metadata, &tables, &pg_sources, config).await;
     inconsistencies.extend(event_issues);
+    let (scheduled_triggers, cron_issues) = crate::scheduled::prepare(metadata);
+    inconsistencies.extend(cron_issues);
     Prepared {
         sources,
         tables: Arc::new(tables),
         event_triggers: Arc::new(event_triggers),
+        scheduled_triggers: Arc::new(scheduled_triggers),
         inconsistencies,
     }
 }

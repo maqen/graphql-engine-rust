@@ -9,11 +9,13 @@
 #![forbid(unsafe_code)]
 
 pub mod catalog;
+pub mod cron;
 pub mod ddl;
 pub mod delivery;
 pub mod json;
 pub mod model;
 pub mod processor;
+pub mod scheduled;
 pub mod store;
 pub mod triggers;
 pub mod webhook;

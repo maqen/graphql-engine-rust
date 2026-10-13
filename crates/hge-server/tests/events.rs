@@ -1,4 +1,4 @@
-//! Event trigger conformance cases (`tests/cases/events/*.yaml`) against a real Postgres
+//! Event trigger conformance cases (`tests/events_cases/*.yaml`) against a real Postgres
 //! (`HASURA_GRAPHQL_DATABASE_URL`) and an in-process webhook. Skipped without a database.
 //!
 //! The engine boots from `tests/fixtures/events/metadata` (with the webhook address filled
@@ -19,7 +19,7 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/events");
-const CASES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/cases/events");
+const CASES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/events_cases");
 const VOLATILE: [&str; 3] = ["id", "created_at", "trace_context"];
 
 #[derive(Deserialize)]
