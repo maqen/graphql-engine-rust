@@ -41,7 +41,6 @@ jobs:
   rust-engine-parity:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Check for engine Dockerfile
@@ -61,7 +60,7 @@ jobs:
           exit 1
       - name: Parity vs Hasura goldens
         if: steps.dockerfile.outputs.present == 'true'
-        run: python3 bench/scripts/parity.py --a rust=http://localhost:8081 --golden --report parity-rust.md
+        run: python3 bench/scripts/parity.py --a rust=http://localhost:8081 --golden --report parity-rust.md --known-failures bench/parity-known-failures.txt
       - name: Publish parity report
         if: always() && steps.dockerfile.outputs.present == 'true'
         run: test -f parity-rust.md && cat parity-rust.md >> "$GITHUB_STEP_SUMMARY" || true

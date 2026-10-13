@@ -21,6 +21,7 @@ Results go to bench/results/<label>/results.json and summary.md.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime as dt
 import json
 import os
@@ -125,6 +126,16 @@ def snapshot_mem_mb(container: str) -> float | None:
     if p.returncode != 0 or not p.stdout.strip():
         return None
     return round(_parse_size(p.stdout.split("/")[0]) / 1024**2, 1)
+
+
+def container_url(container: str, port: int = 8080) -> str | None:
+    """The container's own address on the compose network. Load goes there
+    rather than through the published port: Docker's userland proxy adds a
+    hop, burns host CPU and falls over at a few thousand sockets."""
+    p = subprocess.run(["docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
+                        container], capture_output=True, text=True)
+    ips = p.stdout.split() if p.returncode == 0 else []
+    return f"http://{ips[0]}:{port}" if ips else None
 
 
 def image_info(container: str) -> dict:
@@ -372,6 +383,8 @@ def main():
     ap.add_argument("--label", default=dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d-%H%M"))
     ap.add_argument("--compose-arg", action="append", default=[],
                     help="extra docker compose argument, e.g. --compose-arg=--env-file=bench/.env.mirror")
+    ap.add_argument("--via-proxy", action="store_true",
+                    help="send load to the published ports instead of the container addresses")
     ap.add_argument("--oha", default=shutil.which("oha") or os.path.expanduser("~/.cargo/bin/oha"))
     args = ap.parse_args()
     concurrency = args.concurrency or [32]
@@ -399,6 +412,7 @@ def main():
     }
 
     containers = {}
+    load_engines = {}
     for e in engines:
         wait_healthy(e)
         info = {"name": e.name, "url": e.url, "service": e.service}
@@ -407,6 +421,10 @@ def main():
             if cid:
                 containers[e.name] = cid
                 info.update(image_info(cid))
+                direct = None if args.via_proxy else container_url(cid)
+                if direct:
+                    load_engines[e.name] = dataclasses.replace(e, url=direct)
+                    info["load_url"] = direct
                 info["idle_mem_mb"] = snapshot_mem_mb(cid)
         result["engines"].append(info)
 
@@ -417,20 +435,21 @@ def main():
             order = engines if step % 2 == 0 else engines[::-1]
             step += 1
             for e in order:
-                err, wire_bytes = validate(e, case)
+                le = load_engines.get(e.name, e)
+                err, wire_bytes = validate(le, case)
                 if err:
                     row["engines"][e.name] = {"error": err}
                     print(f"{case.name:32} c={c:<4} {e.name:10} SKIP {err}", flush=True)
                     continue
                 try:
-                    run_oha(oha_cmd(args.oha, e, case, args.warmup, c))
+                    run_oha(oha_cmd(args.oha, le, case, args.warmup, c))
                     cid = containers.get(e.name)
                     if cid:
                         with StatsSampler(cid) as sampler:
-                            d = run_oha(oha_cmd(args.oha, e, case, args.duration, c))
+                            d = run_oha(oha_cmd(args.oha, le, case, args.duration, c))
                         stats = sampler.summary()
                     else:
-                        d, stats = run_oha(oha_cmd(args.oha, e, case, args.duration, c)), {}
+                        d, stats = run_oha(oha_cmd(args.oha, le, case, args.duration, c)), {}
                 except RuntimeError as ex:
                     row["engines"][e.name] = {"error": str(ex)}
                     print(f"{case.name:32} c={c:<4} {e.name:10} FAILED {ex}", flush=True)
