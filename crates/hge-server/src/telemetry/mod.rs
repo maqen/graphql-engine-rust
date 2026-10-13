@@ -20,7 +20,7 @@ pub mod endpoints;
 pub mod http;
 mod layer;
 pub mod startup;
-mod time;
+pub(crate) mod time;
 mod types;
 mod writer;
 

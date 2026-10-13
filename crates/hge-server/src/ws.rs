@@ -9,6 +9,7 @@
 //! `stop` always finds the subscription its `start` registered.
 
 mod async_actions;
+mod log;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -31,9 +32,11 @@ use hge_subscriptions::{Registry, Subscriber, SubscriptionHandle};
 use serde_json::Value as Json;
 use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
+use uuid::Uuid;
 
 use crate::graphql::{self, GraphQLRequest};
 use crate::state::{AppState, Engine};
+use crate::telemetry::Level;
 
 /// WebSocket and subscription settings.
 #[derive(Debug, Clone)]
@@ -167,8 +170,10 @@ pub async fn reject_other_paths(
         return next.run(req).await;
     }
     {
+        const MESSAGE: &str = "only '/v1/graphql', '/v1alpha1/graphql', '/v1/relay' and '/v1beta1/relay' are supported on websockets";
+        log::rejected(&Error::new(Code::NotFound, MESSAGE).with_path("$"));
         let body = serde_json::json!({
-            "message": "only '/v1/graphql', '/v1alpha1/graphql', '/v1/relay' and '/v1beta1/relay' are supported on websockets",
+            "message": MESSAGE,
             "extensions": { "path": "$", "code": "not-found" },
         });
         (StatusCode::NOT_FOUND, axum::Json(body)).into_response()
@@ -188,9 +193,15 @@ pub fn upgrade(
             .insert(header::RETRY_AFTER, HeaderValue::from_static("0"));
         return resp;
     }
-    if let Err(resp) = enforce_cors(&engine, &mut headers) {
-        return *resp;
+    let ws_id = Uuid::new_v4();
+    match enforce_cors(&engine, &mut headers) {
+        Err(resp) => return *resp,
+        Ok(true) => log::log(ws_id, None, Some(log::CORS_NOTE), Level::Info, || {
+            log::event("accepted")
+        }),
+        Ok(false) => {}
     }
+    log::log(ws_id, None, None, Level::Info, || log::event("accepted"));
     for h in [
         header::SEC_WEBSOCKET_KEY,
         header::SEC_WEBSOCKET_VERSION,
@@ -207,25 +218,26 @@ pub fn upgrade(
         .protocols([GRAPHQL_TRANSPORT_WS, GRAPHQL_WS]);
     let protocol = Protocol::from_selected(ws.selected_protocol().and_then(|p| p.to_str().ok()));
     ws.on_upgrade(move |socket| async move {
-        Connection::run(engine, socket, protocol, endpoint, headers).await;
+        Connection::run(engine, socket, protocol, endpoint, headers, ws_id).await;
     })
 }
 
-/// V2's CORS rules for upgrades (spec 09 §1.2).
-fn enforce_cors(engine: &Engine, headers: &mut HeaderMap) -> Result<(), Box<Response>> {
+/// V2's CORS rules for upgrades (spec 09 §1.2). `true` when the `Cookie` header was dropped.
+fn enforce_cors(engine: &Engine, headers: &mut HeaderMap) -> Result<bool, Box<Response>> {
     let config = &engine.config;
     let Some(origin) = headers.get(header::ORIGIN).cloned() else {
-        return Ok(());
+        return Ok(false);
     };
     if config.disable_cors {
         if !config.websocket.read_cookie {
             headers.remove(header::COOKIE);
+            return Ok(true);
         }
-        return Ok(());
+        return Ok(false);
     }
     let domain = config.cors_domain.trim();
     if domain == "*" {
-        return Ok(());
+        return Ok(false);
     }
     let origin = origin.to_str().unwrap_or_default();
     if domain
@@ -233,10 +245,12 @@ fn enforce_cors(engine: &Engine, headers: &mut HeaderMap) -> Result<(), Box<Resp
         .map(str::trim)
         .any(|d| origin_matches(d, origin))
     {
-        return Ok(());
+        return Ok(false);
     }
+    const MESSAGE: &str = "received origin header does not match configured CORS domains";
+    log::rejected(&Error::new(Code::AccessDenied, MESSAGE).with_path("$"));
     let body = serde_json::json!({
-        "message": "received origin header does not match configured CORS domains",
+        "message": MESSAGE,
         "extensions": {"path": "$", "code": "access-denied"},
     });
     Err(Box::new(
@@ -371,18 +385,23 @@ struct Connection {
     engine: Arc<Engine>,
     protocol: Protocol,
     endpoint: Endpoint,
-    id: u64,
+    /// V2's `websocket_id`, for logs.
+    ws_id: Uuid,
     out: Outbox,
     events: mpsc::UnboundedSender<Event>,
     /// Headers of the upgrade request (used by the first `connection_init` only).
     upgrade_headers: HeaderMap,
     state: ConnState,
-    /// Running subscriptions by operation id, with the generation they were started with.
-    subscriptions: HashMap<String, (u64, Running)>,
+    /// Running subscriptions by operation id, with the generation they were started with
+    /// and their `websocket-log` identity.
+    subscriptions: HashMap<String, (u64, Running, Option<Box<log::OpLog>>)>,
     next_generation: u64,
     queries: JoinSet<()>,
     /// Set once the server sent a close frame: wait for the client's reply.
     closing: bool,
+    /// `x-request-id` of the `connection_init` payload headers: V2's request id for every
+    /// operation (a new UUID each when absent).
+    request_id: Option<String>,
 }
 
 /// How long to wait for the client to answer our close frame.
@@ -398,6 +417,7 @@ impl Connection {
         protocol: Protocol,
         endpoint: Endpoint,
         upgrade_headers: HeaderMap,
+        ws_id: Uuid,
     ) {
         let (sink, mut stream) = socket.split();
         let (out_tx, out_rx) = mpsc::unbounded_channel();
@@ -418,13 +438,12 @@ impl Connection {
             .lock()
             .expect("lock")
             .insert(id, events_tx.clone());
-        tracing::info!(target: "websocket-log", connection = id, ?protocol, "accepted");
 
         let mut conn = Connection {
             engine: engine.clone(),
             protocol,
             endpoint,
-            id,
+            ws_id,
             out: Outbox {
                 tx: out_tx,
                 queued,
@@ -437,6 +456,7 @@ impl Connection {
             next_generation: 0,
             queries: JoinSet::new(),
             closing: false,
+            request_id: None,
         };
 
         let init_deadline = tokio::time::sleep(ws_config.init_timeout);
@@ -465,13 +485,13 @@ impl Connection {
                         Protocol::Apollo => 1011,
                         Protocol::GraphqlWs => 4408,
                     };
-                    tracing::info!(target: "websocket-log", connection = id, "connection_timeout");
+                    tracing::debug!(target: "ws-server", %ws_id, "connection_timeout");
                     conn.close(code, "Connection initialisation timed out".to_owned());
                 }
                 () = sleep_until_system(expiry), if expiry.is_some() => {
                     // Like V2: drop the connection without a close frame; clients reconnect
                     // with fresh credentials.
-                    tracing::info!(target: "websocket-log", connection = id, "jwt_expired");
+                    tracing::debug!(target: "ws-server", %ws_id, "jwt_expired");
                     writer.abort();
                     break;
                 }
@@ -490,7 +510,13 @@ impl Connection {
         }
 
         engine.ws.connections.lock().expect("lock").remove(&id);
-        conn.subscriptions.clear();
+        // V2 logs the close, then each subscription it stops.
+        conn.ws_log(Level::Info, || log::event("closed"));
+        for (_, (_, _, op_log)) in conn.subscriptions.drain() {
+            if let Some(op_log) = op_log {
+                op_log.log(log::OpEvent::Stopped);
+            }
+        }
         conn.queries.abort_all();
         // Dropping the outbox lets the writer finish what is queued, then stop.
         drop(conn);
@@ -498,7 +524,38 @@ impl Connection {
             let _ = tokio::time::timeout(Duration::from_secs(1), &mut writer).await;
             writer.abort();
         }
-        tracing::info!(target: "websocket-log", connection = id, "closed");
+    }
+
+    /// The session and token expiry, once initialised.
+    fn user(&self) -> Option<(&Session, Option<SystemTime>)> {
+        match &self.state {
+            ConnState::Initialised {
+                session,
+                expires_at,
+                ..
+            } => Some((session, *expires_at)),
+            _ => None,
+        }
+    }
+
+    fn ws_log(&self, level: Level, event: impl FnOnce() -> Json) {
+        log::log(self.ws_id, self.user(), None, level, event);
+    }
+
+    fn op_log(
+        &self,
+        id: &str,
+        with_request_id: bool,
+        payload: &StartPayload,
+    ) -> Option<Box<log::OpLog>> {
+        log::OpLog::new(
+            self.ws_id,
+            self.user(),
+            id,
+            with_request_id.then_some(self.request_id.as_deref()),
+            payload.operation_name.as_deref(),
+            Some(&payload.query),
+        )
     }
 
     fn expiry(&self) -> Option<SystemTime> {
@@ -522,6 +579,12 @@ impl Connection {
         let msg = match protocol::parse_client_message(bytes) {
             Ok(msg) => msg,
             Err(e) => {
+                self.ws_log(Level::Error, || {
+                    log::event_with(
+                        "conn_err",
+                        format!("parsing ClientMessage failed: {e}").into(),
+                    )
+                });
                 match self.protocol {
                     Protocol::Apollo => self.out.control(protocol::connection_error(&e)),
                     Protocol::GraphqlWs => self.close(
@@ -539,7 +602,9 @@ impl Connection {
             ClientMessage::ConnectionInit { headers } => self.on_init(headers).await,
             ClientMessage::Start { id, payload } => self.on_start(id, payload).await,
             ClientMessage::Stop { id } => {
-                self.subscriptions.remove(&id);
+                if let Some((_, _, Some(op_log))) = self.subscriptions.remove(&id) {
+                    op_log.log(log::OpEvent::Stopped);
+                }
             }
             ClientMessage::Terminate => {
                 self.close(1000, "GQL_CONNECTION_TERMINATE received".to_owned());
@@ -572,12 +637,10 @@ impl Connection {
         }
         match self.engine.auth.authenticate(&headers, None).await {
             Ok(auth) => {
-                tracing::info!(
-                    target: "websocket-log",
-                    connection = self.id,
-                    role = auth.session.role.as_str(),
-                    "initialised"
-                );
+                self.request_id = payload_headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("x-request-id"))
+                    .map(|(_, v)| v.clone());
                 self.state = ConnState::Initialised {
                     session: auth.session,
                     expires_at: auth.expires_at,
@@ -595,7 +658,7 @@ impl Connection {
     }
 
     fn init_failed(&mut self, message: &str) {
-        tracing::info!(target: "websocket-log", connection = self.id, error = message, "init failed");
+        self.ws_log(Level::Error, || log::event_with("conn_err", message.into()));
         match self.protocol {
             Protocol::Apollo => {
                 self.out.control(protocol::connection_error(message));
@@ -615,16 +678,15 @@ impl Connection {
 
     async fn on_start(&mut self, id: String, payload: StartPayload) {
         // A task that completed may not have reported it yet: its id is free.
-        if let Some((_, Running::Task(t))) = self.subscriptions.get(&id)
+        if let Some((_, Running::Task(t), _)) = self.subscriptions.get(&id)
             && t.is_released()
+            && let Some((_, _, Some(op_log))) = self.subscriptions.remove(&id)
         {
-            self.subscriptions.remove(&id);
+            op_log.log(log::OpEvent::Completed);
         }
         if self.subscriptions.contains_key(&id) {
-            return self.start_error(
-                &id,
-                format!("an operation already exists with this id: {id}"),
-            );
+            let msg = format!("an operation already exists with this id: {id}");
+            return self.start_error(&id, msg, &payload);
         }
         let (session, headers) = match &self.state {
             ConnState::Initialised {
@@ -632,13 +694,14 @@ impl Connection {
             } => (session.clone(), headers.clone()),
             ConnState::InitError(e) => {
                 let msg = format!("cannot start as connection_init failed with: {e}");
-                return self.start_error(&id, msg);
+                return self.start_error(&id, msg, &payload);
             }
             ConnState::NotInitialised => {
                 let msg = "start received before the connection is initialised".to_owned();
-                return self.start_error(&id, msg);
+                return self.start_error(&id, msg, &payload);
             }
         };
+        let op_log = self.op_log(&id, true, &payload);
         let state = self.engine.state.load_full();
         let query = payload.query;
         let req = GraphQLRequest {
@@ -649,7 +712,7 @@ impl Connection {
         };
         let op = match graphql::plan(&state, &session, req) {
             Ok(op) => op,
-            Err(e) => return self.request_error(&id, &e),
+            Err(e) => return self.request_error(&id, &e, op_log),
         };
         let is_mutation = op.kind == OperationKind::Mutation;
         // Action handlers raise errors with the same codes as planning (an unparsable
@@ -665,8 +728,13 @@ impl Connection {
             let (protocol, endpoint) = (self.protocol, self.endpoint);
             let engine = self.engine.clone();
             let run = async move {
-                match graphql::execute(&engine, &state, &session, &headers, Some(&query), &op).await
-                {
+                let result =
+                    graphql::execute(&engine, &state, &session, &headers, Some(&query), &op).await;
+                // A remote schema's own errors are its response, not a failed query.
+                if let (Some(op_log), Err(graphql::Failure::Error(e))) = (&op_log, &result) {
+                    op_log.log(log::OpEvent::QueryErr(e));
+                }
+                match result {
                     // Like V2, `Set-Cookie` headers from actions are dropped over websockets.
                     Ok((body, _set_cookies)) => {
                         if !out.data(protocol.data(&id, &body)) {
@@ -697,6 +765,10 @@ impl Connection {
                     Err(graphql::Failure::Remote(errors)) => {
                         out.control(protocol.execution_error(&id, &errors));
                     }
+                }
+                // Logged first, so the line comes before any the client's next message causes.
+                if let Some(op_log) = &op_log {
+                    op_log.log(log::OpEvent::Completed);
                 }
                 out.control(protocol::complete(&id));
             };
@@ -746,9 +818,12 @@ impl Connection {
         };
         match running {
             Ok(running) => {
-                self.subscriptions.insert(id, (generation, running));
+                if let Some(op_log) = &op_log {
+                    op_log.log(log::OpEvent::Started);
+                }
+                self.subscriptions.insert(id, (generation, running, op_log));
             }
-            Err(e) => self.request_error(&id, &e),
+            Err(e) => self.request_error(&id, &e, op_log),
         }
     }
 
@@ -756,9 +831,10 @@ impl Connection {
         if self
             .subscriptions
             .get(id)
-            .is_some_and(|(g, _)| *g == generation)
+            .is_some_and(|(g, _, _)| *g == generation)
+            && let Some((_, _, Some(op_log))) = self.subscriptions.remove(id)
         {
-            self.subscriptions.remove(id);
+            op_log.log(log::OpEvent::Completed);
         }
     }
 
@@ -798,7 +874,11 @@ impl Connection {
             layout,
             overflowed: AtomicBool::new(false),
         });
-        registry.subscribe(executor, query, sink).await
+        let info = hge_subscriptions::PollerInfo {
+            source: source.into(),
+            role: session.role.as_str().into(),
+        };
+        registry.subscribe_with(executor, query, sink, info).await
     }
 
     /// `generation` tells the overflowed subscription apart from a later one reusing its id.
@@ -806,9 +886,11 @@ impl Connection {
         if self
             .subscriptions
             .get(id)
-            .is_some_and(|(g, _)| *g == generation)
+            .is_some_and(|(g, _, _)| *g == generation)
         {
-            self.subscriptions.remove(id);
+            if let Some((_, _, Some(op_log))) = self.subscriptions.remove(id) {
+                op_log.log(log::OpEvent::Stopped);
+            }
             let e = match resume_cursor {
                 None => Error::unexpected(OVERFLOW_MESSAGE),
                 Some(cursor) => stream_overflow_error(cursor),
@@ -821,7 +903,11 @@ impl Connection {
     }
 
     /// A request that could not start (spec 09 §4.4, `start-failed`).
-    fn start_error(&mut self, id: &str, message: String) {
+    fn start_error(&mut self, id: &str, message: String, payload: &StartPayload) {
+        if let Some(op_log) = self.op_log(id, false, payload) {
+            op_log.log(log::OpEvent::ProtoErr(&message));
+            op_log.log(log::OpEvent::Completed);
+        }
         let e = Error::new(Code::StartFailed, message.clone());
         self.out
             .control(protocol::error_object(id, &error_json(&e, self.endpoint)));
@@ -836,11 +922,17 @@ impl Connection {
     }
 
     /// A request that failed before executing: parse, validation, permissions, planning.
-    fn request_error(&mut self, id: &str, e: &Error) {
+    fn request_error(&mut self, id: &str, e: &Error, op_log: Option<Box<log::OpLog>>) {
+        if let Some(op_log) = &op_log {
+            op_log.log(log::OpEvent::QueryErr(e));
+        }
         let error = error_json(e, self.endpoint);
         self.out
             .control(error_message(self.protocol, self.endpoint, id, error));
         self.out.control(protocol::complete(id));
+        if let Some(op_log) = &op_log {
+            op_log.log(log::OpEvent::CompletedEarly);
+        }
     }
 }
 
