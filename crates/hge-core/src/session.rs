@@ -84,6 +84,9 @@ pub fn is_session_variable(name: &str) -> bool {
 pub struct Session {
     pub role: RoleName,
     pub variables: SessionVariables,
+    /// Backend-only permissions may be used (`x-hasura-use-backend-only-permissions`; only
+    /// honoured with a valid admin secret or when no auth is configured).
+    pub backend_only: bool,
 }
 
 impl Session {
@@ -93,6 +96,7 @@ impl Session {
         Session {
             role: RoleName::admin(),
             variables,
+            backend_only: false,
         }
     }
 

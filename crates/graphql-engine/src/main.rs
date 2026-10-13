@@ -80,8 +80,38 @@ struct ServeArgs {
     #[arg(long, env = "HASURA_GRAPHQL_ADMIN_SECRETS", hide_env_values = true)]
     admin_secrets: Option<String>,
 
+    /// Deprecated alias of the admin secret, used only when that is unset.
+    #[arg(long, env = "HASURA_GRAPHQL_ACCESS_KEY", hide_env_values = true)]
+    access_key: Option<String>,
+
     #[arg(long, env = "HASURA_GRAPHQL_UNAUTHORIZED_ROLE")]
     unauthorized_role: Option<String>,
+
+    #[arg(long, env = "HASURA_GRAPHQL_DISABLE_ADMIN_SECRET", value_parser = parse_bool, default_value = "false")]
+    disable_admin_secret: bool,
+
+    /// JWT config (a JSON object).
+    #[arg(long, env = "HASURA_GRAPHQL_JWT_SECRET", hide_env_values = true)]
+    jwt_secret: Option<String>,
+
+    /// A JSON list of JWT configs.
+    #[arg(long, env = "HASURA_GRAPHQL_JWT_SECRETS", hide_env_values = true)]
+    jwt_secrets: Option<String>,
+
+    /// Auth webhook URL.
+    #[arg(long, env = "HASURA_GRAPHQL_AUTH_HOOK")]
+    auth_hook: Option<String>,
+
+    /// `GET` (default) or `POST`; `HASURA_GRAPHQL_AUTH_HOOK_TYPE` is read as a fallback.
+    #[arg(long, env = "HASURA_GRAPHQL_AUTH_HOOK_MODE")]
+    auth_hook_mode: Option<String>,
+
+    #[arg(long, env = "HASURA_GRAPHQL_AUTH_HOOK_SEND_REQUEST_BODY", value_parser = parse_bool, default_value = "true")]
+    auth_hook_send_request_body: bool,
+
+    /// Reuse webhook answers that carry an expiry (not in V2 OSS; off by default).
+    #[arg(long, env = "HASURA_GRAPHQL_AUTH_HOOK_CACHE", value_parser = parse_bool, default_value = "false")]
+    auth_hook_cache: bool,
 
     #[arg(long, env = "HASURA_GRAPHQL_DEV_MODE", value_parser = parse_bool, default_value = "false")]
     dev_mode: bool,
@@ -150,7 +180,7 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
         );
     }
     let mut admin_secrets = vec![];
-    if let Some(s) = &args.admin_secret {
+    if let Some(s) = args.admin_secret.as_ref().or(args.access_key.as_ref()) {
         admin_secrets.push(s.clone());
     }
     if let Some(list) = &args.admin_secrets {
@@ -161,6 +191,27 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
     if admin_secrets.iter().any(|s| s.trim().is_empty()) {
         anyhow::bail!("the admin secret must not be empty");
     }
+    let auth_hook = match &args.auth_hook {
+        None => None,
+        Some(url) => {
+            let mode = match args
+                .auth_hook_mode
+                .clone()
+                .or_else(|| std::env::var("HASURA_GRAPHQL_AUTH_HOOK_TYPE").ok())
+            {
+                None => hge_auth::HookMode::Get,
+                Some(m) => m
+                    .parse()
+                    .map_err(|e| anyhow::anyhow!("HASURA_GRAPHQL_AUTH_HOOK_MODE: {e}"))?,
+            };
+            Some(hge_auth::HookConfig {
+                url: url.clone(),
+                mode,
+                send_request_body: args.auth_hook_send_request_body,
+                cache: args.auth_hook_cache,
+            })
+        }
+    };
     let port = match args.server_port {
         Some(p) => p,
         None => std::env::var("PORT")
@@ -182,6 +233,10 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
         migrations_dir: args.migrations_dir.clone(),
         admin_secrets,
         unauthorized_role: args.unauthorized_role.clone(),
+        disable_admin_secret: args.disable_admin_secret,
+        jwt_secret: args.jwt_secret.clone(),
+        jwt_secrets: args.jwt_secrets.clone(),
+        auth_hook,
         dev_mode: args.dev_mode,
         admin_internal_errors: args.admin_internal_errors,
         stringify_numeric_types: args.stringify_numeric_types,

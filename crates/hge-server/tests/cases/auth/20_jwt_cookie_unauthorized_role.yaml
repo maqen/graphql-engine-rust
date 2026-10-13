@@ -1,0 +1,42 @@
+# JWT from a cookie, with an unauthorized role for requests without a token.
+config:
+  admin_secret: s3cret
+  unauthorized_role: public
+  jwt_secret:
+    type: HS256
+    key: conformance-secret-that-is-at-least-32-bytes
+    header:
+      type: Cookie
+      name: token
+cases:
+- description: no token uses the unauthorized role
+  query:
+    query: '{ author(order_by: {id: asc}) { name } }'
+  response:
+    data:
+      author:
+      - name: Alice
+      - name: Bob
+- description: the token is read from the named cookie
+  headers:
+    Cookie: other=1; token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZXhwIjo5OTk5OTk5OTk5LCJodHRwczovL2hhc3VyYS5pby9qd3QvY2xhaW1zIjp7IngtaGFzdXJhLWFsbG93ZWQtcm9sZXMiOlsicHVibGljIiwiZWRpdG9yIl0sIngtaGFzdXJhLWRlZmF1bHQtcm9sZSI6InB1YmxpYyIsIngtaGFzdXJhLXVzZXItaWQiOiIxIn19.SWgWyyVlelNxEbZ7LUpNQUibESe1iva2qPpbxoGYr_g
+    X-Hasura-Role: editor
+  query:
+    query: '{ author { name } }'
+  response:
+    errors:
+    - extensions:
+        path: $.selectionSet.author
+        code: validation-failed
+      message: 'field ''author'' not found in type: ''query_root'''
+- description: an invalid token does not fall back to the unauthorized role
+  headers:
+    Cookie: token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZXhwIjoxMDAwMDAwMDAwLCJodHRwczovL2hhc3VyYS5pby9qd3QvY2xhaW1zIjp7IngtaGFzdXJhLWFsbG93ZWQtcm9sZXMiOlsicHVibGljIl0sIngtaGFzdXJhLWRlZmF1bHQtcm9sZSI6InB1YmxpYyJ9fQ.UcfrlaouXniuL7ZKOdhN4azqupl8tj-gM2CpXYv93xA
+  query:
+    query: '{ author(order_by: {id: asc}) { name } }'
+  response:
+    errors:
+    - extensions:
+        path: $
+        code: invalid-jwt
+      message: 'Could not verify JWT: JWTExpired'

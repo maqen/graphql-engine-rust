@@ -9,7 +9,7 @@ use axum::extract::{DefaultBodyLimit, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use hge_core::{Code, Error};
+use hge_core::{Code, Error, Session};
 use serde::Deserialize;
 use tower_http::CompressionLevel;
 use tower_http::compression::CompressionLayer;
@@ -28,7 +28,10 @@ pub fn router(engine: Arc<Engine>) -> Router {
     if engine.config.api_enabled("graphql") {
         router = router
             .route("/v1/graphql", get(graphql_get).post(graphql_post))
-            .route("/v1alpha1/graphql", axum::routing::post(graphql_post));
+            .route(
+                "/v1alpha1/graphql",
+                axum::routing::post(graphql_post_v1alpha1),
+            );
     }
     let mut router = router
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
@@ -108,20 +111,52 @@ fn json_response(status: StatusCode, body: String, request_id: Option<String>) -
     resp
 }
 
+/// Which GraphQL endpoint: `/v1/graphql` reports errors with status 200 (except 401 with
+/// `HASURA_GRAPHQL_PRESERVE_401_ERRORS`); `/v1alpha1/graphql` keeps the real status.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Endpoint {
+    V1,
+    V1Alpha1,
+}
+
 async fn graphql_post(
     State(engine): State<Arc<Engine>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let rid = request_id(&headers);
-    let parsed: Result<GraphQLBody, _> = serde_json::from_slice(&body);
-    match parsed {
-        Ok(body) => handle(&engine, &headers, body, rid).await,
+    post(&engine, &headers, &body, Endpoint::V1).await
+}
+
+async fn graphql_post_v1alpha1(
+    State(engine): State<Arc<Engine>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    post(&engine, &headers, &body, Endpoint::V1Alpha1).await
+}
+
+async fn post(engine: &Engine, headers: &HeaderMap, body: &[u8], endpoint: Endpoint) -> Response {
+    let rid = request_id(headers);
+    // The POST auth webhook gets the request as JSON; parse it only in that mode.
+    let raw_request = if engine.auth.needs_request_body() {
+        serde_json::from_slice::<serde_json::Value>(body).ok()
+    } else {
+        None
+    };
+    // Authenticate before reporting a malformed body, as V2 does.
+    let auth = match authenticate(engine, headers, raw_request.as_ref(), endpoint, &rid).await {
+        Ok(auth) => auth,
+        Err(resp) => return resp,
+    };
+    let parsed: Result<GraphQLBody, _> = serde_json::from_slice(body);
+    let resp = match parsed {
+        Ok(body) => run(engine, &auth.session, body, rid).await,
         Err(e) => {
             let err = Error::new(Code::InvalidJson, format!("Error in $: {e}"));
             json_response(StatusCode::OK, graphql::error_body(&err, false), Some(rid))
         }
-    }
+    };
+    with_cookies(resp, auth.set_cookies)
 }
 
 #[derive(Deserialize)]
@@ -138,7 +173,23 @@ async fn graphql_get(
     Query(params): Query<GetParams>,
 ) -> Response {
     let rid = request_id(&headers);
-    let variables = match params.variables.as_deref().map(serde_json::from_str) {
+    let variables = params
+        .variables
+        .as_deref()
+        .map(serde_json::from_str::<serde_json::Value>);
+    let raw_request = engine.auth.needs_request_body().then(|| {
+        serde_json::json!({
+            "query": params.query,
+            "variables": variables.as_ref().and_then(|v| v.as_ref().ok()),
+            "operationName": params.operation_name,
+        })
+    });
+    let auth = match authenticate(&engine, &headers, raw_request.as_ref(), Endpoint::V1, &rid).await
+    {
+        Ok(auth) => auth,
+        Err(resp) => return resp,
+    };
+    let variables = match variables {
         None => None,
         Some(Ok(v)) => Some(v),
         Some(Err(e)) => {
@@ -151,21 +202,51 @@ async fn graphql_get(
         variables,
         operation_name: params.operation_name,
     };
-    handle(&engine, &headers, GraphQLBody::Single(req), rid).await
+    let resp = run(&engine, &auth.session, GraphQLBody::Single(req), rid).await;
+    with_cookies(resp, auth.set_cookies)
 }
 
-async fn handle(engine: &Engine, headers: &HeaderMap, body: GraphQLBody, rid: String) -> Response {
-    let session = match hge_auth::authenticate(&engine.auth, headers) {
-        Ok(s) => s,
-        Err(e) => {
-            let status = if engine.config.preserve_401_errors {
-                StatusCode::from_u16(e.code.http_status()).unwrap_or(StatusCode::UNAUTHORIZED)
-            } else {
-                StatusCode::OK
+/// Authenticate a GraphQL request, or build the error response (spec 05 §9.2).
+async fn authenticate(
+    engine: &Engine,
+    headers: &HeaderMap,
+    request: Option<&serde_json::Value>,
+    endpoint: Endpoint,
+    rid: &str,
+) -> Result<hge_auth::Authenticated, Response> {
+    engine
+        .auth
+        .authenticate(headers, request)
+        .await
+        .map_err(|e| {
+            tracing::info!(target: "http-log", request_id = rid, error = %e, "authentication failed");
+            let status = match endpoint {
+                Endpoint::V1Alpha1 => e.status,
+                Endpoint::V1
+                    if engine.config.preserve_401_errors
+                        && e.status == StatusCode::UNAUTHORIZED =>
+                {
+                    e.status
+                }
+                Endpoint::V1 => StatusCode::OK,
             };
-            return json_response(status, graphql::error_body(&e, false), Some(rid));
-        }
-    };
-    let out = graphql::execute_body(engine, &session, body).await;
+            json_response(
+                status,
+                graphql::error_body(&e.error, false),
+                Some(rid.to_owned()),
+            )
+        })
+}
+
+/// Add the auth webhook's `Set-Cookie` headers.
+fn with_cookies(mut resp: Response, cookies: Vec<HeaderValue>) -> Response {
+    for cookie in cookies {
+        resp.headers_mut().append(header::SET_COOKIE, cookie);
+    }
+    resp
+}
+
+async fn run(engine: &Engine, session: &Session, body: GraphQLBody, rid: String) -> Response {
+    let out = graphql::execute_body(engine, session, body).await;
     json_response(StatusCode::OK, out, Some(rid))
 }

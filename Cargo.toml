@@ -31,15 +31,18 @@ arc-swap = "1"
 async-graphql-parser = "7"
 async-graphql-value = "7"
 async-trait = "0.1"
+base64 = "0.22"
 axum = { version = "0.8", features = ["http1", "http2", "json", "tokio", "ws"] }
 bytes = "1"
 clap = { version = "4", features = ["derive", "env"] }
 deadpool-postgres = "0.14"
 futures = "0.3"
+httpdate = "1"
 http = "1"
 indexmap = { version = "2", features = ["serde"] }
 postgres-types = "0.2"
 reqwest = { version = "0.12", default-features = false }
+ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
