@@ -28,6 +28,9 @@ async fn hook(
         .lock()
         .unwrap()
         .push((kind.clone(), serde_json::from_str(&body).unwrap()));
+    if kind == "slow" {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
     if kind == "fail" {
         (StatusCode::BAD_REQUEST, "bad").into_response()
     } else {
@@ -81,6 +84,7 @@ async fn scheduled_events_end_to_end() {
     let base = format!("http://{}", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let env = BTreeMap::from([("HOOK".to_owned(), base.clone())]);
+    let env_for_slow = env.clone();
 
     // A cron trigger: the generator keeps 100 upcoming events.
     let conf: CronTriggerConf = serde_json::from_value(json!({
@@ -91,6 +95,7 @@ async fn scheduled_events_end_to_end() {
     let info = CronTriggerInfo::resolve(conf, &env).unwrap();
     let triggers = Arc::new(ScheduledTriggers {
         cron: HashMap::from([("every_minute".to_owned(), Arc::new(info))]),
+        in_metadata: ["every_minute", "broken"].map(String::from).into(),
     });
     scheduled::generate_cron_events(&pool, &triggers)
         .await
@@ -109,7 +114,8 @@ async fn scheduled_events_end_to_end() {
         .batch_execute(
             "INSERT INTO hdb_catalog.hdb_cron_events (trigger_name, scheduled_time) VALUES
                ('gone', now() + interval '1 hour'),
-               ('every_minute', date_trunc('minute', now()) + interval '1 day 30 seconds')",
+               ('every_minute', date_trunc('minute', now()) + interval '1 day 30 seconds'),
+               ('broken', date_trunc('minute', now()) + interval '1 hour')",
         )
         .await
         .unwrap();
@@ -121,10 +127,14 @@ async fn scheduled_events_end_to_end() {
         &pool,
         "SELECT count(*) FILTER (WHERE trigger_name = 'gone') AS gone, \
          count(*) FILTER (WHERE extract(second FROM scheduled_time) <> 0) AS off_schedule, \
+         count(*) FILTER (WHERE trigger_name = 'broken') AS inconsistent_kept, \
          count(*) >= 100 AS kept FROM hdb_catalog.hdb_cron_events",
     )
     .await;
-    assert_eq!(left, json!([{"gone": 0, "off_schedule": 0, "kept": true}]));
+    assert_eq!(
+        left,
+        json!([{"gone": 0, "off_schedule": 0, "inconsistent_kept": 1, "kept": true}])
+    );
 
     // A due cron event, plus one-off events: ok, failing with one retry, too late, bad env.
     pool.get()
@@ -137,7 +147,8 @@ async fn scheduled_events_end_to_end() {
                  ('one-ok', '"{{{{HOOK}}}}/ok"', now() - interval '1 second', '{{"b":1,"a":2}}', NULL, '[]', 'hi'),
                  ('one-fail', '"{base}/fail"', now() - interval '1 second', NULL, '{{"num_retries":1,"retry_interval_seconds":1,"timeout_seconds":5,"tolerance_seconds":60}}', '[]', NULL),
                  ('one-late', '"{base}/ok"', now() - interval '2 hours', NULL, '{{"num_retries":0,"retry_interval_seconds":1,"timeout_seconds":5,"tolerance_seconds":60}}', '[]', NULL),
-                 ('one-env', '"{{{{NOPE}}}}/x"', now() - interval '1 second', NULL, NULL, '[]', NULL);"#
+                 ('one-env', '"{{{{NOPE}}}}/x"', now() - interval '1 second', NULL, NULL, '[]', NULL),
+                 ('one-late-env', '"{{{{NOPE}}}}/x"', now() - interval '2 hours', NULL, '{{"num_retries":0,"retry_interval_seconds":1,"timeout_seconds":5,"tolerance_seconds":60}}', '[]', NULL);"#
         ))
         .await
         .unwrap();
@@ -156,7 +167,7 @@ async fn scheduled_events_end_to_end() {
     let mut done = false;
     for _ in 0..150 {
         let s = query(&pool, "SELECT id, status FROM hdb_catalog.hdb_scheduled_events WHERE status <> 'scheduled' AND status <> 'locked'").await;
-        if s.as_array().unwrap().len() == 4 {
+        if s.as_array().unwrap().len() == 5 {
             done = true;
             break;
         }
@@ -177,6 +188,8 @@ async fn scheduled_events_end_to_end() {
             {"id": "one-env", "status": "error", "tries": 1},
             {"id": "one-fail", "status": "error", "tries": 2},
             {"id": "one-late", "status": "dead", "tries": 0},
+            // V2 checks the tolerance only once the request could be built.
+            {"id": "one-late-env", "status": "error", "tries": 1},
             {"id": "one-ok", "status": "delivered", "tries": 1}
         ])
     );
@@ -207,5 +220,92 @@ async fn scheduled_events_end_to_end() {
             "request": {"headers": [], "payload": {"error": "Error creating the request. The value for environment variables not found: NOPE"}, "version": "1"},
             "response": {"data": {"message": "\"The value for environment variables not found: NOPE\""}, "type": "client_error", "version": "1"}
         }])
+    );
+
+    // Orphaned locks: a `locked` event nobody holds the delivery lock for is released; one
+    // held by a live instance is not.
+    let exec = |sql: String| {
+        let pool = pool.clone();
+        async move { pool.get().await.unwrap().batch_execute(&sql).await.unwrap() }
+    };
+    exec("INSERT INTO hdb_catalog.hdb_scheduled_events (id, webhook_conf, scheduled_time, status) VALUES
+            ('orphan', '\"http://x\"', now() + interval '1 day', 'locked'),
+            ('owned', '\"http://x\"', now() + interval '1 day', 'locked')".to_owned())
+    .await;
+    let holder = pool.get().await.unwrap();
+    holder
+        .execute(
+            "SELECT pg_advisory_lock($1, hashtext('owned'))",
+            &[&0x4853_4556_i32],
+        )
+        .await
+        .unwrap();
+    assert_eq!(scheduled::unlock_stale(&pool).await.unwrap(), 1);
+    let locks = query(&pool, "SELECT id, status FROM hdb_catalog.hdb_scheduled_events WHERE id IN ('orphan', 'owned') ORDER BY id").await;
+    assert_eq!(
+        locks,
+        json!([{"id": "orphan", "status": "scheduled"}, {"id": "owned", "status": "locked"}])
+    );
+    holder
+        .execute("SELECT pg_advisory_unlock_all()", &[])
+        .await
+        .unwrap();
+    drop(holder);
+    assert_eq!(scheduled::unlock_stale(&pool).await.unwrap(), 1);
+    exec("DELETE FROM hdb_catalog.hdb_scheduled_events WHERE id IN ('orphan', 'owned')".to_owned())
+        .await;
+
+    // Shutdown: a delivery still running after the grace period is abandoned and its event
+    // put back to `scheduled`; with enough grace it finishes.
+    let slow = |grace_ms: u64| {
+        let (pool, triggers, env) = (pool.clone(), triggers.clone(), env_for_slow.clone());
+        async move {
+            let shutdown = CancellationToken::new();
+            let handle = scheduled::spawn(
+                EventingConfig {
+                    graceful_shutdown_timeout: Duration::from_millis(grace_ms),
+                    ..EventingConfig::default()
+                },
+                pool.clone(),
+                Arc::new(HttpClient::new().unwrap()),
+                Arc::new(move || triggers.clone()),
+                Arc::new(env),
+                shutdown.clone(),
+            );
+            for _ in 0..50 {
+                let s = query(
+                    &pool,
+                    "SELECT status FROM hdb_catalog.hdb_scheduled_events WHERE id = 'slow'",
+                )
+                .await;
+                if s == json!([{"status": "locked"}]) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            shutdown.cancel();
+            handle.await.unwrap();
+            query(
+                &pool,
+                "SELECT status, tries FROM hdb_catalog.hdb_scheduled_events WHERE id = 'slow'",
+            )
+            .await
+        }
+    };
+    exec(format!(
+        "INSERT INTO hdb_catalog.hdb_scheduled_events (id, webhook_conf, scheduled_time, retry_conf) VALUES
+           ('slow', '\"{base}/slow\"', now() - interval '1 second',
+            '{{\"num_retries\":0,\"retry_interval_seconds\":1,\"timeout_seconds\":10,\"tolerance_seconds\":600}}')"
+    ))
+    .await;
+    assert_eq!(
+        slow(200).await,
+        json!([{"status": "scheduled", "tries": 0}])
+    );
+    assert_eq!(scheduled::unlock_stale(&pool).await.unwrap(), 0);
+    assert_eq!(
+        slow(5000).await,
+        json!([{"status": "delivered", "tries": 1}])
     );
 }

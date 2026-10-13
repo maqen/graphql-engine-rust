@@ -48,7 +48,19 @@ V2's definitions). Every instance that processes events runs:
   schedule when metadata changes;
 * a delivery loop (every 10 s) that locks due events with `FOR UPDATE SKIP LOCKED`, marks
   events older than their `tolerance_seconds` as `dead`, and delivers the rest with V2's
-  payload, headers, retries and invocation logs. Locks older than 35 minutes are released.
+  payload, headers, retries and invocation logs. An instance holds a Postgres advisory
+  lock for every event it is delivering, so events left `locked` by an instance that died
+  are released by the next delivery loop of any instance, and never while their instance
+  is alive. (V2 instead unlocks every locked event when it starts. If V2 and this engine
+  share a metadata database during a migration, events a V2 instance is delivering look
+  orphaned to this engine and can be delivered twice.)
+
+On shutdown, an instance stops fetching, gives running deliveries
+`HASURA_GRAPHQL_GRACEFUL_SHUTDOWN_TIMEOUT`, and puts unfinished events back to `scheduled`.
+
+The tables are created only when all four are missing; a partial set is an error. Created
+this way (without V2's `hdb_version` bookkeeping), switching the database back to V2
+requires dropping them first, since V2's catalog set-up creates them itself.
 
 The same Cloud Run advice applies: the instances that deliver need CPU between requests.
 

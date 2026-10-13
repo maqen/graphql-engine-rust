@@ -23,6 +23,7 @@ pub fn prepare(metadata: &Metadata) -> (ScheduledTriggers, Vec<InconsistentObjec
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
+        out.in_metadata.insert(name.clone());
         let resolved = serde_json::from_value::<CronTriggerConf>(raw.clone())
             .map_err(|e| e.to_string())
             .and_then(|conf| {

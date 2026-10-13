@@ -5,16 +5,15 @@
 //! per cron trigger; a delivery loop locks due events with `FOR UPDATE SKIP LOCKED`, so any
 //! number of replicas can run both.
 
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use deadpool_postgres::Pool;
-use futures::future::join_all;
+use deadpool_postgres::{ClientWrapper, Object, Pool};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::Semaphore;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
@@ -36,9 +35,21 @@ pub const SCHEDULED_CATALOG: &str = include_str!("sql/scheduled_catalog.sql");
 /// Upcoming events kept per cron trigger.
 pub const CRON_EVENTS_AHEAD: usize = 100;
 const GENERATOR_INTERVAL: Duration = Duration::from_secs(60);
+/// How often the generator looks for a metadata change (new triggers get events at once).
+const GENERATOR_POLL: Duration = Duration::from_secs(1);
 const DELIVERY_INTERVAL: Duration = Duration::from_secs(10);
 /// Due events locked per table and iteration (V2 has no limit; this bounds a backlog).
 const FETCH_LIMIT: i64 = 1000;
+/// Advisory lock class held (session level, `(class, hashtext(id))`) by the instance
+/// delivering an event. A `locked` event without it belongs to a dead instance.
+const DELIVERY_LOCK_CLASS: i32 = 0x4853_4556;
+/// The cron / one-off catalog tables.
+const CATALOG_TABLES: [&str; 4] = [
+    "hdb_cron_events",
+    "hdb_cron_event_invocation_logs",
+    "hdb_scheduled_events",
+    "hdb_scheduled_event_invocation_logs",
+];
 
 /// `STRetryConf`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -138,7 +149,11 @@ impl CronTriggerInfo {
 /// Everything the scheduled-event workers need from one metadata version.
 #[derive(Default)]
 pub struct ScheduledTriggers {
+    /// Deliverable cron triggers, by name.
     pub cron: HashMap<String, Arc<CronTriggerInfo>>,
+    /// Every cron trigger name in metadata, including inconsistent ones: their stored events
+    /// are kept (a trigger can be inconsistent on one replica only, e.g. a missing env var).
+    pub in_metadata: HashSet<String>,
 }
 
 pub type ScheduledProvider = Arc<dyn Fn() -> Arc<ScheduledTriggers> + Send + Sync>;
@@ -160,15 +175,27 @@ pub async fn ensure_catalog(pool: &Pool) -> Result<(), String> {
     )
     .await
     .map_err(pg_err)?;
-    let present: bool = tx
-        .query_one(
-            "SELECT to_regclass('hdb_catalog.hdb_cron_events') IS NOT NULL",
-            &[],
-        )
-        .await
-        .map_err(pg_err)?
-        .get(0);
-    if !present {
+    let mut missing = vec![];
+    for table in CATALOG_TABLES {
+        let present: bool = tx
+            .query_one(
+                "SELECT to_regclass('hdb_catalog.' || $1) IS NOT NULL",
+                &[&table],
+            )
+            .await
+            .map_err(pg_err)?
+            .get(0);
+        if !present {
+            missing.push(table);
+        }
+    }
+    if !missing.is_empty() && missing.len() < CATALOG_TABLES.len() {
+        return Err(format!(
+            "the scheduled events catalog is incomplete, missing: hdb_catalog.{}",
+            missing.join(", hdb_catalog.")
+        ));
+    }
+    if missing.len() == CATALOG_TABLES.len() {
         tx.batch_execute(
             "CREATE SCHEMA IF NOT EXISTS hdb_catalog;
              CREATE OR REPLACE FUNCTION hdb_catalog.gen_hasura_uuid() RETURNS uuid AS
@@ -222,7 +249,12 @@ pub async fn reconcile_cron_events(
     pool: &Pool,
     triggers: &ScheduledTriggers,
 ) -> Result<(), String> {
-    let names: Vec<String> = triggers.cron.keys().cloned().collect();
+    let names: Vec<String> = triggers
+        .cron
+        .keys()
+        .chain(&triggers.in_metadata)
+        .cloned()
+        .collect();
     let client = pool.get().await.map_err(|e| e.to_string())?;
     client
         .execute(
@@ -300,20 +332,55 @@ pub async fn generate_cron_events(pool: &Pool, triggers: &ScheduledTriggers) -> 
     Ok(())
 }
 
-/// Release events locked by instances that died. V2 unlocks *every* locked event at startup,
-/// which double-delivers when replicas start while others are delivering; here only events
-/// that cannot still be in flight (due more than the 30-minute processing bound ago) are
-/// released.
-pub async fn unlock_stale(pool: &Pool) -> Result<(), String> {
+/// Release `locked` events whose delivering instance is gone, i.e. nobody holds their
+/// [`DELIVERY_LOCK_CLASS`] advisory lock. Runs on every delivery iteration, so an instance
+/// that died mid-delivery holds its events only until another instance looks, and an
+/// instance that is still delivering never loses them (V2 instead unlocks everything at
+/// startup, which can deliver twice). Returns the number of released events.
+pub async fn unlock_stale(pool: &Pool) -> Result<u64, String> {
     let client = pool.get().await.map_err(|e| e.to_string())?;
+    let mut released = 0;
     for table in ["hdb_cron_events", "hdb_scheduled_events"] {
+        released += client
+            .execute(
+                &format!(
+                    "WITH locked AS MATERIALIZED ( \
+                       SELECT id FROM hdb_catalog.{table} WHERE status = 'locked' \
+                       FOR UPDATE SKIP LOCKED), \
+                     orphaned AS MATERIALIZED ( \
+                       SELECT id FROM locked \
+                       WHERE pg_try_advisory_xact_lock({DELIVERY_LOCK_CLASS}, hashtext(id::text))) \
+                     UPDATE hdb_catalog.{table} t SET status = 'scheduled' \
+                     FROM orphaned WHERE t.id = orphaned.id"
+                ),
+                &[],
+            )
+            .await
+            .map_err(pg_err)?;
+    }
+    Ok(released)
+}
+
+/// Put events this instance locked but did not finish back to `scheduled` (shutdown).
+async fn release(pool: &Pool, events: &[(String, Kind)]) -> Result<(), String> {
+    let client = pool.get().await.map_err(|e| e.to_string())?;
+    for kind in [Kind::Cron, Kind::OneOff] {
+        let ids: Vec<&str> = events
+            .iter()
+            .filter(|(_, k)| *k == kind)
+            .map(|(id, _)| id.as_str())
+            .collect();
+        if ids.is_empty() {
+            continue;
+        }
         client
             .execute(
                 &format!(
-                    "UPDATE hdb_catalog.{table} SET status = 'scheduled' WHERE status = 'locked' \
-                     AND coalesce(next_retry_at, scheduled_time) < now() - interval '35 minutes'"
+                    "UPDATE hdb_catalog.{} SET status = 'scheduled' \
+                     WHERE id = ANY($1) AND status = 'locked'",
+                    kind.events_table()
                 ),
-                &[],
+                &[&ids],
             )
             .await
             .map_err(pg_err)?;
@@ -372,11 +439,14 @@ fn utc(col: &str) -> String {
     UTC_JSON.replace("{c}", col).replace("{{}}", "{}")
 }
 
-/// Lock due events of one kind.
+/// Lock up to `limit` due events of one kind. `client` is the instance's lock-holding
+/// connection: each event's [`DELIVERY_LOCK_CLASS`] advisory lock is taken in the same
+/// statement, so no other instance can see it `locked` but unowned.
 pub async fn fetch_due(
-    pool: &Pool,
+    client: &tokio_postgres::Client,
     kind: Kind,
     cron_triggers: &[String],
+    limit: i64,
 ) -> Result<Vec<ScheduledEvent>, String> {
     let table = kind.events_table();
     let filter = match kind {
@@ -407,14 +477,15 @@ pub async fn fetch_due(
                   )
     RETURNING *
   )
-SELECT id, extract(epoch FROM scheduled_time)::float8, {st}, {ca}, tries, {extra} FROM cte",
+SELECT id, extract(epoch FROM scheduled_time)::float8, {st}, {ca}, tries, {extra}, \
+       pg_try_advisory_lock({DELIVERY_LOCK_CLASS}, hashtext(id::text)) FROM cte",
         st = utc("scheduled_time"),
         ca = utc("created_at"),
     );
-    let client = pool.get().await.map_err(|e| e.to_string())?;
+    let limit = limit.min(FETCH_LIMIT);
     let rows = match kind {
-        Kind::Cron => client.query(&sql, &[&FETCH_LIMIT, &cron_triggers]).await,
-        Kind::OneOff => client.query(&sql, &[&FETCH_LIMIT]).await,
+        Kind::Cron => client.query(&sql, &[&limit, &cron_triggers]).await,
+        Kind::OneOff => client.query(&sql, &[&limit]).await,
     }
     .map_err(pg_err)?;
     Ok(rows
@@ -661,14 +732,16 @@ async fn process(ctx: &Ctx, ev: &ScheduledEvent) -> Result<(), String> {
         Some(info) => info.conf.retry_conf.tolerance_seconds,
         None => one_off_retry(ev).tolerance_seconds,
     };
-    // Too late: dead, without an attempt (measured from `scheduled_time`, like V2).
-    if now_secs() as f64 - ev.scheduled_epoch > tolerance {
-        return set_status(&ctx.pool, ev, "dead").await;
-    }
     let target = match cron {
         Some(info) => Ok(cron_target(ev, info)),
         None => one_off_target(ev, ctx.env.as_ref()),
     };
+    // Too late: dead, without an attempt (measured from `scheduled_time`, like V2). V2 only
+    // checks this once the request could be built: an unresolvable one-off event is recorded
+    // as a failed attempt instead.
+    if target.is_ok() && now_secs() as f64 - ev.scheduled_epoch > tolerance {
+        return set_status(&ctx.pool, ev, "dead").await;
+    }
     let (retry, result, log_headers, request_payload, url) = match target {
         Err((retry, message)) => {
             // Counts as a failed attempt, with an `{"error": …}` request payload.
@@ -760,93 +833,148 @@ pub fn spawn(
             error!(target: "scheduled-trigger", "scheduled events disabled: {e}");
             return;
         }
-        if let Err(e) = unlock_stale(&ctx.pool).await {
-            warn!(target: "scheduled-trigger", "could not unlock stale scheduled events: {e}");
-        }
         let generator = tokio::spawn(generator_loop(ctx.clone(), shutdown.clone()));
         delivery_loop(ctx, shutdown).await;
         let _ = generator.await;
     })
 }
 
+/// Reconcile after startup and every metadata change, and top up cron events every minute
+/// (at once for a new metadata version, so new triggers get their first events quickly).
 async fn generator_loop(ctx: Arc<Ctx>, shutdown: CancellationToken) {
-    let mut reconciled: Option<Arc<ScheduledTriggers>> = None;
+    let mut current: Option<Arc<ScheduledTriggers>> = None;
+    let mut reconciled = false;
+    let mut last_run: Option<Instant> = None;
     loop {
         let triggers = (ctx.provider)();
-        // After startup and after every metadata change.
-        if !reconciled
-            .as_ref()
-            .is_some_and(|r| Arc::ptr_eq(r, &triggers))
-        {
-            match reconcile_cron_events(&ctx.pool, &triggers).await {
-                Ok(()) => reconciled = Some(triggers.clone()),
-                Err(e) => error!(target: "scheduled-trigger", "cron event reconciliation: {e}"),
+        let changed = !current.as_ref().is_some_and(|c| Arc::ptr_eq(c, &triggers));
+        let due = last_run.is_none_or(|t| t.elapsed() >= GENERATOR_INTERVAL);
+        if changed || due {
+            if changed {
+                current = Some(triggers.clone());
+                reconciled = false;
             }
-        }
-        if let Err(e) = generate_cron_events(&ctx.pool, &triggers).await {
-            error!(target: "scheduled-trigger", "cron event generator: {e}");
+            if !reconciled {
+                match reconcile_cron_events(&ctx.pool, &triggers).await {
+                    Ok(()) => reconciled = true,
+                    Err(e) => {
+                        error!(target: "scheduled-trigger", "cron event reconciliation: {e}")
+                    }
+                }
+            }
+            if let Err(e) = generate_cron_events(&ctx.pool, &triggers).await {
+                error!(target: "scheduled-trigger", "cron event generator: {e}");
+            }
+            last_run = Some(Instant::now());
         }
         tokio::select! {
-            _ = tokio::time::sleep(GENERATOR_INTERVAL) => {}
+            _ = tokio::time::sleep(GENERATOR_POLL) => {}
             _ = shutdown.cancelled() => return,
         }
     }
 }
 
-/// Run one delivery iteration: lock due events and deliver them (bounded concurrency).
-async fn deliver_due(ctx: &Arc<Ctx>, sem: &Arc<Semaphore>) {
-    let names: Vec<String> = (ctx.provider)().cron.keys().cloned().collect();
-    for kind in [Kind::Cron, Kind::OneOff] {
-        if kind == Kind::Cron && names.is_empty() {
-            continue;
-        }
-        let events = match fetch_due(&ctx.pool, kind, &names).await {
-            Ok(e) => e,
-            Err(e) => {
-                error!(target: "scheduled-trigger", "could not fetch scheduled events: {e}");
-                continue;
-            }
-        };
-        let tasks = events.into_iter().map(|ev| {
-            let ctx = ctx.clone();
-            let sem = sem.clone();
-            async move {
-                let _permit = sem
-                    .acquire_owned()
-                    .await
-                    .expect("semaphore is never closed");
-                if let Err(e) = process(&ctx, &ev).await {
-                    error!(target: "scheduled-trigger", event_id = %ev.id, "{e}");
-                }
-            }
-        });
-        join_all(tasks).await;
-    }
+/// Events this instance has locked and not finished, by id.
+type Held = Arc<Mutex<HashMap<String, Kind>>>;
+
+/// The connection holding this instance's delivery advisory locks; taken out of the pool so
+/// the locks are released exactly when it closes (shutdown or a crash).
+async fn lock_holder(pool: &Pool) -> Result<Arc<ClientWrapper>, String> {
+    let object = pool.get().await.map_err(|e| e.to_string())?;
+    Ok(Arc::new(Object::take(object)))
 }
 
+/// Every [`DELIVERY_INTERVAL`]: release orphaned locks, then lock as many due events as there
+/// are free delivery slots and deliver them. On shutdown, stop fetching, give running
+/// deliveries the grace period, and put whatever is unfinished back to `scheduled`.
 async fn delivery_loop(ctx: Arc<Ctx>, shutdown: CancellationToken) {
     let sem = Arc::new(Semaphore::new(ctx.config.http_pool_size.max(1)));
+    let held: Held = Arc::default();
+    let mut tasks = JoinSet::new();
+    let mut holder: Option<Arc<ClientWrapper>> = None;
     loop {
-        // An iteration finishes its deliveries even during shutdown (bounded by the
-        // processing timeouts); the server's grace period caps the wait.
-        tokio::select! {
-            _ = deliver_due(&ctx, &sem) => {}
-            _ = shutdown.cancelled() => {
-                let _ = tokio::time::timeout(ctx.config.graceful_shutdown_timeout, deliver_wait(&sem, ctx.config.http_pool_size)).await;
-                return;
+        while tasks.try_join_next().is_some() {}
+        match unlock_stale(&ctx.pool).await {
+            Ok(0) => {}
+            Ok(n) => {
+                info!(target: "scheduled-trigger", "released {n} events locked by stopped instances")
+            }
+            Err(e) => {
+                warn!(target: "scheduled-trigger", "could not release orphaned scheduled events: {e}")
+            }
+        }
+        if holder.as_ref().is_none_or(|h| h.is_closed()) {
+            holder = match lock_holder(&ctx.pool).await {
+                Ok(h) => Some(h),
+                Err(e) => {
+                    error!(target: "scheduled-trigger", "could not connect to the metadata database: {e}");
+                    None
+                }
+            };
+        }
+        if let Some(h) = &holder {
+            let names: Vec<String> = (ctx.provider)().cron.keys().cloned().collect();
+            for kind in [Kind::Cron, Kind::OneOff] {
+                let free = sem.available_permits() as i64;
+                if free == 0 {
+                    break;
+                }
+                if kind == Kind::Cron && names.is_empty() {
+                    continue;
+                }
+                let events = match fetch_due(h, kind, &names, free).await {
+                    Ok(e) => e,
+                    Err(e) => {
+                        error!(target: "scheduled-trigger", "could not fetch scheduled events: {e}");
+                        continue;
+                    }
+                };
+                for ev in events {
+                    held.lock().expect("lock").insert(ev.id.clone(), kind);
+                    let permit = sem.clone().acquire_owned();
+                    let (ctx, held, h) = (ctx.clone(), held.clone(), h.clone());
+                    tasks.spawn(async move {
+                        let _permit = permit.await.expect("semaphore is never closed");
+                        if let Err(e) = process(&ctx, &ev).await {
+                            error!(target: "scheduled-trigger", event_id = %ev.id, "{e}");
+                        }
+                        held.lock().expect("lock").remove(&ev.id);
+                        let _ = h
+                            .execute(
+                                "SELECT pg_advisory_unlock($1, hashtext($2))",
+                                &[&DELIVERY_LOCK_CLASS, &ev.id],
+                            )
+                            .await;
+                    });
+                }
             }
         }
         tokio::select! {
             _ = tokio::time::sleep(DELIVERY_INTERVAL) => {}
-            _ = shutdown.cancelled() => return,
+            _ = shutdown.cancelled() => break,
         }
     }
-}
-
-async fn deliver_wait(sem: &Semaphore, n: usize) {
-    let _ = sem
-        .acquire_many(u32::try_from(n.max(1)).unwrap_or(u32::MAX))
-        .await;
+    let grace = ctx.config.graceful_shutdown_timeout;
+    let drained = tokio::time::timeout(grace, async { while tasks.join_next().await.is_some() {} })
+        .await
+        .is_ok();
+    if !drained {
+        tasks.abort_all();
+        while tasks.join_next().await.is_some() {}
+    }
+    let unfinished: Vec<(String, Kind)> = held.lock().expect("lock").drain().collect();
+    if !unfinished.is_empty() {
+        warn!(
+            target: "scheduled-trigger",
+            "{} scheduled events still in flight at shutdown, putting them back",
+            unfinished.len()
+        );
+        if let Err(e) = release(&ctx.pool, &unfinished).await {
+            error!(target: "scheduled-trigger", "could not release scheduled events: {e}");
+        }
+    }
+    // Dropping the holder closes its connection and with it any remaining advisory locks.
+    drop(holder);
 }
 
 #[cfg(test)]
