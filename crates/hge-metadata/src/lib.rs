@@ -5,6 +5,7 @@
 
 pub mod actions;
 mod actions_sdl;
+pub mod collections;
 pub mod dir;
 pub mod export;
 pub mod model;
@@ -12,6 +13,7 @@ pub mod store;
 
 use std::path::{Path, PathBuf};
 
+pub use collections::*;
 use hge_core::{Code, Error};
 pub use model::*;
 
