@@ -39,6 +39,7 @@ uuid.workspace = true
 workspace = true
 
 [dev-dependencies]
+hge-testdb.workspace = true
 serde_yaml.workspace = true
 tokio-postgres.workspace = true
 tower = { workspace = true, features = ["util"] }

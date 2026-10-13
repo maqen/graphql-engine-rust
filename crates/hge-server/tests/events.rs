@@ -1,5 +1,6 @@
-//! Event trigger conformance cases (`tests/events_cases/*.yaml`) against a real Postgres
-//! (`HASURA_GRAPHQL_DATABASE_URL`) and an in-process webhook. Skipped without a database.
+//! Event trigger conformance cases (`tests/events_cases/*.yaml`) against a throwaway database
+//! on the Postgres server `HASURA_GRAPHQL_DATABASE_URL` points at (see `hge-testdb`) and an
+//! in-process webhook. Skipped without a database.
 //!
 //! The engine boots from `tests/fixtures/events/metadata` (with the webhook address filled
 //! in), so this also covers catalog set-up and SQL trigger installation on startup.
@@ -93,10 +94,11 @@ fn metadata_dir(base: &str) -> PathBuf {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn event_trigger_cases() {
-    let Ok(url) = std::env::var("HASURA_GRAPHQL_DATABASE_URL") else {
+    let Some(db) = hge_testdb::TestDb::create("events").await else {
         eprintln!("HASURA_GRAPHQL_DATABASE_URL not set; skipping event trigger tests");
         return;
     };
+    let url = db.url().to_owned();
     let (client, conn) = tokio_postgres::connect(&url, tokio_postgres::NoTls)
         .await
         .unwrap();

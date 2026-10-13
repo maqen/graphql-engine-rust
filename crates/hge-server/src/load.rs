@@ -97,14 +97,15 @@ fn default_metadata(config: &ServerConfig) -> Metadata {
 fn resolve_url(url: &UrlConfig, config: &ServerConfig) -> Result<String, String> {
     match url {
         UrlConfig::Literal(s) => Ok(s.clone()),
-        UrlConfig::FromEnv { from_env } => match std::env::var(from_env) {
-            Ok(v) => Ok(v),
-            Err(_) if from_env == "HASURA_GRAPHQL_DATABASE_URL" => config
-                .database_url
-                .clone()
-                .ok_or_else(|| format!("environment variable \"{from_env}\" not set")),
-            Err(_) => Err(format!("environment variable \"{from_env}\" not set")),
-        },
+        // The server's own database URL (from that variable or `--database-url`) wins, so an
+        // embedding (the tests) can point it elsewhere without touching the environment.
+        UrlConfig::FromEnv { from_env } if from_env == "HASURA_GRAPHQL_DATABASE_URL" => config
+            .database_url
+            .clone()
+            .or_else(|| std::env::var(from_env).ok())
+            .ok_or_else(|| format!("environment variable \"{from_env}\" not set")),
+        UrlConfig::FromEnv { from_env } => std::env::var(from_env)
+            .map_err(|_| format!("environment variable \"{from_env}\" not set")),
         UrlConfig::Parameters {
             connection_parameters: p,
         } => {

@@ -1,5 +1,6 @@
-//! Cron triggers and one-off scheduled events against a real Postgres
-//! (`HASURA_GRAPHQL_DATABASE_URL`) and a mock webhook. Skipped without a database.
+//! Cron triggers and one-off scheduled events against a throwaway database on the Postgres
+//! server `HASURA_GRAPHQL_DATABASE_URL` points at (see `hge-testdb`) and a mock webhook. Skipped
+//! without a database.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
@@ -54,10 +55,11 @@ async fn query(pool: &Pool, sql: &str) -> Value {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn scheduled_events_end_to_end() {
-    let Ok(url) = std::env::var("HASURA_GRAPHQL_DATABASE_URL") else {
+    let Some(db) = hge_testdb::TestDb::create("scheduled").await else {
         eprintln!("HASURA_GRAPHQL_DATABASE_URL not set; skipping");
         return;
     };
+    let url = db.url().to_owned();
     let pool = deadpool_postgres::Config {
         url: Some(url),
         ..Default::default()

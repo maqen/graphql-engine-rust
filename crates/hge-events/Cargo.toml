@@ -22,6 +22,7 @@ tokio-util.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+hge-testdb.workspace = true
 axum.workspace = true
 
 [lints]

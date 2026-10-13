@@ -18,6 +18,7 @@ all = { level = "warn", priority = -1 }
 [workspace.dependencies]
 # internal crates
 hge-core = { path = "crates/hge-core" }
+hge-testdb = { path = "crates/hge-testdb" }
 hge-metadata = { path = "crates/hge-metadata" }
 hge-metadata-api = { path = "crates/hge-metadata-api" }
 hge-ir = { path = "crates/hge-ir" }
