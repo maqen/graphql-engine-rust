@@ -185,13 +185,9 @@ fn coerce_variables(
                 ))
                 .with_path(path));
             }
-            None => {
-                return Err(Error::validation(format!(
-                    "unknown type '{}' for variable '{name}'",
-                    ty.base()
-                ))
-                .with_path(path));
-            }
+            // V2 only type-checks a variable where it is used (against the expected type), so
+            // an unused variable may name a type the schema doesn't have.
+            None => {}
         }
         let value = match provided.get(&name) {
             Some(v) => Some(v.clone()),
