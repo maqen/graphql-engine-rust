@@ -42,6 +42,32 @@ pub struct TableCatalog {
     pub primary_key: Option<Vec<String>>,
     pub unique_constraints: Vec<Vec<String>>,
     pub foreign_keys: Vec<ForeignKey>,
+    /// The primary key and unique indexes, by name (the `on_conflict` targets), sorted by name.
+    pub constraints: Vec<UniqueConstraint>,
+    /// Which DML statements the relation accepts (views may not accept all).
+    pub mutability: TableMutability,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UniqueConstraint {
+    pub name: String,
+    /// Indexed columns in index order (empty for expression indexes).
+    pub columns: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TableMutability {
+    pub insertable: bool,
+    pub updatable: bool,
+    pub deletable: bool,
+}
+
+impl TableMutability {
+    pub const ALL: TableMutability = TableMutability {
+        insertable: true,
+        updatable: true,
+        deletable: true,
+    };
 }
 
 impl TableCatalog {
@@ -58,7 +84,17 @@ pub struct ColumnInfo {
     pub has_default: bool,
     pub is_identity: bool,
     pub is_generated: bool,
+    /// `GENERATED ALWAYS AS IDENTITY`: cannot be inserted or updated.
+    #[serde(default)]
+    pub is_identity_always: bool,
     pub description: Option<String>,
+}
+
+impl ColumnInfo {
+    /// May appear in an `INSERT` column list / `UPDATE … SET`.
+    pub fn is_mutable(&self) -> bool {
+        !self.is_generated && !self.is_identity_always
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

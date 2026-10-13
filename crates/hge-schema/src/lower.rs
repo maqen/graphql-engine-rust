@@ -40,6 +40,7 @@ pub fn lower(rs: &RoleSchema, op: &NormalizedOperation<'_>) -> Result<Operation,
                     source: table.source.clone(),
                     query: QueryRoot::SelectOne(lw.select_by_pk(table, field)?),
                 })),
+                FieldKind::Mutation(m) => crate::mutation::lower::root_field(&lw, m, field)?,
                 other => {
                     return Err(Error::unexpected(format!(
                         "unexpected root field kind {other:?}"
@@ -55,12 +56,12 @@ pub fn lower(rs: &RoleSchema, op: &NormalizedOperation<'_>) -> Result<Operation,
     })
 }
 
-struct Lowerer<'a> {
-    rs: &'a RoleSchema,
+pub(crate) struct Lowerer<'a> {
+    pub(crate) rs: &'a RoleSchema,
 }
 
 impl Lowerer<'_> {
-    fn target(&self, rel: &RelationshipInfo) -> Result<&Arc<TableInfo>, Error> {
+    pub(crate) fn target(&self, rel: &RelationshipInfo) -> Result<&Arc<TableInfo>, Error> {
         self.rs
             .tables
             .get(&rel.source, &rel.target)
@@ -120,7 +121,7 @@ impl Lowerer<'_> {
         Ok(select)
     }
 
-    fn fields(
+    pub(crate) fn fields(
         &self,
         _table: &TableInfo,
         selection: &[SelectedField<'_>],
@@ -219,7 +220,7 @@ impl Lowerer<'_> {
         Ok(args)
     }
 
-    fn bool_exp(
+    pub(crate) fn bool_exp(
         &self,
         table: &TableInfo,
         obj: &Map<String, Json>,

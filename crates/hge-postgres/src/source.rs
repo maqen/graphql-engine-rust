@@ -4,20 +4,21 @@ use std::sync::Arc;
 
 use deadpool_postgres::{Object, Pool};
 use hge_core::{Code, Error, QualifiedTable, Session, SourceCatalog};
-use hge_ir::{BoxFuture, QueryRoot, SourceExecutor};
+use hge_ir::{BoxFuture, Mutation, QueryRoot, SourceExecutor};
 use serde_json::json;
 use tokio_postgres::types::{ToSql, Type};
 use tokio_postgres_rustls::MakeRustlsConnect;
 
 use crate::introspect;
 use crate::param::TextParam;
-use crate::pool::{PoolConfig, connect_pool};
+use crate::pool::{IsolationLevel, PoolConfig, connect_pool};
 use crate::translate::translate_query;
 
 pub struct PgSource {
     pub name: Arc<str>,
     pool: Pool,
     use_prepared_statements: bool,
+    isolation_level: IsolationLevel,
     /// For cancelling queries whose request went away.
     tls: MakeRustlsConnect,
 }
@@ -30,6 +31,7 @@ impl PgSource {
             pool,
             tls,
             use_prepared_statements: config.use_prepared_statements,
+            isolation_level: config.isolation_level,
         })
     }
 
@@ -37,7 +39,20 @@ impl PgSource {
         &self.pool
     }
 
-    async fn client(&self) -> Result<Object, Error> {
+    pub(crate) fn tls(&self) -> &MakeRustlsConnect {
+        &self.tls
+    }
+
+    pub(crate) fn use_prepared_statements(&self) -> bool {
+        self.use_prepared_statements
+    }
+
+    /// The isolation level of mutation transactions (source `isolation_level`).
+    pub fn isolation_level(&self) -> IsolationLevel {
+        self.isolation_level
+    }
+
+    pub(crate) async fn client(&self) -> Result<Object, Error> {
         self.pool.get().await.map_err(|e| {
             Error::new(
                 Code::PostgresError,
@@ -83,11 +98,8 @@ impl PgSource {
         let prepared = self.use_prepared_statements;
         // If this future is dropped mid-query (client disconnected), cancel the query in
         // Postgres instead of letting it run to completion.
-        let mut guard = CancelOnDrop {
-            client: Some(client),
-            tls: &self.tls,
-        };
-        let client = guard.client.as_ref().expect("set above");
+        let mut guard = CancelOnDrop::new(client, &self.tls);
+        let client = guard.client();
         let result = if prepared {
             // The cache never evicts; start over rather than grow without bound.
             if client.statement_cache.size() >= MAX_CACHED_STATEMENTS {
@@ -147,19 +159,38 @@ impl SourceExecutor for PgSource {
                 .collect())
         })
     }
+
+    fn execute_mutations<'a>(
+        &'a self,
+        fields: &'a [&'a Mutation],
+        session: &'a Session,
+    ) -> BoxFuture<'a, Result<Vec<String>, Error>> {
+        Box::pin(crate::mutation::execute(self, fields, session))
+    }
 }
 
 /// Map a driver error to a V2-style error (`data-exception`, `constraint-violation`, …).
 /// Holds a pooled client during a query. Dropped before [`CancelOnDrop::disarm`] (the
 /// request future was dropped), it detaches the connection from the pool, so nothing else
 /// can be running on it, and cancels the query on the server.
-struct CancelOnDrop<'a> {
+pub(crate) struct CancelOnDrop<'a> {
     client: Option<Object>,
     tls: &'a MakeRustlsConnect,
 }
 
-impl CancelOnDrop<'_> {
-    fn disarm(&mut self) {
+impl<'a> CancelOnDrop<'a> {
+    pub(crate) fn new(client: Object, tls: &'a MakeRustlsConnect) -> Self {
+        CancelOnDrop {
+            client: Some(client),
+            tls,
+        }
+    }
+
+    pub(crate) fn client(&self) -> &Object {
+        self.client.as_ref().expect("not disarmed")
+    }
+
+    pub(crate) fn disarm(&mut self) {
         // Dropping the object returns it to the pool.
         self.client = None;
     }
@@ -182,7 +213,7 @@ impl Drop for CancelOnDrop<'_> {
 }
 
 /// Per-connection prepared statements kept before the cache is reset.
-const MAX_CACHED_STATEMENTS: usize = 1024;
+pub(crate) const MAX_CACHED_STATEMENTS: usize = 1024;
 
 pub fn pg_error(e: tokio_postgres::Error, sql: &str) -> Error {
     pg_error_with(e, sql, false)
@@ -193,17 +224,7 @@ pub fn pg_error_with(e: tokio_postgres::Error, sql: &str, prepared: bool) -> Err
     match e.as_db_error() {
         Some(db) => {
             let state = db.code().code();
-            let code = match &state[..2] {
-                "22" => Code::DataException,
-                "23" => Code::ConstraintViolation,
-                "42" if state == "42501" => Code::PermissionDenied,
-                _ => Code::PostgresError,
-            };
-            let message = if code == Code::PostgresError {
-                "database query error".to_owned()
-            } else {
-                db.message().to_owned()
-            };
+            let (code, message) = classify(state, db.message());
             Error::new(code, message).with_internal(json!({
                 "statement": sql,
                 "prepared": prepared,
@@ -216,7 +237,42 @@ pub fn pg_error_with(e: tokio_postgres::Error, sql: &str, prepared: bool) -> Err
                 },
             }))
         }
-        None => Error::new(Code::PostgresError, format!("connection error: {e}"))
-            .with_internal(json!({ "statement": sql })),
+        None => Error::new(Code::PostgresError, "connection error")
+            .with_internal(json!({ "statement": sql, "error": e.to_string() })),
+    }
+}
+
+/// V2's mapping of a SQLSTATE to an error code and message (`dmlTxErrorHandler`): integrity
+/// and data errors are shown to clients, everything else is `database query error`.
+fn classify(state: &str, message: &str) -> (Code, String) {
+    let prefixed = |p: &str| format!("{p}{message}");
+    match state {
+        "23001" => (
+            Code::ConstraintViolation,
+            prefixed("Can not delete or update due to data being referred. "),
+        ),
+        "23502" => (Code::ConstraintViolation, prefixed("Not-NULL violation. ")),
+        "23503" => (
+            Code::ConstraintViolation,
+            prefixed("Foreign key violation. "),
+        ),
+        "23505" => (
+            Code::ConstraintViolation,
+            prefixed("Uniqueness violation. "),
+        ),
+        "23514" => (
+            Code::PermissionError,
+            prefixed("Check constraint violation. "),
+        ),
+        "23P01" => (Code::ConstraintViolation, prefixed("Exclusion violation. ")),
+        "22025" => (Code::BadRequest, message.to_owned()),
+        "42704" => (Code::ConstraintError, message.to_owned()),
+        "42P10" => (
+            Code::ConstraintError,
+            "there is no unique or exclusion constraint on target column(s)".to_owned(),
+        ),
+        _ if state.starts_with("23") => (Code::ConstraintViolation, message.to_owned()),
+        _ if state.starts_with("22") => (Code::DataException, message.to_owned()),
+        _ => (Code::Unexpected, "database query error".to_owned()),
     }
 }

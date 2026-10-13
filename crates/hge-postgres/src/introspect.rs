@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use hge_core::{
     ColumnInfo, ColumnType, Error, ForeignKey, QualifiedTable, SourceCatalog, TableCatalog,
-    TableKind, TypeKind,
+    TableKind, TableMutability, TypeKind, UniqueConstraint,
 };
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -25,7 +25,8 @@ SELECT coalesce(json_agg(json_build_object(
       'nullable', NOT a.attnotnull,
       'has_default', a.atthasdef,
       'is_identity', a.attidentity <> '',
-      'is_generated', a.attgenerated <> ''
+      'is_generated', a.attgenerated <> '',
+      'is_identity_always', a.attidentity = 'a'
     ) ORDER BY a.attnum), '[]')
     FROM pg_catalog.pg_attribute a
     JOIN (SELECT ty.oid, ty.typname, ty.typtype, ty.typelem, ty.typcategory, ty.typbasetype,
@@ -58,6 +59,18 @@ SELECT coalesce(json_agg(json_build_object(
       WHERE idx.indrelid = c.oid AND idx.indisunique AND NOT idx.indisprimary
     ) u
   ),
+  'constraints', (
+    SELECT coalesce(json_agg(json_build_object(
+      'name', ic.relname,
+      'columns', (SELECT coalesce(json_agg(a.attname ORDER BY array_position(idx.indkey::int2[], a.attnum)), '[]')
+                    FROM pg_catalog.pg_attribute a
+                   WHERE a.attrelid = c.oid AND a.attnum = ANY (idx.indkey))
+    ) ORDER BY ic.relname), '[]')
+    FROM pg_catalog.pg_index idx
+    JOIN pg_catalog.pg_class ic ON ic.oid = idx.indexrelid
+    WHERE idx.indrelid = c.oid AND idx.indisunique
+  ),
+  'updatable', pg_catalog.pg_relation_is_updatable(c.oid::regclass, true),
   'foreign_keys', (
     SELECT coalesce(json_agg(json_build_object(
       'constraint', r.conname,
@@ -104,6 +117,9 @@ struct RawTable {
     columns: Vec<RawColumn>,
     primary_key: Option<Vec<String>>,
     unique_constraints: Vec<Option<Vec<String>>>,
+    constraints: Vec<UniqueConstraint>,
+    /// `pg_relation_is_updatable` bit mask.
+    updatable: i32,
     foreign_keys: Vec<RawFk>,
 }
 
@@ -118,6 +134,7 @@ struct RawColumn {
     has_default: bool,
     is_identity: bool,
     is_generated: bool,
+    is_identity_always: bool,
 }
 
 #[derive(Deserialize)]
@@ -184,6 +201,7 @@ pub fn parse_catalog(tables_json: &str, enums_json: &str) -> Result<SourceCatalo
                         has_default: c.has_default,
                         is_identity: c.is_identity,
                         is_generated: c.is_generated,
+                        is_identity_always: c.is_identity_always,
                         description: None,
                     },
                 )
@@ -208,6 +226,12 @@ pub fn parse_catalog(tables_json: &str, enums_json: &str) -> Result<SourceCatalo
                 primary_key: t.primary_key,
                 unique_constraints: t.unique_constraints.into_iter().flatten().collect(),
                 foreign_keys,
+                constraints: t.constraints,
+                mutability: TableMutability {
+                    insertable: t.updatable & 8 != 0,
+                    updatable: t.updatable & 4 != 0,
+                    deletable: t.updatable & 16 != 0,
+                },
             },
         );
     }

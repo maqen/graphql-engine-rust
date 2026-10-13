@@ -6,6 +6,7 @@
 //! database type, and permission filters are already merged in.
 
 pub mod backend;
+pub mod mutation;
 pub mod permissions;
 pub mod select;
 pub mod value;
@@ -13,6 +14,7 @@ pub mod value;
 use std::sync::Arc;
 
 pub use backend::{BoxFuture, SourceExecutor};
+pub use mutation::*;
 pub use permissions::*;
 pub use select::*;
 pub use value::*;
@@ -39,6 +41,8 @@ pub enum RootField {
     Static(serde_json::Value),
     /// A query against a database source.
     Database(Box<DatabaseRootField>),
+    /// A mutation against a database source.
+    Mutation(Box<MutationRootField>),
 }
 
 /// A root field executed by a source's backend.

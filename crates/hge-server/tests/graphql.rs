@@ -33,6 +33,8 @@ struct FileConfig {
     stringify_numeric_types: bool,
     v1_boolean_null_collapse: bool,
     preserve_401_errors: bool,
+    /// `HASURA_GRAPHQL_ADMIN_INTERNAL_ERRORS` (default `true`).
+    admin_internal_errors: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -111,6 +113,9 @@ async fn run_file(path: &Path, database_url: &str) -> Vec<String> {
         stringify_numeric_types: c.stringify_numeric_types,
         v1_boolean_null_collapse: c.v1_boolean_null_collapse,
         preserve_401_errors: c.preserve_401_errors,
+        admin_internal_errors: c
+            .admin_internal_errors
+            .unwrap_or(ServerConfig::default().admin_internal_errors),
         ..ServerConfig::default()
     };
     let engine = hge_server::build_engine(config)

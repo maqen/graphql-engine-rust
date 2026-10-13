@@ -183,6 +183,8 @@ pub enum FieldKind {
     SelectByPk(Arc<TableInfo>),
     /// The placeholder field of an empty query root.
     NoQueriesAvailable,
+    /// Mutation root fields and `t_mutation_response` fields.
+    Mutation(crate::mutation::MutationField),
 }
 
 #[derive(Debug, Clone)]

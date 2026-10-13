@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use hge_core::{
     ColumnInfo, ColumnType, ForeignKey, QualifiedTable, RoleName, SourceCatalog, TableCatalog,
-    TableKind,
+    TableKind, TableMutability,
 };
 use hge_ir::{BoolExp, ColumnCompareOp, ColumnRef, CompareOp, RootFields, Value};
 use indexmap::IndexMap;
@@ -20,6 +20,7 @@ fn column(name: &str, ty: &str, nullable: bool) -> (String, ColumnInfo) {
             nullable,
             has_default: false,
             is_identity: false,
+            is_identity_always: false,
             is_generated: false,
             description: None,
         },
@@ -43,6 +44,8 @@ fn catalog() -> SourceCatalog {
             ]),
             primary_key: Some(vec!["id".into()]),
             unique_constraints: vec![],
+            constraints: vec![],
+            mutability: TableMutability::ALL,
             foreign_keys: vec![],
         },
     );
@@ -60,6 +63,8 @@ fn catalog() -> SourceCatalog {
             ]),
             primary_key: Some(vec!["id".into()]),
             unique_constraints: vec![],
+            constraints: vec![],
+            mutability: TableMutability::ALL,
             foreign_keys: vec![ForeignKey {
                 constraint: "article_author_id_fkey".into(),
                 ref_table: author,

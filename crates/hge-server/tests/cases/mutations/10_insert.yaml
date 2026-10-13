@@ -1,0 +1,149 @@
+config:
+  admin_internal_errors: false
+
+cases:
+  - description: insert several rows, columns missing in some rows get their defaults
+    query:
+      query: |
+        mutation {
+          insert_author(objects: [{name: "Dan", rating: 1.5}, {name: "Eve", tags: ["x"]}]) {
+            affected_rows
+            returning { id name rating tags createdAt }
+            __typename
+          }
+        }
+    response:
+      data:
+        insert_author:
+          affected_rows: 2
+          returning:
+            - { id: 4, name: Dan, rating: 1.5, tags: null, createdAt: "2020-01-01T00:00:00+00:00" }
+            - { id: 5, name: Eve, rating: null, tags: [x], createdAt: "2020-01-01T00:00:00+00:00" }
+          __typename: author_mutation_response
+
+  - description: insert_one with variables returns the row
+    query:
+      query: |
+        mutation ($o: author_insert_input!) {
+          insert_author_one(object: $o) { id name info mood }
+        }
+      variables:
+        o: { name: Fay, info: { k: [1, 2] }, mood: happy }
+    response:
+      data:
+        insert_author_one: { id: 6, name: Fay, info: { k: [1, 2] }, mood: happy }
+
+  - description: empty objects list runs nothing
+    query:
+      query: "mutation { insert_author(objects: []) { affected_rows returning { id } t: __typename } }"
+    response:
+      data:
+        insert_author: { affected_rows: 0, returning: [], t: author_mutation_response }
+
+  - description: uniqueness violation is reported at the objects argument
+    query:
+      query: 'mutation { insert_author(objects: [{name: "Alice"}]) { affected_rows } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_author.args.objects", code: constraint-violation }
+          message: Uniqueness violation. duplicate key value violates unique constraint "author_name_key"
+
+  - description: not-null violation on insert_one is reported at the object argument
+    query:
+      query: "mutation { insert_author_one(object: {rating: 1}) { id } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_author_one.args.object", code: constraint-violation }
+          message: 'Not-NULL violation. null value in column "name" of relation "author" violates not-null constraint'
+
+  - description: foreign key violation
+    query:
+      query: 'mutation { insert_article(objects: {title: "t", author_id: 99}) { affected_rows } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_article.args.objects", code: constraint-violation }
+          message: 'Foreign key violation. insert or update on table "article" violates foreign key constraint "article_author_id_fkey"'
+
+  - description: null for a non-nullable column is rejected before running anything (path uses the field name, not the alias)
+    query:
+      query: 'mutation { x: insert_author(objects: [{name: "ok"}, {name: null}]) { affected_rows } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_author.args.objects[1].name", code: validation-failed }
+          message: unexpected null value for type 'String'
+
+  - description: invalid input syntax is a data exception
+    query:
+      query: 'mutation { insert_article(objects: {title: "t", author_id: 1, published_on: "nope"}) { affected_rows } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_article.args.objects", code: data-exception }
+          message: 'invalid input syntax for type date: "nope"'
+
+  - description: upsert updates the listed columns on conflict
+    query:
+      query: |
+        mutation {
+          insert_author(
+            objects: [{id: 1, name: "Alice", rating: 9}, {name: "Gus"}]
+            on_conflict: {constraint: author_pkey, update_columns: [rating]}
+          ) { affected_rows returning { id name rating } }
+        }
+    response:
+      data:
+        insert_author:
+          affected_rows: 2
+          returning:
+            - { id: 1, name: Alice, rating: 9 }
+            - { id: 9, name: Gus, rating: null }
+
+  - description: upsert with a where clause that does not match skips the update
+    query:
+      query: |
+        mutation {
+          insert_author_one(
+            object: {name: "Bob", rating: 0}
+            on_conflict: {constraint: author_name_key, update_columns: [rating], where: {rating: {_gt: 100}}}
+          ) { id rating }
+        }
+    response:
+      data:
+        insert_author_one: null
+
+  - description: insert or ignore with empty update_columns
+    query:
+      query: |
+        mutation {
+          insert_author(objects: [{name: "Bob"}, {name: "Hal"}], on_conflict: {constraint: author_name_key}) {
+            affected_rows returning { name }
+          }
+        }
+    response:
+      data:
+        insert_author: { affected_rows: 1, returning: [{ name: Hal }] }
+
+  - description: returning with relationships sees the rows inserted by the mutation
+    query:
+      query: |
+        mutation {
+          insert_article(objects: [{title: "New", author_id: 3}]) {
+            returning { title author { name articles { title } } }
+          }
+        }
+    response:
+      data:
+        insert_article:
+          returning:
+            - { title: New, author: { name: Carol, articles: [{ title: New }] } }
+
+  - description: the inserted rows are visible to later queries
+    query:
+      query: "{ author(where: {id: {_gte: 4}}, order_by: {id: asc}) { id name rating } }"
+    response:
+      data:
+        author:
+          - { id: 4, name: Dan, rating: 1.5 }
+          - { id: 5, name: Eve, rating: null }
+          - { id: 6, name: Fay, rating: null }
+          - { id: 9, name: Gus, rating: null }
+          - { id: 12, name: Hal, rating: null }

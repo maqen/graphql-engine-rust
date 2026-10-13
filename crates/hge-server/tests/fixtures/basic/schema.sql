@@ -8,7 +8,7 @@ CREATE TYPE mood AS ENUM ('happy', 'sad');
 
 CREATE TABLE author (
   id serial PRIMARY KEY,
-  name text NOT NULL,
+  name text NOT NULL CONSTRAINT author_name_key UNIQUE,
   rating numeric,
   big bigint,
   tags text[],
@@ -16,6 +16,17 @@ CREATE TABLE author (
   mood mood,
   "createdAt" timestamptz NOT NULL DEFAULT '2020-01-01T00:00:00Z'
 );
+
+-- Mutations set "hasura.user" (the session variables) for triggers, like V2.
+CREATE FUNCTION record_hasura_user() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.name = 'Who' THEN
+    NEW.info := current_setting('hasura.user', true)::jsonb;
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER record_hasura_user BEFORE INSERT ON author
+  FOR EACH ROW EXECUTE FUNCTION record_hasura_user();
 
 CREATE TABLE article (
   id serial PRIMARY KEY,

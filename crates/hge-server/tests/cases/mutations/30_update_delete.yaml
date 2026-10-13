@@ -1,0 +1,169 @@
+config:
+  admin_internal_errors: false
+
+cases:
+  - description: update with _set and _inc
+    query:
+      query: |
+        mutation {
+          update_author(where: {id: {_lte: 2}}, _set: {name: "Al"}, _inc: {big: -1}) {
+            affected_rows
+            returning { id name big }
+          }
+        }
+    response:
+      errors:
+        - extensions: { path: "$", code: constraint-violation }
+          message: Uniqueness violation. duplicate key value violates unique constraint "author_name_key"
+
+  - description: update by primary key with _inc on numeric and _set to null
+    query:
+      query: |
+        mutation {
+          update_author_by_pk(pk_columns: {id: 1}, _inc: {rating: 0.5, big: -7}, _set: {mood: null}) {
+            id rating big mood
+          }
+        }
+    response:
+      data:
+        update_author_by_pk: { id: 1, rating: 5.0, big: 9223372036854775800, mood: null }
+
+  - description: update by primary key of a missing row returns null
+    query:
+      query: 'mutation { update_author_by_pk(pk_columns: {id: 99}, _set: {name: "x"}) { id } }'
+    response:
+      data: { update_author_by_pk: null }
+
+  - description: jsonb operators
+    query:
+      query: |
+        mutation {
+          a: update_author_by_pk(pk_columns: {id: 1}, _append: {info: {extra: true}}) { info }
+          b: update_author_by_pk(pk_columns: {id: 1}, _delete_key: {info: "city"}) { info }
+          c: update_author_by_pk(pk_columns: {id: 1}, _delete_at_path: {info: ["langs", "0"]}) { info }
+          d: update_author_by_pk(pk_columns: {id: 1}, _prepend: {info: {first: 1}}) { info }
+          e: update_author_by_pk(pk_columns: {id: 2}, _set: {info: [1, 2, 3]}) { info }
+          f: update_author_by_pk(pk_columns: {id: 2}, _delete_elem: {info: -1}) { info }
+        }
+    response:
+      data:
+        a: { info: { city: Oslo, extra: true, langs: [rust, go] } }
+        b: { info: { extra: true, langs: [rust, go] } }
+        c: { info: { extra: true, langs: [go] } }
+        d: { info: { extra: true, first: 1, langs: [go] } }
+        e: { info: [1, 2, 3] }
+        f: { info: [1, 2] }
+
+  - description: a column may appear in only one operator
+    query:
+      query: 'mutation { update_author(where: {}, _set: {rating: 1, name: "a"}, _inc: {rating: 1}, _append: {info: {}}, _prepend: {info: {}}) { affected_rows } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.update_author.args", code: validation-failed }
+          message: "Column found in multiple operators: ['info', 'rating']."
+
+  - description: null for a non-nullable column in _set, and for _delete_elem
+    query:
+      query: |
+        mutation {
+          a: update_author(where: {}, _set: {name: null}) { affected_rows }
+        }
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.update_author.args._set.name", code: validation-failed }
+          message: unexpected null value for type 'String'
+
+  - description: _delete_elem takes a non-null Int
+    query:
+      query: "mutation { update_author(where: {}, _delete_elem: {info: null}) { affected_rows } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.update_author.args._delete_elem.info", code: validation-failed }
+          message: unexpected null value for type 'Int'
+
+  - description: an update with nothing to set runs nothing
+    query:
+      query: |
+        mutation {
+          update_author(where: {}) { affected_rows returning { id } __typename }
+          update_author_by_pk(pk_columns: {id: 1}) { id }
+        }
+    response:
+      data:
+        update_author: { affected_rows: 0, returning: [], __typename: author_mutation_response }
+        update_author_by_pk: {}
+
+  - description: update_many runs the batches in order; later batches see earlier ones
+    query:
+      query: |
+        mutation {
+          update_author_many(updates: [
+            {where: {id: {_eq: 3}}, _set: {rating: 1}},
+            {where: {rating: {_eq: 1}}, _inc: {rating: 1}},
+            {where: {id: {_eq: 99}}, _set: {rating: 0}}
+          ]) { affected_rows returning { id rating } }
+        }
+    response:
+      data:
+        update_author_many:
+          - { affected_rows: 1, returning: [{ id: 3, rating: 1 }] }
+          - { affected_rows: 1, returning: [{ id: 3, rating: 2 }] }
+          - { affected_rows: 0, returning: [] }
+
+  - description: returning with a relationship sees the update
+    query:
+      query: |
+        mutation {
+          update_article(where: {author_id: {_eq: 2}}, _set: {author_id: 3}) {
+            affected_rows
+            returning { id author { name articles_count: articles(order_by: {id: asc}) { id } } }
+          }
+        }
+    response:
+      data:
+        update_article:
+          affected_rows: 2
+          returning:
+            - { id: 3, author: { name: Carol, articles_count: [{ id: 3 }, { id: 4 }] } }
+            - { id: 4, author: { name: Carol, articles_count: [{ id: 3 }, { id: 4 }] } }
+
+  - description: delete by primary key
+    query:
+      query: "mutation { delete_article_by_pk(id: 2) { id title } missing: delete_article_by_pk(id: 2) { id } }"
+    response:
+      data:
+        delete_article_by_pk: { id: 2, title: Draft notes }
+        missing: null
+
+  - description: delete with where, returning with relationship
+    query:
+      query: |
+        mutation {
+          delete_article(where: {author_id: {_eq: 3}}) {
+            affected_rows
+            returning { id author { name articles { id } } }
+          }
+        }
+    response:
+      data:
+        delete_article:
+          affected_rows: 2
+          returning:
+            - { id: 3, author: { name: Carol, articles: [] } }
+            - { id: 4, author: { name: Carol, articles: [] } }
+
+  - description: a restricted delete is a foreign key violation
+    query:
+      query: "mutation { delete_author(where: {id: {_eq: 1}}) { affected_rows } }"
+    response:
+      errors:
+        - extensions: { path: "$", code: constraint-violation }
+          message: 'Foreign key violation. update or delete on table "author" violates foreign key constraint "article_author_id_fkey" on table "article"'
+
+  - description: delete_author is required to have a where argument
+    query:
+      query: "mutation { delete_author { affected_rows } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.delete_author.args.where", code: validation-failed }
+          message: missing required field 'where'

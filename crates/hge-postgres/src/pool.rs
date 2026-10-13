@@ -25,6 +25,37 @@ pub struct PoolConfig {
     pub pool_timeout: Option<u64>,
     /// Use cached prepared statements (V2 `use_prepared_statements`).
     pub use_prepared_statements: bool,
+    /// Isolation level of mutation transactions (V2 `isolation_level`).
+    pub isolation_level: IsolationLevel,
+}
+
+/// A source's transaction isolation level.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum IsolationLevel {
+    #[default]
+    ReadCommitted,
+    RepeatableRead,
+    Serializable,
+}
+
+impl IsolationLevel {
+    /// Parse V2's metadata value (`read-committed`, `repeatable-read`, `serializable`).
+    pub fn from_metadata(s: &str) -> Option<Self> {
+        Some(match s {
+            "read-committed" => IsolationLevel::ReadCommitted,
+            "repeatable-read" => IsolationLevel::RepeatableRead,
+            "serializable" => IsolationLevel::Serializable,
+            _ => return None,
+        })
+    }
+
+    pub fn sql(self) -> &'static str {
+        match self {
+            IsolationLevel::ReadCommitted => "READ COMMITTED",
+            IsolationLevel::RepeatableRead => "REPEATABLE READ",
+            IsolationLevel::Serializable => "SERIALIZABLE",
+        }
+    }
 }
 
 impl Default for PoolConfig {
@@ -34,6 +65,7 @@ impl Default for PoolConfig {
             idle_timeout: Some(180),
             pool_timeout: None,
             use_prepared_statements: true,
+            isolation_level: IsolationLevel::ReadCommitted,
         }
     }
 }
