@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use hge_core::{ColumnType, Error};
+use hge_core::{Code, ColumnType, Error};
 use hge_ir::{
     BoolExp, ColumnField, CompareOp, DatabaseRootField, Field, JsonPathElement, NullsOrder,
     Operation, OrderBy, OrderByTarget, OrderDirection, QueryRoot, RelationshipSelect, RootField,
@@ -495,6 +495,11 @@ fn to_text(v: &Json, ty: &ColumnType, path: &str) -> Result<Option<String>, Erro
     if scalars::is_json_like(ty) {
         return Ok(Some(v.to_string()));
     }
+    if scalars::is_geo(ty) {
+        crate::geojson::validate(v)
+            .map_err(|m| Error::new(Code::ParseFailed, m).with_path(path.to_owned()))?;
+        return Ok(Some(v.to_string()));
+    }
     Ok(Some(match v {
         Json::String(s) => s.clone(),
         Json::Number(n) if ty.name == "numeric" => numeric_text(n),
@@ -504,13 +509,82 @@ fn to_text(v: &Json, ty: &ColumnType, path: &str) -> Result<Option<String>, Erro
     }))
 }
 
-/// V2 reads JSON numbers as Haskell `Scientific`s and sends them to Postgres in its `show`
-/// form, which writes integers below 10^7 with a `.0`: `2` is stored in a `numeric` column as
-/// `2.0` (and read back as `2.0`).
+/// V2 reads JSON numbers as Haskell `Scientific`s and sends them to Postgres in their `show`
+/// form. That changes a `numeric`'s scale: `2` is stored as `2.0`, `-1E-30` as `-1.0e-30`
+/// (one more digit of scale than `-1e-30`).
 fn numeric_text(n: &serde_json::Number) -> String {
-    match n.as_i64() {
-        Some(i) if i.unsigned_abs() < 10_000_000 => format!("{i}.0"),
-        _ => n.to_string(),
+    scientific_show(&n.to_string()).unwrap_or_else(|| n.to_string())
+}
+
+/// Haskell's `show` of the `Scientific` written as `s` (`formatScientific Generic Nothing`):
+/// fixed notation for 0.1 <= |x| < 10^7, otherwise `d.ddde<exp>`; always a fractional digit.
+fn scientific_show(s: &str) -> Option<String> {
+    let (negative, s) = match s.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, s),
+    };
+    let (mantissa, exp) = match s.find(['e', 'E']) {
+        Some(i) => (
+            &s[..i],
+            s[i + 1..].trim_start_matches('+').parse::<i64>().ok()?,
+        ),
+        None => (s, 0),
+    };
+    let (int, frac) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    if !(int.chars().chain(frac.chars())).all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    // value = 0.<digits> * 10^e, digits without leading or trailing zeros.
+    let all: String = format!("{int}{frac}");
+    let leading = all.len() - all.trim_start_matches('0').len();
+    let digits = all.trim_matches('0');
+    let sign = if negative { "-" } else { "" };
+    if digits.is_empty() {
+        return Some(format!("{sign}0.0"));
+    }
+    let e = int.len() as i64 - leading as i64 + exp;
+    let shown = if !(0..=7).contains(&e) {
+        let (first, rest) = digits.split_at(1);
+        let rest = if rest.is_empty() { "0" } else { rest };
+        format!("{first}.{rest}e{}", e - 1)
+    } else if e == 0 {
+        format!("0.{digits}")
+    } else {
+        let e = e as usize;
+        let int: String = digits
+            .chars()
+            .chain(std::iter::repeat('0'))
+            .take(e)
+            .collect();
+        let frac = digits.get(e..).filter(|f| !f.is_empty()).unwrap_or("0");
+        format!("{int}.{frac}")
+    };
+    Some(format!("{sign}{shown}"))
+}
+
+#[cfg(test)]
+mod scientific_tests {
+    use super::scientific_show;
+
+    #[test]
+    fn matches_haskell_show() {
+        for (input, shown) in [
+            ("2", "2.0"),
+            ("-2", "-2.0"),
+            ("0", "0.0"),
+            ("0.5", "0.5"),
+            ("0.05", "5.0e-2"),
+            ("12.25", "12.25"),
+            ("1234567", "1234567.0"),
+            ("10000000", "1.0e7"),
+            ("123456789", "1.23456789e8"),
+            ("-1e-30", "-1.0e-30"),
+            ("-1E-30", "-1.0e-30"),
+            ("1.5e3", "1500.0"),
+            ("12344.57", "12344.57"),
+        ] {
+            assert_eq!(scientific_show(input).as_deref(), Some(shown), "{input}");
+        }
     }
 }
 
