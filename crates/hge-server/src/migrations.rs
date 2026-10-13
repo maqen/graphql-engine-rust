@@ -2,15 +2,17 @@
 //!
 //! Layout (config v3): `<dir>/<source name>/<version>_<name>/up.sql`. Each pending
 //! migration runs in its own transaction and is recorded in the source database's
-//! `hdb_catalog.schema_migrations` (the CLI's table). Versions that the CLI recorded in
-//! `hdb_catalog.hdb_version.cli_state` count as applied too. A session advisory lock
+//! `hdb_catalog.schema_migrations`. Versions that the CLI recorded as applied in the metadata
+//! database's `hdb_catalog.hdb_version.cli_state` are skipped too. A session advisory lock
 //! keeps concurrently booting replicas from applying the same migration twice.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use hge_core::{Code, Error};
 use hge_metadata::Metadata;
 use hge_postgres::{PgSource, PoolConfig};
+use serde_json::Value;
 use tracing::{info, warn};
 
 use crate::config::ServerConfig;
@@ -33,6 +35,7 @@ pub async fn apply(dir: &Path, metadata: &Metadata, config: &ServerConfig) -> Re
         .filter(|p| p.is_dir())
         .collect();
     source_dirs.sort();
+    let cli_state = read_cli_state(config).await?;
     for source_dir in source_dirs {
         let name = source_dir.file_name().unwrap_or_default().to_string_lossy();
         let Some(source) = metadata.sources.iter().find(|s| s.name == name) else {
@@ -45,12 +48,64 @@ pub async fn apply(dir: &Path, metadata: &Metadata, config: &ServerConfig) -> Re
                 format!("source \"{name}\": {e}"),
             )
         })?;
-        let migrations = read_migrations(&source_dir)?;
+        // Versions the Hasura CLI recorded as applied (and not dirty) for this source.
+        let cli_applied: HashSet<u64> = cli_state
+            .get("migrations")
+            .and_then(|m| m.get(name.as_ref()))
+            .and_then(|m| m.as_object())
+            .map(|versions| {
+                versions
+                    .iter()
+                    .filter(|(_, dirty)| **dirty == Value::Bool(false))
+                    .filter_map(|(v, _)| v.parse().ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let migrations: Vec<Migration> = read_migrations(&source_dir)?
+            .into_iter()
+            .filter(|m| !cli_applied.contains(&m.version))
+            .collect();
         if !migrations.is_empty() {
             apply_source(&name, &url, &migrations).await?;
         }
     }
     Ok(())
+}
+
+/// `hdb_catalog.hdb_version.cli_state` from the metadata database (where V2's CLI records
+/// applied migrations per source), or `null` when there is none.
+async fn read_cli_state(config: &ServerConfig) -> Result<Value, Error> {
+    let Some(url) = config.catalog_url() else {
+        return Ok(Value::Null);
+    };
+    let catalog = PgSource::connect(
+        "hdb_catalog",
+        url,
+        &PoolConfig {
+            max_connections: 1,
+            use_prepared_statements: false,
+            ..PoolConfig::default()
+        },
+    )?;
+    // A missing table fails at parse time, so check for it first.
+    let exists = catalog
+        .query_text(
+            "SELECT (to_regclass('hdb_catalog.hdb_version') IS NOT NULL)::text",
+            &[],
+        )
+        .await?;
+    if exists.as_deref() != Some("true") {
+        return Ok(Value::Null);
+    }
+    let text = catalog
+        .query_text(
+            "SELECT cli_state::text FROM hdb_catalog.hdb_version LIMIT 1",
+            &[],
+        )
+        .await?;
+    Ok(text
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or(Value::Null))
 }
 
 fn config_error(path: &Path, e: std::io::Error) -> Error {
@@ -120,34 +175,16 @@ async fn apply_source(name: &str, url: &str, migrations: &[Migration]) -> Result
 }
 
 async fn apply_locked(pg: &PgSource, source: &str, migrations: &[Migration]) -> Result<(), Error> {
-    // Referencing a missing table fails at parse time, so check for it first.
-    let has_cli_state = pg
-        .query_text(
-            "SELECT (to_regclass('hdb_catalog.hdb_version') IS NOT NULL)::text",
-            &[],
-        )
-        .await?
-        .as_deref()
-        == Some("true");
     let mut applied = 0;
     for m in migrations {
         let version = m.version.to_string();
-        let mut done = pg
+        let done = pg
             .query_text(
                 "SELECT 'yes' FROM hdb_catalog.schema_migrations \
                  WHERE version = ($1)::bigint AND NOT dirty",
                 &[Some(&version)],
             )
             .await?;
-        if done.is_none() && has_cli_state {
-            done = pg
-                .query_text(
-                    "SELECT 'yes' FROM hdb_catalog.hdb_version \
-                     WHERE cli_state #> ARRAY['migrations', $1, $2] IS NOT NULL",
-                    &[Some(source), Some(&version)],
-                )
-                .await?;
-        }
         if done.as_deref() == Some("yes") {
             continue;
         }

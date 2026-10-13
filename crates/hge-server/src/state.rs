@@ -73,9 +73,13 @@ impl AppState {
         inconsistencies: Vec<String>,
         options: SchemaOptions,
     ) -> Self {
+        let introspection_disabled = introspection_disabled(&metadata);
+        let mut known_roles = known_roles(&metadata);
+        // These need a schema of their own (without introspection), even with no permissions.
+        known_roles.extend(introspection_disabled.iter().cloned());
         let state = AppState {
-            known_roles: known_roles(&metadata),
-            introspection_disabled: introspection_disabled(&metadata),
+            known_roles,
+            introspection_disabled,
             metadata: Arc::new(metadata),
             tables: Arc::new(tables),
             sources,

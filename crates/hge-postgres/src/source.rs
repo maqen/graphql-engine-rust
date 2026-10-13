@@ -88,23 +88,23 @@ impl PgSource {
             tls: &self.tls,
         };
         let client = guard.client.as_ref().expect("set above");
-        let rows = if prepared {
+        let result = if prepared {
             // The cache never evicts; start over rather than grow without bound.
             if client.statement_cache.size() >= MAX_CACHED_STATEMENTS {
                 client.statement_cache.clear();
             }
-            let stmt = client
-                .prepare_cached(sql)
-                .await
-                .map_err(|e| pg_error_with(e, sql, prepared))?;
-            client.query(&stmt, &refs).await
+            match client.prepare_cached(sql).await {
+                Ok(stmt) => client.query(&stmt, &refs).await,
+                Err(e) => Err(e),
+            }
         } else {
             let typed: Vec<(&(dyn ToSql + Sync), Type)> =
                 refs.iter().map(|p| (*p, Type::TEXT)).collect();
             client.query_typed(sql, &typed).await
-        }
-        .map_err(|e| pg_error_with(e, sql, prepared))?;
+        };
+        // The query finished (successfully or not): the connection is reusable.
         guard.disarm();
+        let rows = result.map_err(|e| pg_error_with(e, sql, prepared))?;
         let Some(row) = rows.into_iter().next() else {
             return Ok(None);
         };
@@ -167,16 +167,16 @@ impl CancelOnDrop<'_> {
 
 impl Drop for CancelOnDrop<'_> {
     fn drop(&mut self) {
-        if let Some(client) = self.client.take()
-            && let Ok(rt) = tokio::runtime::Handle::try_current()
-        {
+        if let Some(client) = self.client.take() {
             let token = client.cancel_token();
-            let tls = self.tls.clone();
             let detached = Object::take(client);
-            rt.spawn(async move {
-                let _ = token.cancel_query(tls).await;
-                drop(detached);
-            });
+            if let Ok(rt) = tokio::runtime::Handle::try_current() {
+                let tls = self.tls.clone();
+                rt.spawn(async move {
+                    let _ = token.cancel_query(tls).await;
+                    drop(detached);
+                });
+            }
         }
     }
 }

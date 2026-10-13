@@ -39,8 +39,8 @@ pub fn router(engine: Arc<Engine>) -> Router {
     router.with_state(engine)
 }
 
-/// gzip like V2: skipped below 700 bytes when the client also accepts identity,
-/// fast compression level (V2 uses level 1, or 6 above 20kB).
+/// gzip like V2: responses under 700 bytes are sent uncompressed, at a fast compression
+/// level (V2 uses level 1, or 6 above 20kB).
 fn compression() -> CompressionLayer<SizeAbove> {
     CompressionLayer::new()
         .quality(CompressionLevel::Fastest)

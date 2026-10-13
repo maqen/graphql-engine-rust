@@ -211,7 +211,7 @@ impl<'s, 'd> Context<'s, 'd> {
         let mut grouped: IndexMap<String, Vec<&'d async_graphql_parser::types::Field>> =
             IndexMap::new();
         for set in selection_sets {
-            self.collect(type_name, set, &mut grouped, visiting, path)?;
+            self.collect(type_name, set, &mut grouped, visiting, path, depth)?;
         }
         let object = self.schema.object(type_name);
         let mut out = Vec::with_capacity(grouped.len());
@@ -295,7 +295,15 @@ impl<'s, 'd> Context<'s, 'd> {
         grouped: &mut IndexMap<String, Vec<&'d async_graphql_parser::types::Field>>,
         visiting: &mut HashSet<String>,
         path: &str,
+        depth: usize,
     ) -> Result<(), Error> {
+        // Fragment nesting recurses too, without adding field depth.
+        if depth > MAX_DEPTH {
+            return Err(Error::validation(format!(
+                "the query exceeds the maximum depth of {MAX_DEPTH}"
+            ))
+            .with_path(path.to_owned()));
+        }
         for sel in &set.items {
             let left = self.budget.get().checked_sub(1).ok_or_else(|| {
                 Error::validation(format!(
@@ -328,6 +336,7 @@ impl<'s, 'd> Context<'s, 'd> {
                         grouped,
                         visiting,
                         path,
+                        depth + 1,
                     )?;
                 }
                 Selection::FragmentSpread(spread) => {
@@ -348,7 +357,8 @@ impl<'s, 'd> Context<'s, 'd> {
                         .with_path(path.to_owned()));
                     }
                     let frag_set: &'d SelectionSet = &frag.node.selection_set.node;
-                    let result = self.collect(type_name, frag_set, grouped, visiting, path);
+                    let result =
+                        self.collect(type_name, frag_set, grouped, visiting, path, depth + 1);
                     visiting.remove(name);
                     result?;
                 }

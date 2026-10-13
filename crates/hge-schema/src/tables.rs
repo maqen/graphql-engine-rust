@@ -409,6 +409,15 @@ pub fn drop_conflicting(tables: &mut Tables, inconsistencies: &mut Vec<String>) 
         .iter()
         .map(|n| ((*n).to_owned(), "the schema".to_owned()))
         .collect();
+    // Scalars of tracked columns and their generated input types belong to the schema too.
+    for table in &tables.ordered {
+        for col in table.columns.values() {
+            let scalar = crate::scalars::scalar_name(&col.ty.element());
+            for suffix in ["", "_comparison_exp", "_array_comparison_exp", "_cast_exp"] {
+                types.insert(format!("{scalar}{suffix}"), format!("scalar \"{scalar}\""));
+            }
+        }
+    }
     let mut roots: HashMap<String, String> = HashMap::new();
     let mut kept = Vec::with_capacity(tables.ordered.len());
     for table in std::mem::take(&mut tables.ordered) {

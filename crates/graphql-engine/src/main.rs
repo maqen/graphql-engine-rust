@@ -158,7 +158,7 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
             .context("HASURA_GRAPHQL_ADMIN_SECRETS must be a JSON list of strings")?;
         admin_secrets.extend(parsed);
     }
-    if admin_secrets.iter().any(|s| s.is_empty()) {
+    if admin_secrets.iter().any(|s| s.trim().is_empty()) {
         anyhow::bail!("the admin secret must not be empty");
     }
     let port = match args.server_port {
