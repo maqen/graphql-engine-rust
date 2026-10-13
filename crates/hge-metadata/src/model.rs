@@ -519,8 +519,9 @@ pub struct SelectPermission {
 pub struct InsertPermission {
     #[serde(default = "empty_object")]
     pub check: Value,
-    #[serde(default)]
-    pub columns: Columns,
+    /// Absent means every insertable column (unlike select and update permissions).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub columns: Option<Columns>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub set: IndexMap<String, Value>,
     #[serde(default, skip_serializing_if = "is_false")]

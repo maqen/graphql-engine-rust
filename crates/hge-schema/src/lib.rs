@@ -44,6 +44,7 @@ pub fn resolve_tables(
         }
     }
     tables::drop_conflicting(&mut tables, &mut inconsistencies);
+    permissions::resolve_permissions(&mut tables, &mut inconsistencies);
     (tables, inconsistencies)
 }
 

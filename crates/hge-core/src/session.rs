@@ -74,7 +74,9 @@ impl SessionVariables {
 
 /// `true` if a header / claim name is a session variable (`x-hasura-` prefix).
 pub fn is_session_variable(name: &str) -> bool {
-    name.len() >= 9 && name[..9].eq_ignore_ascii_case("x-hasura-")
+    name.as_bytes()
+        .get(..9)
+        .is_some_and(|p| p.eq_ignore_ascii_case(b"x-hasura-"))
 }
 
 /// A resolved request session: who is asking.
@@ -111,5 +113,6 @@ mod tests {
         assert_eq!(vars.get("X-HASURA-USER-ID"), Some("42"));
         assert!(is_session_variable("X-Hasura-Role"));
         assert!(!is_session_variable("authorization"));
+        assert!(!is_session_variable("12345678é"));
     }
 }

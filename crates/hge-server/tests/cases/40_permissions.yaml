@@ -1,0 +1,176 @@
+config:
+  fixture: permissions
+
+cases:
+  - description: row filter with a session variable
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: "{ author { id name email } }"
+    response:
+      data:
+        author: [{ id: 2, name: Bob, email: bob@example.com }]
+
+  - description: _or of a column and a relationship filter, capped by the permission limit
+    headers: { x-hasura-role: user, x-hasura-user-id: "1" }
+    query:
+      query: "{ article(order_by: {id: asc}) { id title } }"
+    response:
+      data:
+        article:
+          - { id: 1, title: Alice published }
+          - { id: 2, title: Alice draft }
+          - { id: 3, title: Bob published }
+
+  - description: a smaller user limit wins over the permission limit
+    headers: { x-hasura-role: user, x-hasura-user-id: "1" }
+    query:
+      query: "{ article(order_by: {id: desc}, limit: 1) { id } }"
+    response:
+      data:
+        article: [{ id: 5 }]
+
+  - description: relationships apply the target table's select filter
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: "{ article(order_by: {id: asc}, where: {id: {_gte: 3}}) { id author { name } } }"
+    response:
+      data:
+        article:
+          - { id: 3, author: { name: Bob } }
+          - { id: 4, author: { name: Bob } }
+          - { id: 5, author: null }
+
+  - description: array relationships apply the target filter and limit
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: "{ author { name articles(order_by: {id: asc}) { id } } }"
+    response:
+      data:
+        author: [{ name: Bob, articles: [{ id: 3 }, { id: 4 }] }]
+
+  - description: filtering through a relationship cannot see rows hidden from the role
+    headers: { x-hasura-role: user, x-hasura-user-id: "1" }
+    query:
+      query: "{ article(where: {author: {name: {_eq: \"Bob\"}}}) { id } }"
+    response:
+      data:
+        article: []
+
+  - description: ordering through a relationship sorts hidden rows as null
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: "{ article(order_by: [{author: {name: desc_nulls_last}}, {id: asc}]) { id } }"
+    response:
+      data:
+        article: [{ id: 3 }, { id: 4 }, { id: 1 }]
+
+  - description: by_pk returns null for a row outside the filter
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: "{ author_by_pk(id: 1) { id } }"
+    response:
+      data:
+        author_by_pk: null
+
+  - description: a missing session variable is an error
+    headers: { x-hasura-role: user }
+    query:
+      query: "{ author { id } }"
+    response:
+      errors:
+        - extensions: { path: "$", code: not-found }
+          message: 'missing session variable: "x-hasura-user-id"'
+
+  - description: session variable names are case-insensitive
+    headers: { x-hasura-role: user, X-HASURA-USER-ID: "1" }
+    query:
+      query: "{ author { id } }"
+    response:
+      data:
+        author: [{ id: 1 }]
+
+  - description: column comparison with a root reference inside a relationship
+    headers: { x-hasura-role: editor }
+    query:
+      query: "{ author { id name } }"
+    response:
+      data:
+        author: [{ id: 2, name: Bob }]
+
+  - description: column-to-column comparison
+    headers: { x-hasura-role: editor }
+    query:
+      query: "{ article(order_by: {id: asc}) { id } }"
+    response:
+      data:
+        article: [{ id: 1 }, { id: 4 }, { id: 5 }]
+
+  - description: _exists and _in with an array session variable
+    headers: { x-hasura-role: reader, x-hasura-user-id: "7", x-hasura-article-ids: "{1,3}" }
+    query:
+      query: "{ article(order_by: {id: asc}) { id meta } }"
+    response:
+      data:
+        article:
+          - { id: 1, meta: { lang: en, draft: false } }
+          - { id: 3, meta: { lang: "no" } }
+
+  - description: _exists finds nothing for a user not on the list
+    headers: { x-hasura-role: reader, x-hasura-user-id: "8", x-hasura-article-ids: "{1,3}" }
+    query:
+      query: "{ article { id } }"
+    response:
+      data:
+        article: []
+
+  - description: $-prefixed operators
+    headers: { x-hasura-role: reader }
+    query:
+      query: "{ author(order_by: {id: asc}) { id } }"
+    response:
+      data:
+        author: [{ id: 1 }, { id: 2 }]
+
+  - description: _eq null on a nullable column matches nulls
+    headers: { x-hasura-role: triage }
+    query:
+      query: "{ article(order_by: {id: asc}) { id } }"
+    response:
+      data:
+        article: [{ id: 2 }, { id: 5 }]
+
+  - description: relationships to tables the role cannot select are not in the schema
+    headers: { x-hasura-role: triage }
+    query:
+      query: "{ article { author { id } } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.article.selectionSet.author", code: validation-failed }
+          message: "field 'author' not found in type: 'article'"
+
+  - description: _has_keys_any with an array session variable
+    headers: { x-hasura-role: keys, x-hasura-keys: "{draft}" }
+    query:
+      query: "{ a: article_by_pk(id: 1) { id } b: article_by_pk(id: 3) { id } }"
+    response:
+      data:
+        a: { id: 1 }
+        b: null
+
+  - description: query_root_fields hides the other root fields
+    headers: { x-hasura-role: keys, x-hasura-keys: "{draft}" }
+    query:
+      query: "{ article { id } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.article", code: validation-failed }
+          message: "field 'article' not found in type: 'query_root'"
+
+  - description: a session variable that does not cast to the column type
+    headers: { x-hasura-role: user, x-hasura-user-id: abc }
+    query:
+      query: "{ author { id } }"
+    response:
+      errors:
+        - extensions: { path: "$", code: data-exception }
+          message: 'invalid input syntax for type integer: "abc"'

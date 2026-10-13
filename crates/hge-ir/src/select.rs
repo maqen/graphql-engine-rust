@@ -73,6 +73,8 @@ pub enum OrderByTarget {
     ObjectRelationship {
         table: QualifiedTable,
         mapping: Vec<(String, String)>,
+        /// The target table's select permission filter: rows the role cannot see sort as NULL.
+        filter: Option<Box<BoolExp>>,
         target: Box<OrderByTarget>,
     },
 }
@@ -111,11 +113,49 @@ pub enum BoolExp {
         table: QualifiedTable,
         exp: Box<BoolExp>,
     },
+    /// Column-to-column comparison (`_ceq`, `_cgt`, … in permissions).
+    CompareColumns {
+        column: String,
+        op: ColumnCompareOp,
+        other: ColumnRef,
+    },
+    /// A permission filter embedded in another expression (the target table's select filter
+    /// inside a relationship condition). Root references (`["$", col]`) inside it refer to
+    /// the table it is evaluated against, not to the outer expression's root.
+    Rooted(Box<BoolExp>),
+}
+
+/// The right-hand side of a column-to-column comparison.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ColumnRef {
+    /// A column of the table the comparison is evaluated against.
+    Current(String),
+    /// A column of the root table of the permission expression (`["$", "col"]`).
+    Root(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColumnCompareOp {
+    Eq,
+    Neq,
+    Gt,
+    Lt,
+    Gte,
+    Lte,
 }
 
 impl BoolExp {
     pub fn always_true() -> Self {
         BoolExp::And(vec![])
+    }
+
+    pub fn always_false() -> Self {
+        BoolExp::Or(vec![])
+    }
+
+    /// Syntactically true (`_and: []`); does not try to prove anything deeper.
+    pub fn is_true(&self) -> bool {
+        matches!(self, BoolExp::And(items) if items.is_empty())
     }
 
     /// AND two optional expressions.

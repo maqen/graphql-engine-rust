@@ -138,13 +138,14 @@ impl<'s> Translator<'s> {
                 self.b.qualified(parent, parent_col).push(")");
             }
         }
-        if let Some(w) = &args.where_ {
-            and(&mut self.b);
-            self.bool_exp(w, alias)?;
-        }
+        // Permission filter first, as V2 renders it.
         if let Some(p) = &sel.permission_filter {
             and(&mut self.b);
             self.bool_exp(p, alias)?;
+        }
+        if let Some(w) = &args.where_ {
+            and(&mut self.b);
+            self.bool_exp(w, alias)?;
         }
 
         // Ordering inside the base query only matters when rows are cut.
@@ -190,6 +191,7 @@ impl<'s> Translator<'s> {
             OrderByTarget::ObjectRelationship {
                 table,
                 mapping,
+                filter,
                 target,
             } => {
                 let rel_alias = self.fresh("_o");
@@ -204,6 +206,10 @@ impl<'s> Translator<'s> {
                     }
                     self.b.qualified(&rel_alias, remote).push(" = ");
                     self.b.qualified(alias, local);
+                }
+                if let Some(filter) = filter {
+                    self.b.push(" AND ");
+                    self.bool_exp(filter, &rel_alias)?;
                 }
                 self.b.push(" LIMIT 1)");
             }

@@ -1,13 +1,18 @@
 //! Boolean expressions.
 
 use hge_core::Error;
-use hge_ir::{BoolExp, CompareOp};
+use hge_ir::{BoolExp, ColumnCompareOp, ColumnRef, CompareOp};
 
 use super::Translator;
 
 impl Translator<'_> {
-    /// Render `exp` over rows of `alias`.
+    /// Render `exp` over rows of `alias`, which is also the root for `["$", col]` references.
     pub(crate) fn bool_exp(&mut self, exp: &BoolExp, alias: &str) -> Result<(), Error> {
+        self.bool_exp_in(exp, alias, alias)
+    }
+
+    /// Render `exp` over rows of `alias`; root references resolve against `root`.
+    fn bool_exp_in(&mut self, exp: &BoolExp, alias: &str, root: &str) -> Result<(), Error> {
         match exp {
             BoolExp::And(items) if items.is_empty() => {
                 self.b.push("('true')");
@@ -26,13 +31,13 @@ impl Translator<'_> {
                     if i > 0 {
                         self.b.push(sep);
                     }
-                    self.bool_exp(item, alias)?;
+                    self.bool_exp_in(item, alias, root)?;
                 }
                 self.b.push(")");
             }
             BoolExp::Not(inner) => {
                 self.b.push("(NOT ");
-                self.bool_exp(inner, alias)?;
+                self.bool_exp_in(inner, alias, root)?;
                 self.b.push(")");
             }
             BoolExp::Compare { column, op, .. } => self.compare(alias, column, op)?,
@@ -50,7 +55,7 @@ impl Translator<'_> {
                     self.b.qualified(&rel, remote).push(" = ");
                     self.b.qualified(alias, local).push(") AND ");
                 }
-                self.bool_exp(exp, &rel)?;
+                self.bool_exp_in(exp, &rel, root)?;
                 self.b.push(")");
             }
             BoolExp::Exists { table, exp } => {
@@ -58,9 +63,27 @@ impl Translator<'_> {
                 self.b.push("EXISTS (SELECT 1 FROM ");
                 self.b.ident(&table.schema).push(".").ident(&table.name);
                 self.b.push(" AS ").ident(&rel).push(" WHERE ");
-                self.bool_exp(exp, &rel)?;
+                self.bool_exp_in(exp, &rel, root)?;
                 self.b.push(")");
             }
+            BoolExp::CompareColumns { column, op, other } => {
+                self.b.push("(");
+                self.b.qualified(alias, column);
+                self.b.push(match op {
+                    ColumnCompareOp::Eq => " = ",
+                    ColumnCompareOp::Neq => " <> ",
+                    ColumnCompareOp::Gt => " > ",
+                    ColumnCompareOp::Lt => " < ",
+                    ColumnCompareOp::Gte => " >= ",
+                    ColumnCompareOp::Lte => " <= ",
+                });
+                match other {
+                    ColumnRef::Current(c) => self.b.qualified(alias, c),
+                    ColumnRef::Root(c) => self.b.qualified(root, c),
+                };
+                self.b.push(")");
+            }
+            BoolExp::Rooted(inner) => self.bool_exp_in(inner, alias, alias)?,
         }
         Ok(())
     }

@@ -1,0 +1,33 @@
+table:
+  name: author
+  schema: public
+array_relationships:
+  - name: articles
+    using:
+      foreign_key_constraint_on:
+        column: author_id
+        table:
+          name: article
+          schema: public
+select_permissions:
+  # Users see themselves only.
+  - role: user
+    permission:
+      columns: [id, name, email]
+      filter:
+        id:
+          _eq: X-Hasura-User-Id
+  # Authors who reviewed one of their own articles (root reference inside a relationship).
+  - role: editor
+    permission:
+      columns: [id, name]
+      filter:
+        articles:
+          reviewer_id:
+            _ceq: [$, id]
+  - role: reader
+    permission:
+      columns: [id, name]
+      filter:
+        is_active:
+          $eq: true

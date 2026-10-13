@@ -6,12 +6,14 @@
 //! database type, and permission filters are already merged in.
 
 pub mod backend;
+pub mod permissions;
 pub mod select;
 pub mod value;
 
 use std::sync::Arc;
 
 pub use backend::{BoxFuture, SourceExecutor};
+pub use permissions::*;
 pub use select::*;
 pub use value::*;
 

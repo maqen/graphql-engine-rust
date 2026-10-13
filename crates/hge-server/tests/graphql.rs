@@ -2,6 +2,8 @@
 //!
 //! Each file in `tests/cases/` holds an optional server `config` and a list of
 //! V2-style cases (`description`, `url`, `status`, `headers`, `query`, `response`).
+//! `config.fixture` names the directory under `tests/fixtures/` (default `basic`) whose
+//! `schema.sql` is applied and whose `metadata/` is loaded before the file runs.
 //! Requests go through the full router in-process. The database comes from
 //! `HASURA_GRAPHQL_DATABASE_URL` (also what the fixture metadata reads); without it
 //! the test is skipped.
@@ -15,12 +17,14 @@ use serde::Deserialize;
 use serde_json::Value;
 use tower::ServiceExt;
 
+const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures");
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/basic");
 const CASES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/cases");
 
 #[derive(Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 struct FileConfig {
+    fixture: Option<String>,
     admin_secret: Option<String>,
     unauthorized_role: Option<String>,
     stringify_numeric_types: bool,
@@ -61,12 +65,12 @@ fn default_status() -> u16 {
     200
 }
 
-async fn setup_database(url: &str) {
+async fn setup_database(url: &str, fixture: &Path) {
     let (client, conn) = tokio_postgres::connect(url, tokio_postgres::NoTls)
         .await
         .expect("connect to test database");
     tokio::spawn(conn);
-    let sql = std::fs::read_to_string(Path::new(FIXTURE).join("schema.sql")).unwrap();
+    let sql = std::fs::read_to_string(fixture.join("schema.sql")).unwrap();
     client.batch_execute(&sql).await.expect("apply schema.sql");
 }
 
@@ -84,9 +88,11 @@ async fn run_file(path: &Path, database_url: &str) -> Vec<String> {
     let file: CaseFile = serde_yaml::from_str(&std::fs::read_to_string(path).unwrap())
         .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let c = file.config;
+    let fixture = Path::new(FIXTURES).join(c.fixture.as_deref().unwrap_or("basic"));
+    setup_database(database_url, &fixture).await;
     let config = ServerConfig {
         database_url: Some(database_url.to_owned()),
-        metadata_dir: Some(Path::new(FIXTURE).join("metadata")),
+        metadata_dir: Some(fixture.join("metadata")),
         admin_secrets: c.admin_secret.into_iter().collect(),
         unauthorized_role: c.unauthorized_role,
         stringify_numeric_types: c.stringify_numeric_types,
@@ -153,7 +159,6 @@ async fn graphql_cases() {
         eprintln!("HASURA_GRAPHQL_DATABASE_URL not set; skipping end-to-end tests");
         return;
     };
-    setup_database(&url).await;
     let mut failures = vec![];
     for file in case_files() {
         failures.extend(run_file(&file, &url).await);
@@ -170,6 +175,7 @@ async fn graphql_cases() {
 /// Queries built to exhaust the server (deep fragment chains, exponential fragment
 /// fan-out) are rejected quickly instead of overflowing the stack or burning CPU.
 async fn query_limits(database_url: &str) -> Vec<String> {
+    setup_database(database_url, Path::new(FIXTURE)).await;
     let config = ServerConfig {
         database_url: Some(database_url.to_owned()),
         metadata_dir: Some(Path::new(FIXTURE).join("metadata")),
