@@ -5,6 +5,8 @@ use std::path::PathBuf;
 
 pub use hge_events::EventingConfig;
 
+pub use crate::ws::WebSocketConfig;
+
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub host: String,
@@ -60,6 +62,8 @@ pub struct ServerConfig {
     /// Values that take precedence over the process environment for `{{VAR}}` and
     /// `value_from_env` lookups in action metadata (tests, embedding).
     pub env_overrides: HashMap<String, String>,
+    /// WebSockets and subscriptions (`HASURA_GRAPHQL_WEBSOCKET_*`, `..._MULTIPLEXED_*`).
+    pub websocket: WebSocketConfig,
 }
 
 impl Default for ServerConfig {
@@ -95,6 +99,7 @@ impl Default for ServerConfig {
             schema_sync_poll_interval_ms: 1000,
             configured_header_precedence: false,
             env_overrides: HashMap::new(),
+            websocket: WebSocketConfig::default(),
         }
     }
 }

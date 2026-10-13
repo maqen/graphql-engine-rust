@@ -1,0 +1,34 @@
+table:
+  name: message
+  schema: public
+configuration:
+  custom_root_fields:
+    select_stream: message_feed
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - id
+        - author_id
+        - body
+        - priority
+      filter:
+        author_id:
+          _eq: X-Hasura-User-Id
+  - role: reader
+    permission:
+      columns:
+        - id
+        - body
+      filter: {}
+      subscription_root_fields:
+        - select
+insert_permissions:
+  - role: user
+    permission:
+      columns:
+        - body
+        - priority
+      check: {}
+      set:
+        author_id: X-Hasura-User-Id

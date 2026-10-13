@@ -31,8 +31,13 @@ pub type Join<'a> = Option<(&'a str, &'a [(String, String)])>;
 
 impl<'s> Translator<'s> {
     pub fn new(session: &'s Session) -> Self {
+        Self::with_builder(session, SqlBuilder::new())
+    }
+
+    /// A translator writing into `b` (e.g. a [`SqlBuilder::multiplexed`] one).
+    pub fn with_builder(session: &'s Session, b: SqlBuilder) -> Self {
         Translator {
-            b: SqlBuilder::new(),
+            b,
             session,
             next_alias: 0,
         }

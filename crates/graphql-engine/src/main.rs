@@ -212,6 +212,66 @@ struct ServeArgs {
     #[arg(long, env = "HASURA_GRAPHQL_DISABLE_EVENT_PROCESSING", value_parser = parse_bool, default_value = "false")]
     disable_event_processing: bool,
 
+    /// Seconds between WebSocket keep-alive messages.
+    #[arg(long, env = "HASURA_GRAPHQL_WEBSOCKET_KEEPALIVE", default_value = "5")]
+    websocket_keepalive: u64,
+
+    /// Seconds a WebSocket client has to send a successful `connection_init`.
+    #[arg(
+        long,
+        env = "HASURA_GRAPHQL_WEBSOCKET_CONNECTION_INIT_TIMEOUT",
+        default_value = "3"
+    )]
+    websocket_connection_init_timeout: u64,
+
+    /// Results queued per WebSocket connection before the operation producing them stops.
+    #[arg(long, env = "HASURA_GRAPHQL_WEBSOCKET_QUEUE_SIZE", default_value = "300", value_parser = clap::value_parser!(u64).range(1..))]
+    websocket_queue_size: u64,
+
+    /// Accepted for compatibility; WebSocket compression is not supported.
+    #[arg(long = "websocket-compression", env = "HASURA_GRAPHQL_CONNECTION_COMPRESSION", value_parser = parse_bool, default_value = "false")]
+    connection_compression: bool,
+
+    /// Keep the `Cookie` header of WebSocket upgrades when CORS is disabled.
+    #[arg(long, env = "HASURA_GRAPHQL_WS_READ_COOKIE", value_parser = parse_bool, default_value = "false")]
+    ws_read_cookie: bool,
+
+    /// Close all WebSockets with 1012 after a metadata change through this instance.
+    #[arg(long = "close-websockets-on-metadata-change", env = "HASURA_GRAPHQL_CLOSE_WEBSOCKETS_ON_METADATA_CHANGE", value_parser = parse_bool, default_value = "true")]
+    close_websockets_on_metadata_change: bool,
+
+    /// Milliseconds between live query polls.
+    #[arg(
+        long,
+        env = "HASURA_GRAPHQL_LIVE_QUERIES_MULTIPLEXED_REFETCH_INTERVAL",
+        default_value = "1000"
+    )]
+    live_queries_multiplexed_refetch_interval: u64,
+
+    /// Live query cohorts per database round trip.
+    #[arg(
+        long,
+        env = "HASURA_GRAPHQL_LIVE_QUERIES_MULTIPLEXED_BATCH_SIZE",
+        default_value = "100"
+    )]
+    live_queries_multiplexed_batch_size: usize,
+
+    /// Milliseconds between streaming subscription polls.
+    #[arg(
+        long,
+        env = "HASURA_GRAPHQL_STREAMING_QUERIES_MULTIPLEXED_REFETCH_INTERVAL",
+        default_value = "1000"
+    )]
+    streaming_queries_multiplexed_refetch_interval: u64,
+
+    /// Streaming subscription cohorts per database round trip.
+    #[arg(
+        long,
+        env = "HASURA_GRAPHQL_STREAMING_QUERIES_MULTIPLEXED_BATCH_SIZE",
+        default_value = "100"
+    )]
+    streaming_queries_multiplexed_batch_size: usize,
+
     /// Log failed event deliveries at error level.
     #[arg(long, env = "HASURA_GRAPHQL_ENABLE_TRIGGERS_ERROR_LOG_LEVEL", value_parser = parse_bool, default_value = "false")]
     enable_triggers_error_log_level: bool,
@@ -307,6 +367,7 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
         use_prepared_statements: args.use_prepared_statements,
         preserve_401_errors: args.preserve_401_errors,
         events: hge_events_config(args),
+        websocket: websocket_config(args),
         read_only: args.read_only_mode,
         schema_sync_poll_interval_ms: if args.schema_sync_poll_interval >= 0.0 {
             args.schema_sync_poll_interval as u64
@@ -318,6 +379,32 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
         configured_header_precedence: args.configured_header_precedence,
         ..ServerConfig::default()
     })
+}
+
+fn websocket_config(args: &ServeArgs) -> hge_server::config::WebSocketConfig {
+    use std::time::Duration;
+    let poller = |interval_ms: u64, batch_size: usize| hge_server::ws::PollerOptions {
+        refetch_interval: Duration::from_millis(interval_ms),
+        batch_size: batch_size.max(1),
+    };
+    if args.connection_compression {
+        tracing::warn!(target: "startup", "WebSocket compression is not supported; ignoring HASURA_GRAPHQL_CONNECTION_COMPRESSION");
+    }
+    hge_server::config::WebSocketConfig {
+        keep_alive: Duration::from_secs(args.websocket_keepalive),
+        init_timeout: Duration::from_secs(args.websocket_connection_init_timeout),
+        queue_size: args.websocket_queue_size as usize,
+        close_on_metadata_change: args.close_websockets_on_metadata_change,
+        read_cookie: args.ws_read_cookie,
+        live_queries: poller(
+            args.live_queries_multiplexed_refetch_interval,
+            args.live_queries_multiplexed_batch_size,
+        ),
+        streaming: poller(
+            args.streaming_queries_multiplexed_refetch_interval,
+            args.streaming_queries_multiplexed_batch_size,
+        ),
+    }
 }
 
 fn hge_events_config(args: &ServeArgs) -> hge_server::config::EventingConfig {

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use deadpool_postgres::{Object, Pool};
 use hge_core::{Code, Error, QualifiedTable, Session, SourceCatalog};
-use hge_ir::{BoxFuture, Mutation, QueryRoot, SourceExecutor};
+use hge_ir::{BoxFuture, MultiplexedQuery, MultiplexedRow, Mutation, QueryRoot, SourceExecutor};
 use serde_json::json;
 use tokio_postgres::types::{ToSql, Type};
 use tokio_postgres_rustls::MakeRustlsConnect;
@@ -12,7 +12,7 @@ use tokio_postgres_rustls::MakeRustlsConnect;
 use crate::introspect;
 use crate::param::TextParam;
 use crate::pool::{IsolationLevel, PoolConfig, connect_pool};
-use crate::translate::translate_query;
+use crate::translate::{translate_multiplexed, translate_query};
 
 pub struct PgSource {
     pub name: Arc<str>,
@@ -91,6 +91,15 @@ impl PgSource {
         sql: &str,
         params: &[Option<&str>],
     ) -> Result<Option<Vec<Option<String>>>, Error> {
+        Ok(self.query_rows(sql, params).await?.into_iter().next())
+    }
+
+    /// Run a statement and return every row's text columns.
+    pub async fn query_rows(
+        &self,
+        sql: &str,
+        params: &[Option<&str>],
+    ) -> Result<Vec<Vec<Option<String>>>, Error> {
         let client = self.client().await?;
         let params: Vec<TextParam<'_>> = params.iter().map(|p| TextParam(*p)).collect();
         let refs: Vec<&(dyn ToSql + Sync)> =
@@ -117,17 +126,18 @@ impl PgSource {
         // The query finished (successfully or not): the connection is reusable.
         guard.disarm();
         let rows = result.map_err(|e| pg_error_with(e, sql, prepared))?;
-        let Some(row) = rows.into_iter().next() else {
-            return Ok(None);
-        };
-        let mut out = Vec::with_capacity(row.len());
-        for i in 0..row.len() {
-            out.push(
-                row.try_get::<_, Option<String>>(i)
-                    .map_err(|e| pg_error_with(e, sql, prepared))?,
-            );
+        let mut out = Vec::with_capacity(rows.len());
+        for row in rows {
+            let mut cols = Vec::with_capacity(row.len());
+            for i in 0..row.len() {
+                cols.push(
+                    row.try_get::<_, Option<String>>(i)
+                        .map_err(|e| pg_error_with(e, sql, prepared))?,
+                );
+            }
+            out.push(cols);
         }
-        Ok(Some(out))
+        Ok(out)
     }
 
     /// Execute arbitrary SQL (several statements allowed), discarding results.
@@ -166,6 +176,42 @@ impl SourceExecutor for PgSource {
         session: &'a Session,
     ) -> BoxFuture<'a, Result<Vec<String>, Error>> {
         Box::pin(crate::mutation::execute(self, fields, session))
+    }
+
+    fn multiplexed_query(
+        &self,
+        fields: &[&QueryRoot],
+        session: &Session,
+    ) -> Result<MultiplexedQuery, Error> {
+        translate_multiplexed(fields, session)
+    }
+
+    fn execute_multiplexed<'a>(
+        &'a self,
+        sql: &'a str,
+        cohorts: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<MultiplexedRow>, Error>> {
+        Box::pin(async move {
+            let rows = self.query_rows(sql, &[Some(cohorts)]).await?;
+            rows.into_iter()
+                .map(|mut cols| {
+                    // The first column is the 1-based position of the cohort.
+                    let index = cols
+                        .first_mut()
+                        .and_then(Option::take)
+                        .and_then(|i| i.parse::<usize>().ok())
+                        .and_then(|i| i.checked_sub(1))
+                        .ok_or_else(|| {
+                            Error::unexpected("multiplexed query without cohort index")
+                        })?;
+                    cols.remove(0);
+                    Ok(MultiplexedRow {
+                        index,
+                        columns: cols,
+                    })
+                })
+                .collect()
+        })
     }
 }
 

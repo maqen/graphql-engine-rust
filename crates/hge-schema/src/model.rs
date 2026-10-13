@@ -182,6 +182,8 @@ pub enum FieldKind {
     SelectMany(Arc<TableInfo>),
     /// `author_by_pk(id: ...)` on the query root.
     SelectByPk(Arc<TableInfo>),
+    /// `author_stream(...)` on the subscription root.
+    SelectStream(Arc<TableInfo>),
     /// The placeholder field of an empty query root.
     NoQueriesAvailable,
     /// Mutation root fields and `t_mutation_response` fields.

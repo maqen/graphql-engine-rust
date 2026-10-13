@@ -7,13 +7,15 @@ mod boolexp;
 mod count;
 pub mod mutation;
 mod select;
+mod subscription;
 
-use hge_core::{Error, Session};
+use hge_core::{Code, Error, Session};
 use hge_ir::QueryRoot;
 
 use crate::sql::SqlBuilder;
 
 pub use select::Translator;
+pub use subscription::translate_multiplexed;
 
 /// Translate the root fields of an operation into one SQL statement.
 pub fn translate_query(fields: &[&QueryRoot], session: &Session) -> Result<SqlBuilder, Error> {
@@ -28,6 +30,12 @@ pub fn translate_query(fields: &[&QueryRoot], session: &Session) -> Result<SqlBu
             QueryRoot::Select(select) => t.select_many(select, None)?,
             QueryRoot::SelectOne(select) => t.select_one(select, None)?,
             QueryRoot::Count(count) => t.count(count)?,
+            QueryRoot::Stream(_) => {
+                return Err(Error::new(
+                    Code::NotSupported,
+                    "streaming subscriptions are only supported over websockets",
+                ));
+            }
         }
         t.b.push(")::text");
     }

@@ -109,7 +109,12 @@ pub(crate) fn table_schema_names(tables: &Tables) -> TableSchemaNames {
         types: schema
             .types
             .iter()
-            .filter(|(name, _)| !matches!(name.as_str(), QUERY_ROOT | MUTATION_ROOT))
+            .filter(|(name, _)| {
+                !matches!(
+                    name.as_str(),
+                    QUERY_ROOT | MUTATION_ROOT | crate::subscription::SUBSCRIPTION_ROOT
+                )
+            })
             .map(|(name, ty)| (name.clone(), matches!(ty, TypeDef::Scalar(_))))
             .collect(),
     }
@@ -122,6 +127,7 @@ fn build_schema(
     actions: Option<&ResolvedActions>,
     role: &RoleName,
 ) -> Schema {
+    let subscription_access = crate::subscription::subscription_access(access);
     let mut b = Builder {
         schema: Schema {
             types: IndexMap::new(),
@@ -163,6 +169,21 @@ fn build_schema(
         b.schema.mutation_type = Some(MUTATION_ROOT.to_owned());
         b.schema.add(TypeDef::Object(mutation_root));
     }
+
+    // The subscription root repeats the query root's table fields, as allowed by
+    // `subscription_root_fields`, and adds the streaming fields.
+    let mut subscription_root = ObjectDef::new(crate::subscription::SUBSCRIPTION_ROOT, None);
+    b.access = &subscription_access;
+    for table in &tables.ordered {
+        b.add_table_select_root_fields(table, &mut subscription_root);
+        b.add_table_stream_root_field(table, &mut subscription_root);
+    }
+    b.access = access;
+    if !subscription_root.fields.is_empty() {
+        b.schema.subscription_type = Some(crate::subscription::SUBSCRIPTION_ROOT.to_owned());
+        b.schema.add(TypeDef::Object(subscription_root));
+    }
+
     if query_root.fields.is_empty() {
         query_root = query_root.field(FieldDef::new(
             "no_queries_available",
