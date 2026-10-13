@@ -726,6 +726,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "hge-auth",
  "hge-core",
  "hge-metadata",
  "hge-server",
@@ -770,11 +771,19 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 name = "hge-auth"
 version = "0.1.0"
 dependencies = [
+ "arc-swap",
+ "axum",
+ "base64 0.22.1",
  "hge-core",
  "http",
+ "httpdate",
+ "reqwest",
+ "ring",
  "serde_json",
  "sha2 0.10.9",
  "subtle",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

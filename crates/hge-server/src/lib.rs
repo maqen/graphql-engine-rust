@@ -15,13 +15,17 @@ pub use state::{AppState, Engine};
 
 /// Load metadata, connect sources and build the engine.
 pub async fn build_engine(config: ServerConfig) -> Result<Arc<Engine>, hge_core::Error> {
+    // Auth first: its configuration errors are fatal before anything connects (as in V2).
+    let auth = hge_auth::Authenticator::new(config.auth_config())
+        .await
+        .map_err(|e| hge_core::Error::new(hge_core::Code::InvalidConfiguration, e))?;
     let (metadata, origin) = load::load_metadata(&config).await?;
     tracing::info!(target: "startup", ?origin, "metadata source selected");
     if let Some(dir) = &config.migrations_dir {
         migrations::apply(dir, &metadata, &config).await?;
     }
     let state = load::build_state(metadata, &config).await;
-    Ok(Arc::new(Engine::new(config, state)))
+    Ok(Arc::new(Engine::new(config, auth, state)))
 }
 
 /// Serve until ctrl-c / SIGTERM, running the event trigger worker alongside.

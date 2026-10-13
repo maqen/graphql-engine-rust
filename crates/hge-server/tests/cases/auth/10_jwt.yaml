@@ -1,0 +1,162 @@
+# JWT mode (spec 05 §5). Tokens are HS256-signed with the config key; regenerate them with
+# any JWT library if the claims need to change.
+config:
+  admin_secret: s3cret
+  jwt_secret:
+    type: HS256
+    key: conformance-secret-that-is-at-least-32-bytes
+cases:
+- description: a valid token selects the default role
+  headers:
+    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZXhwIjo5OTk5OTk5OTk5LCJodHRwczovL2hhc3VyYS5pby9qd3QvY2xhaW1zIjp7IngtaGFzdXJhLWFsbG93ZWQtcm9sZXMiOlsicHVibGljIiwiZWRpdG9yIl0sIngtaGFzdXJhLWRlZmF1bHQtcm9sZSI6InB1YmxpYyIsIngtaGFzdXJhLXVzZXItaWQiOiIxIn19.SWgWyyVlelNxEbZ7LUpNQUibESe1iva2qPpbxoGYr_g
+  query:
+    query: '{ author(order_by: {id: asc}) { name } }'
+  response: &id001
+    data:
+      author:
+      - name: Alice
+      - name: Bob
+- description: x-hasura-role picks among the allowed roles
+  headers:
+    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZXhwIjo5OTk5OTk5OTk5LCJodHRwczovL2hhc3VyYS5pby9qd3QvY2xhaW1zIjp7IngtaGFzdXJhLWFsbG93ZWQtcm9sZXMiOlsicHVibGljIiwiZWRpdG9yIl0sIngtaGFzdXJhLWRlZmF1bHQtcm9sZSI6InB1YmxpYyIsIngtaGFzdXJhLXVzZXItaWQiOiIxIn19.SWgWyyVlelNxEbZ7LUpNQUibESe1iva2qPpbxoGYr_g
+    X-Hasura-Role: editor
+  query:
+    query: '{ author { name } }'
+  response:
+    errors:
+    - extensions:
+        path: $.selectionSet.author
+        code: validation-failed
+      message: 'field ''author'' not found in type: ''query_root'''
+- description: a role outside the allowed roles is rejected
+  headers:
+    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZXhwIjo5OTk5OTk5OTk5LCJodHRwczovL2hhc3VyYS5pby9qd3QvY2xhaW1zIjp7IngtaGFzdXJhLWFsbG93ZWQtcm9sZXMiOlsicHVibGljIiwiZWRpdG9yIl0sIngtaGFzdXJhLWRlZmF1bHQtcm9sZSI6InB1YmxpYyIsIngtaGFzdXJhLXVzZXItaWQiOiIxIn19.SWgWyyVlelNxEbZ7LUpNQUibESe1iva2qPpbxoGYr_g
+    X-Hasura-Role: admin
+  query:
+    query: '{ author(order_by: {id: asc}) { name } }'
+  response:
+    errors:
+    - extensions:
+        path: $
+        code: access-denied
+      message: Your requested role is not in allowed roles
+- description: a token whose role is admin has admin rights
+  headers:
+    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZXhwIjo5OTk5OTk5OTk5LCJodHRwczovL2hhc3VyYS5pby9qd3QvY2xhaW1zIjp7IngtaGFzdXJhLWFsbG93ZWQtcm9sZXMiOlsiYWRtaW4iXSwieC1oYXN1cmEtZGVmYXVsdC1yb2xlIjoiYWRtaW4ifX0.OCtAf38c0KvEj-ILJvbA1aF_h548Gg7YC-om2TpgtQc
+  query:
+    query: '{ things(order_by: {code: asc}) { code } }'
+  response:
+    data:
+      things:
+      - code: x
+      - code: y
+- description: a valid admin secret wins over the token
+  headers:
+    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZXhwIjoxMDAwMDAwMDAwLCJodHRwczovL2hhc3VyYS5pby9qd3QvY2xhaW1zIjp7IngtaGFzdXJhLWFsbG93ZWQtcm9sZXMiOlsicHVibGljIl0sIngtaGFzdXJhLWRlZmF1bHQtcm9sZSI6InB1YmxpYyJ9fQ.UcfrlaouXniuL7ZKOdhN4azqupl8tj-gM2CpXYv93xA
+    X-Hasura-Admin-Secret: s3cret
+    X-Hasura-Role: public
+  query:
+    query: '{ author(order_by: {id: asc}) { name } }'
+  response: *id001
+- description: a wrong admin secret fails even with a valid token
+  headers:
+    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZXhwIjo5OTk5OTk5OTk5LCJodHRwczovL2hhc3VyYS5pby9qd3QvY2xhaW1zIjp7IngtaGFzdXJhLWFsbG93ZWQtcm9sZXMiOlsicHVibGljIiwiZWRpdG9yIl0sIngtaGFzdXJhLWRlZmF1bHQtcm9sZSI6InB1YmxpYyIsIngtaGFzdXJhLXVzZXItaWQiOiIxIn19.SWgWyyVlelNxEbZ7LUpNQUibESe1iva2qPpbxoGYr_g
+    X-Hasura-Admin-Secret: nope
+  query:
+    query: '{ author(order_by: {id: asc}) { name } }'
+  response:
+    errors:
+    - extensions:
+        path: $
+        code: access-denied
+      message: invalid "x-hasura-admin-secret"
+- description: no token and no unauthorized role
+  query:
+    query: '{ author(order_by: {id: asc}) { name } }'
+  response:
+    errors:
+    - extensions:
+        path: $
+        code: invalid-headers
+      message: Missing 'Authorization' or 'Cookie' header in JWT authentication mode
+- description: malformed Authorization header
+  headers:
+    Authorization: Basic YWxhZGRpbjpvcGVuc2VzYW1l
+  query:
+    query: '{ author(order_by: {id: asc}) { name } }'
+  response:
+    errors:
+    - extensions:
+        path: $
+        code: invalid-headers
+      message: Malformed Authorization header
+- description: expired token
+  headers:
+    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZXhwIjoxMDAwMDAwMDAwLCJodHRwczovL2hhc3VyYS5pby9qd3QvY2xhaW1zIjp7IngtaGFzdXJhLWFsbG93ZWQtcm9sZXMiOlsicHVibGljIl0sIngtaGFzdXJhLWRlZmF1bHQtcm9sZSI6InB1YmxpYyJ9fQ.UcfrlaouXniuL7ZKOdhN4azqupl8tj-gM2CpXYv93xA
+  query:
+    query: '{ author(order_by: {id: asc}) { name } }'
+  response:
+    errors:
+    - extensions:
+        path: $
+        code: invalid-jwt
+      message: 'Could not verify JWT: JWTExpired'
+- description: bad signature
+  headers:
+    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZXhwIjo5OTk5OTk5OTk5LCJodHRwczovL2hhc3VyYS5pby9qd3QvY2xhaW1zIjp7IngtaGFzdXJhLWFsbG93ZWQtcm9sZXMiOlsicHVibGljIl0sIngtaGFzdXJhLWRlZmF1bHQtcm9sZSI6InB1YmxpYyJ9fQ.jDbShFBT12rXrrTgzQniYHhRBPYIHfin6AZ8AJFRu9s
+  query:
+    query: '{ author(order_by: {id: asc}) { name } }'
+  response:
+    errors:
+    - extensions:
+        path: $
+        code: invalid-jwt
+      message: 'Could not verify JWT: JWSError JWSInvalidSignature'
+- description: missing allowed roles
+  headers:
+    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZXhwIjo5OTk5OTk5OTk5LCJodHRwczovL2hhc3VyYS5pby9qd3QvY2xhaW1zIjp7IngtaGFzdXJhLWRlZmF1bHQtcm9sZSI6InB1YmxpYyJ9fQ.ltg-ObGHmI6_2oGN0AIe3u9uttBfj7pYn3mhi7JY81E
+  query:
+    query: '{ author(order_by: {id: asc}) { name } }'
+  response:
+    errors:
+    - extensions:
+        path: $
+        code: jwt-missing-role-claims
+      message: JWT claim does not contain "x-hasura-allowed-roles"
+- description: non-string session variable claims
+  headers:
+    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZXhwIjo5OTk5OTk5OTk5LCJodHRwczovL2hhc3VyYS5pby9qd3QvY2xhaW1zIjp7IngtaGFzdXJhLWFsbG93ZWQtcm9sZXMiOlsicHVibGljIl0sIngtaGFzdXJhLWRlZmF1bHQtcm9sZSI6InB1YmxpYyIsIngtaGFzdXJhLXVzZXItaWQiOjF9fQ.3tnxrwB1caYKpkQeKO07FHtnsJExUsLpID7Q28iQ5b4
+  query:
+    query: '{ author(order_by: {id: asc}) { name } }'
+  response:
+    errors:
+    - extensions:
+        path: $
+        code: jwt-invalid-claims
+      message: 'x-hasura-* claims: parsing Text failed, expected String, but encountered Number'
+- description: /v1alpha1/graphql keeps the real status
+  url: /v1alpha1/graphql
+  status: 400
+  headers:
+    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZXhwIjoxMDAwMDAwMDAwLCJodHRwczovL2hhc3VyYS5pby9qd3QvY2xhaW1zIjp7IngtaGFzdXJhLWFsbG93ZWQtcm9sZXMiOlsicHVibGljIl0sIngtaGFzdXJhLWRlZmF1bHQtcm9sZSI6InB1YmxpYyJ9fQ.UcfrlaouXniuL7ZKOdhN4azqupl8tj-gM2CpXYv93xA
+  query:
+    query: '{ author(order_by: {id: asc}) { name } }'
+  response:
+    errors:
+    - extensions:
+        path: $
+        code: invalid-jwt
+      message: 'Could not verify JWT: JWTExpired'
+- description: /v1alpha1/graphql keeps 401 for a wrong admin secret
+  url: /v1alpha1/graphql
+  status: 401
+  headers:
+    X-Hasura-Admin-Secret: nope
+  query:
+    query: '{ author(order_by: {id: asc}) { name } }'
+  response:
+    errors:
+    - extensions:
+        path: $
+        code: access-denied
+      message: invalid "x-hasura-admin-secret"

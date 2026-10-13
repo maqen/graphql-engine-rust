@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use arc_swap::ArcSwap;
-use hge_auth::AuthConfig;
+use hge_auth::Authenticator;
 use hge_core::RoleName;
 use hge_metadata::Metadata;
 use hge_postgres::PgSource;
@@ -114,16 +114,12 @@ impl AppState {
 /// The running engine: configuration plus the current state.
 pub struct Engine {
     pub config: ServerConfig,
-    pub auth: AuthConfig,
+    pub auth: Authenticator,
     pub state: ArcSwap<AppState>,
 }
 
 impl Engine {
-    pub fn new(config: ServerConfig, state: AppState) -> Self {
-        let auth = AuthConfig {
-            admin_secrets: config.admin_secrets.clone(),
-            unauthorized_role: config.unauthorized_role.clone(),
-        };
+    pub fn new(config: ServerConfig, auth: Authenticator, state: AppState) -> Self {
         Engine {
             config,
             auth,

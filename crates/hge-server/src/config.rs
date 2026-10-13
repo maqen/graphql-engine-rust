@@ -20,6 +20,14 @@ pub struct ServerConfig {
     pub admin_secrets: Vec<String>,
     /// `HASURA_GRAPHQL_UNAUTHORIZED_ROLE`
     pub unauthorized_role: Option<String>,
+    /// `HASURA_GRAPHQL_DISABLE_ADMIN_SECRET`
+    pub disable_admin_secret: bool,
+    /// `HASURA_GRAPHQL_JWT_SECRET` (a JSON object, validated by `hge-auth`).
+    pub jwt_secret: Option<String>,
+    /// `HASURA_GRAPHQL_JWT_SECRETS` (a JSON list).
+    pub jwt_secrets: Option<String>,
+    /// `HASURA_GRAPHQL_AUTH_HOOK*`
+    pub auth_hook: Option<hge_auth::HookConfig>,
     /// `HASURA_GRAPHQL_DEV_MODE`
     pub dev_mode: bool,
     /// `HASURA_GRAPHQL_ADMIN_INTERNAL_ERRORS` (default true)
@@ -55,6 +63,10 @@ impl Default for ServerConfig {
             migrations_dir: None,
             admin_secrets: vec![],
             unauthorized_role: None,
+            disable_admin_secret: false,
+            jwt_secret: None,
+            jwt_secrets: None,
+            auth_hook: None,
             dev_mode: false,
             admin_internal_errors: true,
             stringify_numeric_types: false,
@@ -74,6 +86,19 @@ impl Default for ServerConfig {
 }
 
 impl ServerConfig {
+    /// The auth settings, for [`hge_auth::Authenticator::new`].
+    pub fn auth_config(&self) -> hge_auth::AuthConfig {
+        hge_auth::AuthConfig {
+            admin_secrets: self.admin_secrets.clone(),
+            unauthorized_role: self.unauthorized_role.clone(),
+            disable_admin_secret: self.disable_admin_secret,
+            jwt_secret: self.jwt_secret.clone(),
+            jwt_secrets: self.jwt_secrets.clone(),
+            auth_hook: self.auth_hook.clone(),
+            user_agent: format!("hasura-graphql-engine/{}", crate::routes::VERSION),
+        }
+    }
+
     pub fn api_enabled(&self, api: &str) -> bool {
         self.enabled_apis.iter().any(|a| a == api)
     }

@@ -27,6 +27,9 @@ struct FileConfig {
     fixture: Option<String>,
     admin_secret: Option<String>,
     unauthorized_role: Option<String>,
+    /// `HASURA_GRAPHQL_JWT_SECRET`, written as a YAML mapping.
+    jwt_secret: Option<Value>,
+    disable_admin_secret: bool,
     stringify_numeric_types: bool,
     v1_boolean_null_collapse: bool,
     preserve_401_errors: bool,
@@ -74,12 +77,20 @@ async fn setup_database(url: &str, fixture: &Path) {
     client.batch_execute(&sql).await.expect("apply schema.sql");
 }
 
+/// Every `*.yaml` under `tests/cases/`, including subdirectories (`cases/auth/…`).
 fn case_files() -> Vec<PathBuf> {
-    let mut files: Vec<PathBuf> = std::fs::read_dir(CASES)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .filter(|p| p.extension().is_some_and(|e| e == "yaml"))
-        .collect();
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if path.extension().is_some_and(|e| e == "yaml") {
+                out.push(path);
+            }
+        }
+    }
+    let mut files = vec![];
+    walk(Path::new(CASES), &mut files);
     files.sort();
     files
 }
@@ -95,6 +106,8 @@ async fn run_file(path: &Path, database_url: &str) -> Vec<String> {
         metadata_dir: Some(fixture.join("metadata")),
         admin_secrets: c.admin_secret.into_iter().collect(),
         unauthorized_role: c.unauthorized_role,
+        jwt_secret: c.jwt_secret.map(|v| v.to_string()),
+        disable_admin_secret: c.disable_admin_secret,
         stringify_numeric_types: c.stringify_numeric_types,
         v1_boolean_null_collapse: c.v1_boolean_null_collapse,
         preserve_401_errors: c.preserve_401_errors,
@@ -141,7 +154,7 @@ async fn run_file(path: &Path, database_url: &str) -> Vec<String> {
         if status != StatusCode::from_u16(case.status).unwrap() || actual != case.response {
             failures.push(format!(
                 "{}: {}\n  expected ({}): {}\n  actual   ({}): {}",
-                path.file_name().unwrap().to_string_lossy(),
+                path.strip_prefix(CASES).unwrap_or(path).display(),
                 case.description,
                 case.status,
                 case.response,
