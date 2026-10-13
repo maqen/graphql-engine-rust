@@ -12,9 +12,9 @@ cases:
           name: asyncRespond
           description: 'fields of action: "asyncRespond"'
           fields:
-            - { name: id, type: { kind: NON_NULL, name: null, ofType: { name: uuid } } }
             - { name: created_at, type: { kind: NON_NULL, name: null, ofType: { name: timestamptz } } }
             - { name: errors, type: { kind: SCALAR, name: json, ofType: null } }
+            - { name: id, type: { kind: NON_NULL, name: null, ofType: { name: uuid } } }
             - { name: output, type: { kind: OBJECT, name: AsyncRespond, ofType: null } }
 
   - description: the async mutation returns the action id
