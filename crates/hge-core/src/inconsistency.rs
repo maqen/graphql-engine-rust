@@ -87,6 +87,21 @@ impl InconsistentObject {
         )
     }
 
+    /// V2's `ConflictingInheritedPermission`: the parents of inherited role `role` define
+    /// different permissions for `entity` (`{"table", "source", "permission_type"}`), so the
+    /// role gets none. `entity_text` is the entity as the reason names it. Not a metadata
+    /// object: it has an `entity` instead of a `definition` and cannot be dropped.
+    pub fn conflicting_inherited_permission(role: &str, entity_text: &str, entity: Value) -> Self {
+        Self::new(
+            CONFLICTING_INHERITED_PERMISSION,
+            role,
+            format!(
+                "Could not inherit permission for the role '{role}' for the entity: '{entity_text}'"
+            ),
+            entity,
+        )
+    }
+
     pub fn with_message(mut self, message: Value) -> Self {
         self.message = Some(message);
         self
@@ -100,6 +115,13 @@ impl InconsistentObject {
     /// The JSON object V2 returns.
     pub fn to_json(&self) -> Value {
         let mut obj = Map::new();
+        if self.kind == CONFLICTING_INHERITED_PERMISSION {
+            obj.insert("entity".into(), self.definition.clone());
+            obj.insert("name".into(), Value::String(self.name.clone()));
+            obj.insert("reason".into(), Value::String(self.reason.clone()));
+            obj.insert("type".into(), Value::String(self.kind.clone()));
+            return Value::Object(obj);
+        }
         obj.insert("definition".into(), sort_keys(self.definition.clone()));
         if let Some(m) = &self.message {
             obj.insert("message".into(), m.clone());
@@ -113,6 +135,8 @@ impl InconsistentObject {
         Value::Object(obj)
     }
 }
+
+const CONFLICTING_INHERITED_PERMISSION: &str = "inherited role permission inconsistency";
 
 /// V2 renders definitions from plain aeson values, whose keys come out sorted.
 fn sort_keys(v: Value) -> Value {
@@ -141,4 +165,29 @@ impl std::fmt::Display for InconsistentObject {
 /// `[obj, …]` as JSON.
 pub fn inconsistencies_json(objects: &[InconsistentObject]) -> Value {
     Value::Array(objects.iter().map(InconsistentObject::to_json).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn conflicting_inherited_permission_json() {
+        let entity = json!({"permission_type": "insert", "source": "default", "table": {"schema": "public", "name": "author"}});
+        let o = InconsistentObject::conflicting_inherited_permission(
+            "staff",
+            "insert permission on table \"author\" in source \"default\"",
+            entity.clone(),
+        );
+        assert_eq!(
+            o.to_json(),
+            json!({
+                "entity": entity,
+                "name": "staff",
+                "reason": "Could not inherit permission for the role 'staff' for the entity: 'insert permission on table \"author\" in source \"default\"'",
+                "type": "inherited role permission inconsistency",
+            })
+        );
+    }
 }

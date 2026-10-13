@@ -174,3 +174,73 @@ cases:
       errors:
         - extensions: { path: "$", code: data-exception }
           message: 'invalid input syntax for type integer: "abc"'
+
+  - description: inherited role sees the union of rows and redacts columns per row
+    headers: { x-hasura-role: staff, x-hasura-user-id: "1" }
+    query:
+      query: "{ article(order_by: {id: asc}) { id title word_count author_id } }"
+    response:
+      data:
+        article:
+          - { id: 1, title: Alice published, word_count: 900, author_id: 1 }
+          - { id: 2, title: Alice draft, word_count: null, author_id: 1 }
+          - { id: 3, title: Bob published, word_count: 400, author_id: 2 }
+
+  - description: redacted columns compare as null in where
+    headers: { x-hasura-role: staff, x-hasura-user-id: "1" }
+    query:
+      query: "{ a: article(where: {word_count: {_is_null: true}}) { id } b: article(where: {_not: {word_count: {_gt: 0}}}) { id } }"
+    response:
+      data:
+        a: [{ id: 2 }]
+        b: []
+
+  - description: redacted columns sort as null
+    headers: { x-hasura-role: staff, x-hasura-user-id: "1" }
+    query:
+      query: "{ article(order_by: [{word_count: asc_nulls_first}, {id: asc}]) { id } }"
+    response:
+      data:
+        article: [{ id: 2 }, { id: 5 }, { id: 3 }]
+
+  - description: redacted columns are nullable in the schema
+    headers: { x-hasura-role: staff, x-hasura-user-id: "1" }
+    query:
+      query: "{ __type(name: \"article\") { fields { name type { kind } } } }"
+    response:
+      data:
+        __type:
+          fields:
+            - { name: id, type: { kind: NON_NULL } }
+            - { name: title, type: { kind: NON_NULL } }
+            - { name: author_id, type: { kind: SCALAR } }
+            - { name: is_published, type: { kind: SCALAR } }
+            - { name: word_count, type: { kind: SCALAR } }
+            - { name: author, type: { kind: NON_NULL } }
+            - { name: reviewer, type: { kind: OBJECT } }
+
+  - description: by_pk compares a redacted primary key as null
+    headers: { x-hasura-role: pab }
+    query:
+      query: "{ a: article_by_pk(id: 2) { title } b: article_by_pk(id: 1) { id title } }"
+    response:
+      data:
+        a: null
+        b: { id: 1, title: Alice published }
+
+  - description: distinct_on groups a redacted column by its redacted value
+    headers: { x-hasura-role: pab }
+    query:
+      query: "{ article(distinct_on: [word_count], order_by: [{word_count: asc}]) { word_count } }"
+    response:
+      data:
+        article: [{ word_count: 50 }, { word_count: 400 }, { word_count: 900 }, { word_count: null }]
+
+  - description: empty _in / _nin on a redacted column behave like on a null value
+    headers: { x-hasura-role: pab }
+    query:
+      query: "{ a: article(where: {word_count: {_nin: []}}, order_by: {title: asc}, limit: 2) { title } b: article(where: {_not: {word_count: {_in: []}}}, order_by: {title: asc}, limit: 2) { title } }"
+    response:
+      data:
+        a: [{ title: Alice draft }, { title: Alice published }]
+        b: [{ title: Alice draft }, { title: Alice published }]

@@ -40,7 +40,7 @@ impl Translator<'_> {
                 self.bool_exp_in(inner, alias, root)?;
                 self.b.push(")");
             }
-            BoolExp::Compare { column, op, .. } => self.compare(alias, column, op)?,
+            BoolExp::Compare { column, op, .. } => self.compare(alias, column, op, None)?,
             BoolExp::Relationship {
                 table,
                 mapping,
@@ -84,21 +84,39 @@ impl Translator<'_> {
                 self.b.push(")");
             }
             BoolExp::Rooted(inner) => self.bool_exp_in(inner, alias, alias)?,
+            BoolExp::Redacted { condition, exp } => match &**exp {
+                BoolExp::Compare { column, op, .. } => {
+                    self.compare(alias, column, op, Some((condition, root)))?
+                }
+                other => {
+                    return Err(Error::unexpected(format!(
+                        "redaction applies to column comparisons only, not {other:?}"
+                    )));
+                }
+            },
         }
         Ok(())
     }
 
-    fn compare(&mut self, alias: &str, column: &str, op: &CompareOp) -> Result<(), Error> {
+    /// `redact`: read the column as `CASE WHEN condition THEN col ELSE NULL END` (condition
+    /// rendered with the given root).
+    fn compare(
+        &mut self,
+        alias: &str,
+        column: &str,
+        op: &CompareOp,
+        redact: Option<(&BoolExp, &str)>,
+    ) -> Result<(), Error> {
         use CompareOp::*;
         self.b.push("(");
         if let IsNull(is_null) = op {
-            self.b.qualified(alias, column);
+            self.column(alias, column, redact)?;
             self.b
                 .push(if *is_null { " IS NULL" } else { " IS NOT NULL" });
             self.b.push(")");
             return Ok(());
         }
-        self.b.qualified(alias, column);
+        self.column(alias, column, redact)?;
         let (sql_op, v, suffix) = match op {
             Eq(v) => (" = ", v, ""),
             Neq(v) => (" <> ", v, ""),
@@ -129,6 +147,29 @@ impl Translator<'_> {
         self.value(v)?;
         self.b.push(suffix);
         self.b.push(")");
+        Ok(())
+    }
+}
+
+impl Translator<'_> {
+    fn column(
+        &mut self,
+        alias: &str,
+        column: &str,
+        redact: Option<(&BoolExp, &str)>,
+    ) -> Result<(), Error> {
+        match redact {
+            None => {
+                self.b.qualified(alias, column);
+            }
+            Some((condition, root)) => {
+                self.b.push("(CASE WHEN ");
+                self.bool_exp_in(condition, alias, root)?;
+                self.b.push(" THEN ");
+                self.b.qualified(alias, column);
+                self.b.push(" ELSE NULL END)");
+            }
+        }
         Ok(())
     }
 }

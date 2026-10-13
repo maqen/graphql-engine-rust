@@ -22,6 +22,9 @@ pub struct TablePermissions {
 pub struct SelectPermission {
     /// Selectable columns (database names), in table order.
     pub columns: Vec<String>,
+    /// Columns an inherited role sees only on some rows: the value is NULL unless the
+    /// condition holds (V2's `RedactIfFalse`). Columns not listed are never redacted.
+    pub redactions: IndexMap<String, BoolExp>,
     /// Row filter (`BoolExp::And(vec![])` when unrestricted).
     pub filter: BoolExp,
     pub limit: Option<u64>,
@@ -37,6 +40,11 @@ pub struct SelectPermission {
 impl SelectPermission {
     pub fn allows_column(&self, column: &str) -> bool {
         self.columns.iter().any(|c| c == column)
+    }
+
+    /// The condition under which `column` is visible, if it is redacted.
+    pub fn redaction(&self, column: &str) -> Option<&BoolExp> {
+        self.redactions.get(column)
     }
 
     /// The row filter, or `None` when it lets every row through.

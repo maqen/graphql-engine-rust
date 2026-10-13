@@ -273,7 +273,11 @@ impl Builder<'_> {
             self.note_scalar(&col.ty);
             let mut field = FieldDef::new(
                 col.gql_name.clone(),
-                scalars::column_type_ref(&col.ty, col.nullable),
+                // Inherited-role redaction can null any column.
+                scalars::column_type_ref(
+                    &col.ty,
+                    col.nullable || access.redaction(&col.name).is_some(),
+                ),
                 FieldKind::Column {
                     column: col.name.clone(),
                     ty: col.ty.clone(),

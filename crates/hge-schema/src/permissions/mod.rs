@@ -11,8 +11,9 @@
 //! [`table_permissions`]; mutations use the insert/update/delete parts.
 
 pub mod boolexp;
+pub mod inherited;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use hge_core::{ADMIN_ROLE, InconsistentObject, RoleName};
@@ -20,7 +21,7 @@ use hge_ir::{
     BoolExp, DeletePermission, InsertPermission, RootFields, SelectPermission, TablePermissions,
     UpdatePermission,
 };
-use hge_metadata::Columns;
+use hge_metadata::{Columns, Metadata};
 use indexmap::IndexMap;
 
 use crate::tables::{TableInfo, Tables};
@@ -43,13 +44,35 @@ pub fn select_access(table: &TableInfo, role: &RoleName) -> Option<SelectAccess>
 
 /// Resolve the permissions of every table. Call after all tables of all sources are resolved
 /// (relationships and `_exists` refer to other tables).
-pub fn resolve_permissions(tables: &mut Tables, inconsistencies: &mut Vec<InconsistentObject>) {
+pub fn resolve_permissions(
+    metadata: &Metadata,
+    tables: &mut Tables,
+    inconsistencies: &mut Vec<InconsistentObject>,
+) {
+    let defined = defined_roles(metadata);
+    let inherited = inherited::order_roles(&metadata.inherited_roles, &defined, inconsistencies);
     let resolved: Vec<_> = {
         let parser = Parser { tables };
         tables
             .ordered
             .iter()
-            .map(|t| resolve_table(&parser, t, inconsistencies))
+            .map(|t| {
+                let mut by_role = resolve_table(&parser, t, inconsistencies);
+                for role in &inherited {
+                    let explicit = by_role.shift_remove(role.role_name.as_str());
+                    let derived =
+                        inherited::derive(t, role, &by_role, explicit.as_ref(), inconsistencies);
+                    if derived != TablePermissions::default() {
+                        by_role.insert(&role.role_name, derived);
+                    }
+                }
+                let mut out: HashMap<RoleName, Arc<TablePermissions>> = by_role
+                    .into_iter()
+                    .map(|(role, perms)| (RoleName::new(role), Arc::new(perms)))
+                    .collect();
+                out.insert(RoleName::admin(), Arc::new(admin_permissions(t)));
+                out
+            })
             .collect()
     };
     tables.by_name.clear();
@@ -63,11 +86,11 @@ pub fn resolve_permissions(tables: &mut Tables, inconsistencies: &mut Vec<Incons
     }
 }
 
-fn resolve_table(
+fn resolve_table<'m>(
     parser: &Parser<'_>,
-    table: &TableInfo,
+    table: &'m TableInfo,
     inconsistencies: &mut Vec<InconsistentObject>,
-) -> HashMap<RoleName, Arc<TablePermissions>> {
+) -> IndexMap<&'m str, TablePermissions> {
     let entry = &table.entry;
     let mut by_role: IndexMap<&str, TablePermissions> = IndexMap::new();
     let mut report = |kind: &str, perm: &dyn erased::Definition, e: PermError| {
@@ -152,12 +175,32 @@ fn resolve_table(
         }
     }
 
-    let mut out: HashMap<RoleName, Arc<TablePermissions>> = by_role
-        .into_iter()
-        .map(|(role, perms)| (RoleName::new(role), Arc::new(perms)))
-        .collect();
-    out.insert(RoleName::admin(), Arc::new(admin_permissions(table)));
-    out
+    by_role
+}
+
+/// Roles that exist without inheritance: named by any table, function, action or remote
+/// schema permission.
+fn defined_roles(metadata: &Metadata) -> HashSet<&str> {
+    fn json_roles(items: &[serde_json::Value]) -> impl Iterator<Item = &str> {
+        items
+            .iter()
+            .filter_map(|i| i.get("permissions")?.as_array())
+            .flatten()
+            .filter_map(|p| p.get("role")?.as_str())
+    }
+    let mut roles = HashSet::new();
+    for source in &metadata.sources {
+        for t in &source.tables {
+            roles.extend(t.select_permissions.iter().map(|p| p.role.as_str()));
+            roles.extend(t.insert_permissions.iter().map(|p| p.role.as_str()));
+            roles.extend(t.update_permissions.iter().map(|p| p.role.as_str()));
+            roles.extend(t.delete_permissions.iter().map(|p| p.role.as_str()));
+        }
+        roles.extend(json_roles(&source.functions));
+    }
+    roles.extend(json_roles(&metadata.actions));
+    roles.extend(json_roles(&metadata.remote_schemas));
+    roles
 }
 
 mod erased {
@@ -200,6 +243,7 @@ fn admin_permissions(table: &TableInfo) -> TablePermissions {
     TablePermissions {
         select: Some(SelectPermission {
             columns: columns.clone(),
+            redactions: IndexMap::new(),
             filter: BoolExp::always_true(),
             limit: None,
             allow_aggregations: true,
@@ -293,6 +337,7 @@ fn select_permission(
         query_root_fields: root_fields(&p.query_root_fields, false)?,
         subscription_root_fields: root_fields(&p.subscription_root_fields, true)?,
         columns,
+        redactions: IndexMap::new(),
         filter,
         limit: p.limit,
         allow_aggregations: p.allow_aggregations,
