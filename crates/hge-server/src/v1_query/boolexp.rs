@@ -626,39 +626,10 @@ fn for_each_value(exp: &mut BoolExp, f: &mut impl FnMut(&mut Value)) {
         }
         BoolExp::CompareComputed { call, op, .. } => {
             for_each_call_value(call, f);
-            for_each_op_value(op, f);
+            op.for_each_value_mut(f);
         }
         BoolExp::CompareColumns { .. } => {}
-        BoolExp::Compare { op, .. } => for_each_op_value(op, f),
-    }
-}
-
-fn for_each_op_value(op: &mut CompareOp, f: &mut impl FnMut(&mut Value)) {
-    match op {
-        CompareOp::Eq(v)
-        | CompareOp::Neq(v)
-        | CompareOp::Gt(v)
-        | CompareOp::Lt(v)
-        | CompareOp::Gte(v)
-        | CompareOp::Lte(v)
-        | CompareOp::In(v)
-        | CompareOp::Nin(v)
-        | CompareOp::Like(v)
-        | CompareOp::NLike(v)
-        | CompareOp::ILike(v)
-        | CompareOp::NILike(v)
-        | CompareOp::Similar(v)
-        | CompareOp::NSimilar(v)
-        | CompareOp::Regex(v)
-        | CompareOp::NRegex(v)
-        | CompareOp::IRegex(v)
-        | CompareOp::NIRegex(v)
-        | CompareOp::Contains(v)
-        | CompareOp::ContainedIn(v)
-        | CompareOp::HasKey(v)
-        | CompareOp::HasKeysAny(v)
-        | CompareOp::HasKeysAll(v) => f(v),
-        CompareOp::IsNull(_) => {}
+        BoolExp::Compare { op, .. } => op.for_each_value_mut(f),
     }
 }
 

@@ -43,6 +43,12 @@ impl SqlBuilder {
         self
     }
 
+    /// `"schema"."name"[]…`
+    pub fn type_name(&mut self, ty: &ColumnType) -> &mut Self {
+        push_type(&mut self.sql, ty);
+        self
+    }
+
     /// `"alias"."column"`
     pub fn qualified(&mut self, alias: &str, column: &str) -> &mut Self {
         self.ident(alias).push_char('.').ident(column)

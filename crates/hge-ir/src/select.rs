@@ -293,4 +293,110 @@ pub enum CompareOp {
     HasKeysAny(Value),
     /// jsonb `?&` (value is `text[]`)
     HasKeysAll(Value),
+    /// `_cast`: compare the column cast to `to` (jsonb to text, geometry to geography and
+    /// back) with `op`, whose values have type `to`.
+    Cast {
+        to: ColumnType,
+        op: Box<CompareOp>,
+    },
+    /// A PostGIS predicate `ST_<fn>(column, value)`.
+    Spatial(SpatialOp, Value),
+    /// `_st_d_within` / `_st_3d_d_within`.
+    DWithin(Box<DWithin>),
+}
+
+/// `ST_DWithin(column, from, distance)` (`ST_3DDWithin` with `three_d`), with
+/// `use_spheroid` for geography.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DWithin {
+    pub three_d: bool,
+    pub from: Value,
+    pub distance: Value,
+    pub use_spheroid: Option<Value>,
+}
+
+impl CompareOp {
+    /// Call `f` on every value the comparison holds.
+    pub fn for_each_value_mut(&mut self, f: &mut impl FnMut(&mut Value)) {
+        use CompareOp::*;
+        match self {
+            Eq(v)
+            | Neq(v)
+            | Gt(v)
+            | Lt(v)
+            | Gte(v)
+            | Lte(v)
+            | In(v)
+            | Nin(v)
+            | Like(v)
+            | NLike(v)
+            | ILike(v)
+            | NILike(v)
+            | Similar(v)
+            | NSimilar(v)
+            | Regex(v)
+            | NRegex(v)
+            | IRegex(v)
+            | NIRegex(v)
+            | Contains(v)
+            | ContainedIn(v)
+            | HasKey(v)
+            | HasKeysAny(v)
+            | HasKeysAll(v)
+            | Spatial(_, v) => f(v),
+            IsNull(_) => {}
+            Cast { op, .. } => op.for_each_value_mut(f),
+            DWithin(d) => {
+                f(&mut d.from);
+                f(&mut d.distance);
+                if let Some(s) = &mut d.use_spheroid {
+                    f(s);
+                }
+            }
+        }
+    }
+}
+
+/// PostGIS predicates taking the column and one geometry or geography value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpatialOp {
+    Contains,
+    Crosses,
+    Equals,
+    Intersects,
+    Overlaps,
+    Touches,
+    Within,
+    Intersects3d,
+}
+
+impl SpatialOp {
+    /// The PostGIS function.
+    pub fn function(self) -> &'static str {
+        match self {
+            SpatialOp::Contains => "ST_Contains",
+            SpatialOp::Crosses => "ST_Crosses",
+            SpatialOp::Equals => "ST_Equals",
+            SpatialOp::Intersects => "ST_Intersects",
+            SpatialOp::Overlaps => "ST_Overlaps",
+            SpatialOp::Touches => "ST_Touches",
+            SpatialOp::Within => "ST_Within",
+            SpatialOp::Intersects3d => "ST_3DIntersects",
+        }
+    }
+
+    /// The operator's name in boolean expressions, without the leading `_` or `$`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "st_contains" => SpatialOp::Contains,
+            "st_crosses" => SpatialOp::Crosses,
+            "st_equals" => SpatialOp::Equals,
+            "st_intersects" => SpatialOp::Intersects,
+            "st_overlaps" => SpatialOp::Overlaps,
+            "st_touches" => SpatialOp::Touches,
+            "st_within" => SpatialOp::Within,
+            "st_3d_intersects" => SpatialOp::Intersects3d,
+            _ => return None,
+        })
+    }
 }
