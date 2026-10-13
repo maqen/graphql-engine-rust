@@ -175,6 +175,14 @@ pub fn strings(v: &Json, path: &Path) -> Result<Vec<String>, ApiError> {
     }
 }
 
+/// A `{column: value}` object (V2's `ColumnValues`, an aeson `HashMap PGCol Value`).
+pub fn column_values<'a>(v: &'a Json, path: &Path) -> Result<Vec<(&'a str, &'a Json)>, ApiError> {
+    match v {
+        Json::Object(map) => Ok(map.iter().map(|(k, v)| (k.as_str(), v)).collect()),
+        other => Err(type_mismatch("HashMap ~Text", "Object", other, path)),
+    }
+}
+
 /// A table name: `"author"` or `{"schema": "s", "name": "author"}`.
 pub fn table_name(v: &Json, path: &Path) -> Result<QualifiedTable, ApiError> {
     match v {

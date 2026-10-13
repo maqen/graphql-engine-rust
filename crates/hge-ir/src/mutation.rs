@@ -139,12 +139,26 @@ pub struct RelationshipInsert {
 #[derive(Debug, Clone)]
 pub struct OnConflict {
     pub constraint: String,
+    /// Legacy `/v1/query` inserts only: a conflict target other than `constraint` (which is
+    /// then ignored). GraphQL upserts always name a constraint and leave this `None`.
+    pub target: Option<ConflictTarget>,
     /// Empty: `DO NOTHING`.
     pub update_columns: Vec<String>,
     /// Update-permission presets applied by `DO UPDATE`.
     pub presets: Vec<(String, Value)>,
     /// `DO UPDATE … WHERE`: update permission filter AND the user's `where`.
     pub filter: Option<BoolExp>,
+}
+
+/// The conflict target of a legacy `/v1/query` insert (`on_conflict.constraint_on`, or no
+/// target at all with `"action": "ignore"`).
+#[derive(Debug, Clone)]
+pub enum ConflictTarget {
+    /// `ON CONFLICT (c1, c2)`: Postgres infers the unique index on exactly these columns.
+    Columns(Vec<String>),
+    /// `ON CONFLICT DO NOTHING` without a target: any unique violation is ignored. Only
+    /// valid with empty `update_columns`.
+    Any,
 }
 
 #[derive(Debug, Clone)]
@@ -176,6 +190,10 @@ pub enum UpdateExp {
     DeleteElem(Value),
     /// `_delete_at_path` (jsonb `#- text[]`)
     DeleteAtPath(Value),
+    /// Legacy `/v1/query` `$mul`: `column * value`.
+    Mul(Value),
+    /// Legacy `/v1/query` `$default`: `column = DEFAULT`.
+    Default,
 }
 
 #[derive(Debug, Clone)]

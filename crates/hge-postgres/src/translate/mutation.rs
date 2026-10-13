@@ -12,8 +12,8 @@
 
 use hge_core::{ColumnType, Error, Session};
 use hge_ir::{
-    InsertCheck, InsertInto, MutationOutput, MutationResponseField, MutationTable, OnConflict,
-    Update, UpdateExp, Value,
+    ConflictTarget, InsertCheck, InsertInto, MutationOutput, MutationResponseField, MutationTable,
+    OnConflict, Update, UpdateExp, Value,
 };
 
 use super::Translator;
@@ -335,12 +335,35 @@ impl Translator<'_> {
     }
 
     fn on_conflict(&mut self, oc: &OnConflict) -> Result<(), Error> {
-        self.b
-            .push(" ON CONFLICT ON CONSTRAINT ")
-            .ident(&oc.constraint);
+        match &oc.target {
+            None => {
+                self.b
+                    .push(" ON CONFLICT ON CONSTRAINT ")
+                    .ident(&oc.constraint);
+            }
+            // Legacy `/v1/query` targets.
+            Some(ConflictTarget::Columns(columns)) => {
+                self.b.push(" ON CONFLICT (");
+                for (i, c) in columns.iter().enumerate() {
+                    if i > 0 {
+                        self.b.push(", ");
+                    }
+                    self.b.ident(c);
+                }
+                self.b.push(")");
+            }
+            Some(ConflictTarget::Any) => {
+                self.b.push(" ON CONFLICT");
+            }
+        }
         if oc.update_columns.is_empty() {
             self.b.push(" DO NOTHING");
             return Ok(());
+        }
+        if matches!(oc.target, Some(ConflictTarget::Any)) {
+            return Err(Error::unexpected(
+                "ON CONFLICT DO UPDATE needs a conflict target",
+            ));
         }
         self.b.push(" DO UPDATE SET ");
         let mut first = true;
@@ -372,7 +395,12 @@ impl Translator<'_> {
     fn update_exp(&mut self, column: &str, exp: &UpdateExp) -> Result<(), Error> {
         let (op, v, column_first) = match exp {
             UpdateExp::Set(v) => return self.value(v),
+            UpdateExp::Default => {
+                self.b.push("DEFAULT");
+                return Ok(());
+            }
             UpdateExp::Inc(v) => (" + ", v, true),
+            UpdateExp::Mul(v) => (" * ", v, true),
             UpdateExp::Append(v) => (" || ", v, true),
             UpdateExp::Prepend(v) => (" || ", v, false),
             UpdateExp::DeleteKey(v) | UpdateExp::DeleteElem(v) => (" - ", v, true),
@@ -458,6 +486,7 @@ mod tests {
             objects: vec![],
             on_conflict: Some(OnConflict {
                 constraint: "author_pkey".into(),
+                target: None,
                 update_columns: vec!["name".into()],
                 presets: vec![],
                 filter: None,
@@ -500,6 +529,68 @@ mod tests {
             q.sql
         );
         assert!(q.sql.contains(r#"bool_and("_hge_check")"#), "{}", q.sql);
+    }
+
+    #[test]
+    fn legacy_conflict_targets_and_operators() {
+        let mut into = InsertInto {
+            table: table(),
+            objects: vec![],
+            on_conflict: Some(OnConflict {
+                constraint: String::new(),
+                target: Some(ConflictTarget::Columns(vec!["id".into()])),
+                update_columns: vec!["name".into()],
+                presets: vec![],
+                filter: None,
+            }),
+            check: None,
+            path: "$".into(),
+        };
+        let a = Value::literal("A", ColumnType::builtin("text"));
+        let rows = vec![vec![("name", &a)]];
+        let out = output();
+        let q = insert(&into, &rows, Statement::Output(&out), &Session::admin()).unwrap();
+        assert!(
+            q.sql
+                .contains(r#"ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name""#),
+            "{}",
+            q.sql
+        );
+        into.on_conflict = Some(OnConflict {
+            constraint: String::new(),
+            target: Some(ConflictTarget::Any),
+            update_columns: vec![],
+            presets: vec![],
+            filter: None,
+        });
+        let q = insert(&into, &rows, Statement::Output(&out), &Session::admin()).unwrap();
+        assert!(
+            q.sql.contains(" ON CONFLICT DO NOTHING RETURNING"),
+            "{}",
+            q.sql
+        );
+
+        let u = Update {
+            table: table(),
+            set: vec![
+                (
+                    "id".into(),
+                    UpdateExp::Mul(Value::literal("2", ColumnType::builtin("int4"))),
+                ),
+                ("name".into(), UpdateExp::Default),
+            ],
+            filter: BoolExp::always_true(),
+            check: None,
+            output: output(),
+        };
+        let q = update(&u, Statement::Output(&out), &Session::admin()).unwrap();
+        assert!(
+            q.sql.contains(
+                r#"SET "id" = ("_hge_target"."id" * ($1)::"pg_catalog"."int4"), "name" = DEFAULT WHERE"#
+            ),
+            "{}",
+            q.sql
+        );
     }
 
     #[test]

@@ -7,10 +7,13 @@
 
 mod boolexp;
 mod count;
+mod delete;
+mod insert;
 mod json;
 mod lower;
 mod query;
 mod select;
+mod update;
 
 use std::sync::Arc;
 
@@ -19,7 +22,7 @@ use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::Response;
 use hge_core::{Code, Error, Session};
-use hge_ir::{QueryRoot, SourceExecutor};
+use hge_ir::{Mutation, QueryRoot, SourceExecutor};
 use hge_metadata_api::Runtime;
 use hge_metadata_api::ctx::Ctx;
 use hge_metadata_api::run_sql;
@@ -136,8 +139,21 @@ impl<'a> Executor<'a> {
                         .await?;
                     Ok(format!("{{\"count\":{n}}}"))
                 }
+                Query::Insert(q) => {
+                    let mutation = self.lowerer(&q.source).insert(q, self.session)?;
+                    self.execute_mutation(&q.source, mutation, &q.path).await
+                }
+                Query::Update(q) => {
+                    let mutation = self.lowerer(&q.source).update(q, self.session)?;
+                    self.execute_mutation(&q.source, mutation, &q.path).await
+                }
+                Query::Delete(q) => {
+                    let mutation = self.lowerer(&q.source).delete(q, self.session)?;
+                    self.execute_mutation(&q.source, mutation, &q.path).await
+                }
                 Query::Bulk(queries) => {
-                    // Not transactional, like V2: each sub-query commits on its own.
+                    // Not transactional, like V2: each sub-query (DML included: V2's
+                    // `runInsert` & co. each open their own transaction) commits on its own.
                     let mut out = String::from("[");
                     for (i, q) in queries.iter().enumerate() {
                         if i > 0 {
@@ -192,6 +208,36 @@ impl<'a> Executor<'a> {
         Lowerer::new(tables, source, &self.session.role, &self.state.options)
     }
 
+    /// Run one mutation on a source, in its own transaction; DB errors (and failed
+    /// permission checks) are reported at the query's `args`.
+    async fn execute_mutation(
+        &self,
+        source: &str,
+        mutation: Mutation,
+        path: &Path,
+    ) -> Result<String, ApiError> {
+        let executor = self.executor(source, path)?;
+        let mut out = executor
+            .execute_mutations(&[&mutation], self.session)
+            .await
+            .map_err(|e| dml_error(e, path))?;
+        Ok(out.pop().unwrap_or_else(|| "null".to_owned()))
+    }
+
+    fn executor(&self, source: &str, path: &Path) -> Result<Arc<hge_postgres::PgSource>, ApiError> {
+        let executor = match self.working() {
+            Some(p) => p.sources.get(source).map(|s| s.pg.clone()),
+            None => self.state.sources.get(source).cloned(),
+        };
+        executor.ok_or_else(|| {
+            err400(
+                Code::NotExists,
+                format!("source with name \"{source}\" does not exist"),
+                path,
+            )
+        })
+    }
+
     /// Run one root field on a source; DB errors are reported at the query's `args`.
     async fn execute(
         &self,
@@ -199,17 +245,7 @@ impl<'a> Executor<'a> {
         root: QueryRoot,
         path: &Path,
     ) -> Result<String, ApiError> {
-        let executor = match self.working() {
-            Some(p) => p.sources.get(source).map(|s| s.pg.clone()),
-            None => self.state.sources.get(source).cloned(),
-        };
-        let executor = executor.ok_or_else(|| {
-            err400(
-                Code::NotExists,
-                format!("source with name \"{source}\" does not exist"),
-                path,
-            )
-        })?;
+        let executor = self.executor(source, path)?;
         let mut out = executor
             .execute_query(&[&root], self.session)
             .await

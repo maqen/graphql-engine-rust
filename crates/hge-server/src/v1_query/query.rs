@@ -6,8 +6,11 @@ use hge_metadata_api::api::Command;
 use hge_metadata_api::run_sql::RunSql;
 
 use super::count::CountQuery;
+use super::delete::DeleteQuery;
+use super::insert::InsertQuery;
 use super::json::{Obj, Path, parse_failed};
 use super::select::SelectQuery;
+use super::update::UpdateQuery;
 use hge_metadata_api::ApiError;
 
 /// `type`s of version 1 queries, in V2's order (its parse error lists them).
@@ -138,6 +141,9 @@ pub enum Version {
 pub enum Query {
     Select(SelectQuery),
     Count(CountQuery),
+    Insert(InsertQuery),
+    Update(UpdateQuery),
+    Delete(DeleteQuery),
     /// Sub-queries run in order; the first error aborts the request.
     Bulk(Vec<Query>),
     RunSql {
@@ -251,6 +257,9 @@ impl Query {
         Ok(match (version, ty) {
             (Version::V1, "select") => Query::Select(SelectQuery::parse(args, &args_path)?),
             (Version::V1, "count") => Query::Count(CountQuery::parse(args, &args_path)?),
+            (Version::V1, "insert") => Query::Insert(InsertQuery::parse(args, &args_path)?),
+            (Version::V1, "update") => Query::Update(UpdateQuery::parse(args, &args_path)?),
+            (Version::V1, "delete") => Query::Delete(DeleteQuery::parse(args, &args_path)?),
             (Version::V1, "bulk") => match args {
                 Json::Array(items) => Query::Bulk(
                     items
@@ -273,7 +282,11 @@ impl Query {
     /// V2's `requiresAdmin`.
     pub fn requires_admin(&self) -> bool {
         match self {
-            Query::Select(_) | Query::Count(_) => false,
+            Query::Select(_)
+            | Query::Count(_)
+            | Query::Insert(_)
+            | Query::Update(_)
+            | Query::Delete(_) => false,
             Query::RunSql { .. } | Query::Metadata { .. } => true,
             Query::Bulk(qs) => qs.iter().any(Query::requires_admin),
             Query::Other { ty, .. } => !DML_TYPES.contains(&ty.as_str()),
@@ -292,7 +305,12 @@ impl Query {
                 .iter()
                 .filter_map(Query::metadata_access)
                 .reduce(|a, b| a || b),
-            Query::Select(_) | Query::Count(_) | Query::Other { .. } => None,
+            Query::Select(_)
+            | Query::Count(_)
+            | Query::Insert(_)
+            | Query::Update(_)
+            | Query::Delete(_)
+            | Query::Other { .. } => None,
         }
     }
 
@@ -301,6 +319,7 @@ impl Query {
         match self {
             Query::RunSql { args, .. } => !args.read_only,
             Query::Bulk(qs) => qs.iter().any(Query::writes_data),
+            Query::Insert(_) | Query::Update(_) | Query::Delete(_) => true,
             Query::Other { ty, .. } => matches!(ty.as_str(), "insert" | "update" | "delete"),
             Query::Select(_) | Query::Count(_) | Query::Metadata { .. } => false,
         }
@@ -385,8 +404,10 @@ mod tests {
 
     #[test]
     fn admin_only() {
-        let dml = Query::parse(&json!({"type": "insert", "args": {}}), &Path::root()).unwrap();
+        let q = json!({"type": "delete", "args": {"table": "a", "where": {}}});
+        let dml = Query::parse(&q, &Path::root()).unwrap();
         assert!(!dml.requires_admin());
+        assert!(dml.writes_data());
         let sql = json!({"type": "run_sql", "args": {"sql": "select 1"}});
         assert!(Query::parse(&sql, &Path::root()).unwrap().requires_admin());
         let track = json!({"type": "track_table", "args": {"table": "a"}});
@@ -395,6 +416,17 @@ mod tests {
                 .unwrap()
                 .requires_admin()
         );
+    }
+
+    #[test]
+    fn dml_args_parse_up_front() {
+        let e = Query::parse(&json!({"type": "insert", "args": {}}), &Path::root()).unwrap_err();
+        assert_eq!(e.error.message, "key \"table\" not found");
+        assert_eq!(e.error.path, "$.args");
+        let q = json!({"type": "bulk", "args": [{"type": "update", "args": {"table": "a"}}]});
+        let e = Query::parse(&q, &Path::root()).unwrap_err();
+        assert_eq!(e.error.message, "key \"where\" not found");
+        assert_eq!(e.error.path, "$.args[0].args");
     }
 
     #[test]
