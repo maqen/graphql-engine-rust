@@ -111,6 +111,9 @@ fn path_checks_and_ambiguity_match_v2() {
         (Code::MethodNotAllowed, "Allowed methods: GET")
     );
     assert_eq!(err(del, "zz/2").message, "Allowed methods: PUT, POST");
+    assert_eq!(err(del, "author/1").message, "Allowed methods: GET, POST");
+    // Empty segments are dropped.
+    assert_eq!(endpoints.lookup(get, "author//2//").unwrap().0.name, "e_ok");
     assert_eq!(err(get, "nope").code, Code::NotFound);
     assert_eq!(
         err(RequestMethod::parse("HEAD"), "author/2").message,
@@ -167,4 +170,6 @@ fn percent_decoding() {
         variables::percent_decode("%7B%22a%22%7D+%zz", false),
         "{\"a\"}+%zz"
     );
+    assert_eq!(variables::percent_decode("%+31%2", false), "%+31%2");
+    assert_eq!(variables::percent_decode("%C3%A9", false), "é");
 }

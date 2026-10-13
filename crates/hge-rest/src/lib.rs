@@ -5,6 +5,7 @@
 //! [`RestEndpoints::lookup`] matches a request and [`Endpoint::variables`] turns its query
 //! string, JSON body and URL segments into GraphQL variables. Pure: no IO, no async.
 
+pub mod allowlist;
 mod build;
 mod variables;
 
@@ -16,6 +17,15 @@ use hge_metadata::EndpointMethod;
 
 pub use build::build;
 pub use variables::{QueryParams, parse_query_string};
+
+/// The order of V2's `Allowed methods: …` list (checked against v2.51.0-ce).
+const ALLOWED_METHODS_ORDER: [EndpointMethod; 5] = [
+    EndpointMethod::Get,
+    EndpointMethod::Patch,
+    EndpointMethod::Delete,
+    EndpointMethod::Put,
+    EndpointMethod::Post,
+];
 
 /// Decoded values of an endpoint's `:name` URL segments, in URL order.
 pub type PathVars = Vec<(String, String)>;
@@ -108,10 +118,10 @@ impl RestEndpoints {
                 ));
             }
         };
-        // Like WAI's `pathInfo`, a trailing slash does not add an empty segment.
+        // Empty segments are dropped (`a//b/` is `a/b`), as V2 does.
         let parts: Vec<String> = path
-            .trim_end_matches('/')
             .split('/')
+            .filter(|p| !p.is_empty())
             .map(|p| variables::percent_decode(p, false))
             .collect();
         let candidates = self
@@ -124,22 +134,18 @@ impl RestEndpoints {
             .filter(|e| {
                 e.segments.iter().zip(&parts).all(|(s, p)| match s {
                     Segment::Literal(l) => l == p,
-                    Segment::Var(_) => !p.is_empty(),
+                    Segment::Var(_) => true,
                 })
             })
             .collect();
         if matched.is_empty() {
             return Err(Error::new(Code::NotFound, "Endpoint not found"));
         }
-        let all_methods: Vec<EndpointMethod> = {
-            let mut ms = vec![];
-            for m in matched.iter().flat_map(|e| &e.methods) {
-                if !ms.contains(m) {
-                    ms.push(*m);
-                }
-            }
-            ms
-        };
+        // V2 lists them in its hash set's iteration order.
+        let all_methods: Vec<EndpointMethod> = ALLOWED_METHODS_ORDER
+            .into_iter()
+            .filter(|m| matched.iter().any(|e| e.methods.contains(m)))
+            .collect();
         matched.retain(|e| e.methods.contains(&method));
         match matched.as_slice() {
             [] => Err(Error::new(

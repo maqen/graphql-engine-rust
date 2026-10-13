@@ -26,6 +26,8 @@ pub fn router(engine: Arc<Engine>) -> Router {
     let mut router = Router::new()
         .route("/healthz", get(healthz))
         .route("/v1/version", get(version))
+        .route("/api/rest", axum::routing::any(crate::rest::handler))
+        .route("/api/rest/", axum::routing::any(crate::rest::handler))
         .route(
             "/api/rest/{*path}",
             axum::routing::any(crate::rest::handler),

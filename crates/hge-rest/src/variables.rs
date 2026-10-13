@@ -32,11 +32,10 @@ pub(crate) fn percent_decode(s: &str, plus_space: bool) -> String {
     while i < bytes.len() {
         match bytes[i] {
             b'%' => {
-                let hex = bytes.get(i + 1..i + 3).and_then(|h| {
-                    std::str::from_utf8(h)
-                        .ok()
-                        .and_then(|h| u8::from_str_radix(h, 16).ok())
-                });
+                let hex = bytes
+                    .get(i + 1..i + 3)
+                    .filter(|h| h.iter().all(u8::is_ascii_hexdigit))
+                    .and_then(|h| u8::from_str_radix(std::str::from_utf8(h).ok()?, 16).ok());
                 match hex {
                     Some(b) => {
                         out.push(b);
@@ -86,6 +85,7 @@ impl Endpoint {
         path: &[(String, String)],
     ) -> Result<Map<String, Value>, Error> {
         let mut params: Vec<(&str, Param<'_>)> = vec![];
+        let mut index: std::collections::HashMap<&str, usize> = Default::default();
         let all = query
             .iter()
             .map(|(k, v)| (k.as_str(), Param::Text(v)))
@@ -99,9 +99,12 @@ impl Endpoint {
             if !is_graphql_name(name) {
                 continue;
             }
-            match params.iter_mut().find(|(n, _)| *n == name) {
-                Some(slot) => slot.1 = value,
-                None => params.push((name, value)),
+            match index.get(name) {
+                Some(&i) => params[i].1 = value,
+                None => {
+                    index.insert(name, params.len());
+                    params.push((name, value));
+                }
             }
         }
 
