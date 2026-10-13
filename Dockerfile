@@ -1,0 +1,16 @@
+# syntax=docker/dockerfile:1
+FROM rust:1-bookworm AS build
+WORKDIR /src
+COPY . .
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/src/target \
+    cargo build --release --locked --bin graphql-engine \
+ && cp target/release/graphql-engine /graphql-engine
+
+FROM gcr.io/distroless/cc-debian12:nonroot
+COPY --from=build /graphql-engine /bin/graphql-engine
+# Cloud Run sets $PORT; HASURA_GRAPHQL_SERVER_PORT wins when given.
+ENV HASURA_GRAPHQL_SERVER_HOST="*"
+EXPOSE 8080
+ENTRYPOINT ["/bin/graphql-engine"]
+CMD ["serve"]

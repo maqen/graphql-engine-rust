@@ -1,0 +1,21 @@
+config:
+  admin_secret: s3cret
+  unauthorized_role: public
+  preserve_401_errors: true
+cases:
+  - description: requests without credentials use the unauthorized role
+    query:
+      query: "{ author(order_by: {id: asc}) { name } }"
+    response:
+      data:
+        author: [{ name: Alice }, { name: Bob }]
+
+  - description: a wrong secret is still rejected, with 401 when preserved
+    status: 401
+    headers: { x-hasura-admin-secret: nope }
+    query:
+      query: "{ author { id } }"
+    response:
+      errors:
+        - extensions: { path: "$", code: access-denied }
+          message: 'invalid "x-hasura-admin-secret"'

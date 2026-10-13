@@ -1,0 +1,26 @@
+cases:
+  - description: role with a filter-free select permission sees permitted columns, capped by limit
+    headers: { x-hasura-role: public }
+    query:
+      query: "{ author(order_by: {id: asc}) { id name } }"
+    response:
+      data:
+        author: [{ id: 1, name: Alice }, { id: 2, name: Bob }]
+
+  - description: columns outside the permission are not in the schema
+    headers: { x-hasura-role: public }
+    query:
+      query: "{ author { rating } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.selectionSet.rating", code: validation-failed }
+          message: "field 'rating' not found in type: 'author'"
+
+  - description: tables without a permission are not in the schema
+    headers: { x-hasura-role: public }
+    query:
+      query: "{ things { code } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.things", code: validation-failed }
+          message: "field 'things' not found in type: 'query_root'"

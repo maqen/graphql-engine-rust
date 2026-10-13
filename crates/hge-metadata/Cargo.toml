@@ -1,0 +1,19 @@
+[package]
+name = "hge-metadata"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hge-core.workspace = true
+async-graphql-parser.workspace = true
+indexmap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
