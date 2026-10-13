@@ -4,16 +4,18 @@
 //!
 //! Cron triggers live in metadata; their events and the one-off events live in the metadata
 //! database. As in V2, creating a cron trigger stores its next 100 events at once, replacing
-//! it regenerates them, and deleting it drops its untried future events. (If the request
-//! then fails, the scheduled-event worker removes events of triggers that are not in
-//! metadata.)
+//! it regenerates them, and deleting it drops its untried future events. Unlike V2, those
+//! changes are queued on the [`Ctx`] and made only once the metadata is committed, so a
+//! rejected request (e.g. a failing `bulk` item) never changes what fires.
 
 use deadpool_postgres::Pool;
 use hge_core::Code;
 use hge_events::admin::sorted;
 use hge_events::cron::CronSchedule;
-use hge_events::scheduled::{Kind, delete_future_cron_events};
-use hge_events::scheduled_admin::{self as sa, InvocationsOf, NewOneOff, OrderBy, Page};
+use hge_events::scheduled::Kind;
+use hge_events::scheduled_admin::{
+    self as sa, CronEventChange, InvocationsOf, NewOneOff, OrderBy, Page,
+};
 use serde_json::{Map, Number, Value, json};
 
 use super::args::{
@@ -110,6 +112,12 @@ impl CronArgs {
         let p = "$.args";
         let obj = object(args, p)?;
         let name = required_string(obj, "name", p, "String")?;
+        if name.is_empty() {
+            return Err(parse_failed(
+                &format!("{p}.name"),
+                "empty string not allowed",
+            ));
+        }
         let webhook = required_text(obj, "webhook", p)?;
         let payload = field(obj, "payload").cloned();
         let retry_conf = retry_conf(obj, p)?;
@@ -119,7 +127,16 @@ impl CronArgs {
             .map_err(|e| parse_failed(&format!("{p}.schedule"), e))?;
         let include_in_metadata = match obj.get("include_in_metadata") {
             None => return Err(missing(p, "include_in_metadata")),
-            Some(_) => boolean(obj, "include_in_metadata", p)?.unwrap_or(false),
+            Some(Value::Bool(b)) => *b,
+            Some(v) => {
+                return Err(parse_failed(
+                    &format!("{p}.include_in_metadata"),
+                    format!(
+                        "parsing Bool failed, expected Boolean, but encountered {}",
+                        json_kind(v)
+                    ),
+                ));
+            }
         };
         Ok(CronArgs {
             name,
@@ -261,27 +278,33 @@ fn order_by(obj: &Obj, path: &str) -> ApiResult<Vec<OrderBy>> {
         .collect()
 }
 
-/// Check `schedule_at` like aeson's `UTCTime` parser (an ISO 8601 time with a zone);
-/// Postgres then reads it as `timestamptz`.
-fn check_utc_time(s: &str) -> Result<(), String> {
-    let mut chars = s.chars().peekable();
+/// Check `schedule_at` like aeson's `UTCTime` parser (an ISO 8601 time with a zone) and
+/// return it in a form Postgres reads as `timestamptz`.
+fn parse_utc_time(s: &str) -> Result<String, String> {
     let fail = |c: Option<char>, what: &str| {
         let found = match c {
             Some(c) => format!("'{c:?}"),
             None => "end-of-input".to_owned(),
         };
-        Err(format!(
-            "could not parse date: Unexpected {found}, expecting {what}"
-        ))
+        format!("could not parse date: Unexpected {found}, expecting {what}")
     };
-    let digits = |chars: &mut std::iter::Peekable<std::str::Chars>, n: usize, what: &str| {
-        for _ in 0..n {
+    let mut chars = s.chars().peekable();
+    // Read exactly `n` digits (`at_least` allows more) as a number.
+    let number = |chars: &mut std::iter::Peekable<std::str::Chars>, n: usize, at_least: bool| {
+        let mut value: u64 = 0;
+        let mut count = 0;
+        while count < n || (at_least && chars.peek().is_some_and(char::is_ascii_digit)) {
             match chars.next() {
-                Some(c) if c.is_ascii_digit() => {}
-                c => return fail(c, what),
+                Some(c) if c.is_ascii_digit() => {
+                    value = value
+                        .saturating_mul(10)
+                        .saturating_add(u64::from(c as u8 - b'0'));
+                    count += 1;
+                }
+                c => return Err(fail(c, "a digit")),
             }
         }
-        Ok(())
+        Ok(value)
     };
     let expect =
         |chars: &mut std::iter::Peekable<std::str::Chars>, want: &[char]| match chars.next() {
@@ -292,57 +315,80 @@ fn check_utc_time(s: &str) -> Result<(), String> {
                     .map(|w| format!("'{w}'"))
                     .collect::<Vec<_>>()
                     .join(" or ");
-                fail(c, &what)
+                Err(fail(c, &what))
             }
         };
-    // Year: an optional sign and at least four digits.
-    match chars.peek() {
-        Some('-' | '+') => {
+    let negative = match chars.peek() {
+        Some('-') => {
             chars.next();
+            true
         }
-        Some(c) if c.is_ascii_digit() => {}
-        c => return fail(c.copied(), "-, +, or a digit"),
-    }
-    digits(&mut chars, 4, "a digit")?;
-    while chars.peek().is_some_and(char::is_ascii_digit) {
-        chars.next();
-    }
+        Some('+') => {
+            chars.next();
+            false
+        }
+        Some(c) if c.is_ascii_digit() => false,
+        c => return Err(fail(c.copied(), "-, +, or a digit")),
+    };
+    let year = number(&mut chars, 4, true)?;
     expect(&mut chars, &['-'])?;
-    digits(&mut chars, 2, "a digit")?;
+    let month = number(&mut chars, 2, false)?;
     expect(&mut chars, &['-'])?;
-    digits(&mut chars, 2, "a digit")?;
+    let day = number(&mut chars, 2, false)?;
     expect(&mut chars, &['T', 't', ' '])?;
-    digits(&mut chars, 2, "a digit")?;
+    let hour = number(&mut chars, 2, false)?;
     expect(&mut chars, &[':'])?;
-    digits(&mut chars, 2, "a digit")?;
+    let minute = number(&mut chars, 2, false)?;
+    let mut second = 0;
     if chars.peek() == Some(&':') {
         chars.next();
-        digits(&mut chars, 2, "a digit")?;
+        second = number(&mut chars, 2, false)?;
         if chars.peek() == Some(&'.') {
             chars.next();
-            digits(&mut chars, 1, "a digit")?;
-            while chars.peek().is_some_and(char::is_ascii_digit) {
-                chars.next();
-            }
+            number(&mut chars, 1, true)?;
         }
     }
-    match chars.next() {
-        Some('Z' | 'z') => {}
+    let zone = match chars.next() {
+        Some('Z' | 'z') => (0, 0),
         Some('+' | '-') => {
-            digits(&mut chars, 2, "a digit")?;
+            let h = number(&mut chars, 2, false)?;
             if chars.peek() == Some(&':') {
                 chars.next();
             }
-            if chars.peek().is_some() {
-                digits(&mut chars, 2, "a digit")?;
-            }
+            let m = if chars.peek().is_some() {
+                number(&mut chars, 2, false)?
+            } else {
+                0
+            };
+            (h, m)
         }
-        c => return fail(c, "timezone"),
+        c => return Err(fail(c, "timezone")),
+    };
+    if let Some(c) = chars.next() {
+        return Err(fail(Some(c), "end-of-input"));
     }
-    match chars.next() {
-        None => Ok(()),
-        c => fail(c, "end-of-input"),
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days_in_month = match month {
+        2 if leap => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
+    let invalid = |what: &str| Err(format!("could not parse date: invalid {what}"));
+    if negative {
+        return invalid("year");
     }
+    if !(1..=12).contains(&month) || !(1..=days_in_month).contains(&day) {
+        return invalid("date");
+    }
+    if hour > 23 || minute > 59 || second > 59 {
+        return invalid("time of day");
+    }
+    if zone.0 > 23 || zone.1 > 59 {
+        return invalid("time zone");
+    }
+    // Postgres does not take a `+` before the year.
+    Ok(s.strip_prefix('+').unwrap_or(s).to_owned())
 }
 
 // ---------------------------------------------------------------------------------------
@@ -357,16 +403,31 @@ fn metadata_db<'a, R: Runtime>(ctx: &Ctx<'a, R>) -> ApiResult<&'a Pool> {
     })
 }
 
-fn db_error(e: String) -> ApiError {
+fn query_error(e: String) -> ApiError {
     ApiError::new(500, Code::Unexpected, "database query error")
         .with_internal(json!({ "error": { "message": e } }))
 }
 
-fn cron_position<R: Runtime>(ctx: &Ctx<'_, R>, name: &str) -> Option<usize> {
+/// Where a cron trigger is in the working metadata, inconsistent or not.
+fn stored_position<R: Runtime>(ctx: &Ctx<'_, R>, name: &str) -> Option<usize> {
     ctx.metadata
         .cron_triggers
         .iter()
         .position(|t| t.get("name").and_then(Value::as_str) == Some(name))
+}
+
+/// Is a cron trigger of the working metadata inconsistent?
+fn inconsistent<R: Runtime>(ctx: &Ctx<'_, R>, name: &str) -> bool {
+    let id = format!("cron_trigger {name}");
+    ctx.inconsistencies
+        .iter()
+        .any(|o| o.kind == "cron_trigger" && o.name == id)
+}
+
+/// Where a consistent cron trigger is: V2 looks triggers up in its schema cache, which
+/// leaves inconsistent ones out.
+fn cron_position<R: Runtime>(ctx: &Ctx<'_, R>, name: &str) -> Option<usize> {
+    stored_position(ctx, name).filter(|_| !inconsistent(ctx, name))
 }
 
 fn cron_missing(name: &str) -> ApiError {
@@ -392,8 +453,6 @@ pub async fn create_cron_trigger<R: Runtime>(
 ) -> ApiResult<Value> {
     let t = CronArgs::parse(args)?;
     match (cron_position(ctx, &t.name), t.replace) {
-        (Some(i), true) => ctx.metadata.cron_triggers[i] = t.to_metadata(),
-        (None, false) => ctx.metadata.cron_triggers.push(t.to_metadata()),
         (Some(_), false) => {
             return Err(already_exists(format!(
                 "cron trigger with name: {} already exists",
@@ -401,17 +460,24 @@ pub async fn create_cron_trigger<R: Runtime>(
             )));
         }
         (None, true) => return Err(cron_missing(&t.name)),
+        _ => {}
+    }
+    // An inconsistent trigger of the same name is overwritten, as in V2.
+    let stored = stored_position(ctx, &t.name);
+    match stored {
+        Some(i) => ctx.metadata.cron_triggers[i] = t.to_metadata(),
+        None => ctx.metadata.cron_triggers.push(t.to_metadata()),
     }
     ctx.check(Check::object(
         "cron_trigger",
         format!("cron_trigger {}", t.name),
     ))
     .await?;
-    if let Some(pool) = ctx.rt.metadata_db() {
-        sa::populate_cron_events(pool, &t.name, &t.schedule, t.replace)
-            .await
-            .map_err(db_error)?;
-    }
+    ctx.cron_changes.push(CronEventChange::Populate {
+        trigger: t.name,
+        schedule: t.schedule,
+        replace: stored.is_some(),
+    });
     Ok(success())
 }
 
@@ -424,20 +490,18 @@ pub async fn delete_cron_trigger<R: Runtime>(
     let i = cron_position(ctx, &name).ok_or_else(|| cron_missing(&name))?;
     ctx.metadata.cron_triggers.remove(i);
     ctx.changed().await?;
-    if let Some(pool) = ctx.rt.metadata_db() {
-        delete_future_cron_events(pool, &[name])
-            .await
-            .map_err(db_error)?;
-    }
+    ctx.cron_changes
+        .push(CronEventChange::Drop { trigger: name });
     Ok(success())
 }
 
-/// Every cron trigger, by name, with V2's normalised fields and sorted keys.
+/// Every consistent cron trigger, by name, with V2's normalised fields and sorted keys.
 pub fn get_cron_triggers<R: Runtime>(ctx: &Ctx<'_, R>) -> ApiResult<Value> {
     let mut triggers: Vec<Value> = ctx
         .metadata
         .cron_triggers
         .iter()
+        .filter(|raw| !inconsistent(ctx, raw["name"].as_str().unwrap_or_default()))
         .map(|raw| {
             let normalised = CronArgs::parse(raw).map_or_else(|_| raw.clone(), |t| t.to_metadata());
             sorted(normalised)
@@ -455,7 +519,8 @@ pub async fn create_scheduled_event<R: Runtime>(
     let obj = object(args, p)?;
     let webhook = required_text(obj, "webhook", p)?;
     let schedule_at = required_text(obj, "schedule_at", p)?;
-    check_utc_time(&schedule_at).map_err(|e| parse_failed("$.args.schedule_at", e))?;
+    let schedule_at =
+        parse_utc_time(&schedule_at).map_err(|e| parse_failed("$.args.schedule_at", e))?;
     let payload = field(obj, "payload").map(Value::to_string);
     let headers = Value::Array(headers(obj, p)?.unwrap_or_default()).to_string();
     let retry_conf = retry_conf(obj, p)?.to_string();
@@ -479,7 +544,7 @@ pub async fn create_scheduled_event<R: Runtime>(
         },
     )
     .await
-    .map_err(db_error)?;
+    .map_err(query_error)?;
     Ok(json!({ "event_id": id, "message": "success" }))
 }
 
@@ -504,7 +569,7 @@ pub async fn delete_scheduled_event<R: Runtime>(
     let event_id = required_text(obj, "event_id", p)?;
     sa::delete_event(metadata_db(ctx)?, kind, &event_id)
         .await
-        .map_err(db_error)?;
+        .map_err(query_error)?;
     Ok(success())
 }
 
@@ -534,7 +599,7 @@ pub async fn get_scheduled_events<R: Runtime>(
         &page,
     )
     .await
-    .map_err(db_error)?;
+    .map_err(query_error)?;
     Ok(listing(count, "events", events))
 }
 
@@ -562,13 +627,13 @@ pub async fn get_scheduled_event_invocations<R: Runtime>(
     };
     let (count, invocations) = sa::invocations(metadata_db(ctx)?, kind, of, &page)
         .await
-        .map_err(db_error)?;
+        .map_err(query_error)?;
     Ok(listing(count, "invocations", invocations))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::check_utc_time;
+    use super::parse_utc_time;
 
     #[test]
     fn utc_times() {
@@ -577,16 +642,29 @@ mod tests {
             "2030-05-01 12:30:00.5+02:00",
             "2030-05-01T10:00+0530",
             "2030-05-01t10:00:00-01",
+            "2028-02-29T00:00:00Z",
         ] {
-            assert_eq!(check_utc_time(ok), Ok(()), "{ok}");
+            assert_eq!(parse_utc_time(ok).as_deref(), Ok(ok), "{ok}");
         }
         assert_eq!(
-            check_utc_time("2030-05-01T10:00:00").unwrap_err(),
+            parse_utc_time("+2030-05-01T10:00:00Z").as_deref(),
+            Ok("2030-05-01T10:00:00Z")
+        );
+        assert_eq!(
+            parse_utc_time("2030-05-01T10:00:00").unwrap_err(),
             "could not parse date: Unexpected end-of-input, expecting timezone"
         );
         assert_eq!(
-            check_utc_time("nope").unwrap_err(),
+            parse_utc_time("nope").unwrap_err(),
             "could not parse date: Unexpected ''n', expecting -, +, or a digit"
         );
+        for bad in [
+            "2030-13-45T10:00:00Z",
+            "2030-02-29T10:00:00Z",
+            "2030-05-01T25:00:00Z",
+            "2030-05-01T10:00:00+24:00",
+        ] {
+            assert!(parse_utc_time(bad).is_err(), "{bad}");
+        }
     }
 }

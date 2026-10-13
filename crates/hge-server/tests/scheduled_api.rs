@@ -13,6 +13,9 @@
 
 mod replay;
 
+use replay::post;
+use serde_json::json;
+
 #[tokio::test(flavor = "multi_thread")]
 async fn scheduled_event_api_matches_v2() {
     let Some((_db, router)) = replay::router("scheduled_api").await else {
@@ -29,4 +32,36 @@ async fn scheduled_event_api_matches_v2() {
         ],
     )
     .await;
+    rejected_replace_keeps_events(&router).await;
+}
+
+/// Our own guarantee (V2 does not give it): cron events change only when the metadata
+/// change is committed, so a rejected replace leaves the old schedule's events alone.
+async fn rejected_replace_keeps_events(router: &axum::Router) {
+    let cron = |schedule: &str, replace: bool| {
+        json!({"type": "create_cron_trigger", "args": {"name": "c9",
+            "webhook": "http://127.0.0.1:1/hook", "schedule": schedule,
+            "include_in_metadata": true, "replace": replace}})
+    };
+    let (status, body) = post(router, "/v1/metadata", &cron("0 0 1 1 *", false)).await;
+    assert_eq!(status, 200, "{body}");
+    let (status, body) = post(
+        router,
+        "/v1/metadata",
+        &json!({"type": "bulk", "args": [
+            cron("* * * * *", true),
+            {"type": "delete_cron_trigger", "args": {"name": "nope"}},
+        ]}),
+    )
+    .await;
+    assert_eq!(status, 400, "{body}");
+    let (_, rows) = post(
+        router,
+        "/v2/query",
+        &json!({"type": "run_sql", "args": {"sql":
+            "SELECT count(*), count(*) FILTER (WHERE scheduled_time < now() + interval '1 day') \
+             FROM hdb_catalog.hdb_cron_events WHERE trigger_name = 'c9'"}}),
+    )
+    .await;
+    assert_eq!(rows["result"][1], json!(["100", "0"]), "{rows}");
 }

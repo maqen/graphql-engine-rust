@@ -614,6 +614,8 @@ pub fn format_utc(secs: i64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn v2_messages() {
         let err = |s: &str| CronSchedule::parse_v2(s).unwrap_err();
@@ -626,8 +628,6 @@ mod tests {
             "0 0 * * *"
         );
     }
-
-    use super::*;
 
     /// Parse `YYYY-MM-DDTHH:MM:SSZ`.
     fn ts(s: &str) -> i64 {

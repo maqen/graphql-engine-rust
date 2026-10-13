@@ -88,13 +88,15 @@ The metadata commands `create_cron_trigger`, `delete_cron_trigger`, `get_cron_tr
 `create_scheduled_event`, `delete_scheduled_event`, `get_scheduled_events` and
 `get_scheduled_event_invocations` behave like V2 (replayed from a V2 recording in
 `crates/hge-server/tests/scheduled_api.rs`). Creating a cron trigger stores its next 100
-events at once, replacing it regenerates them and deleting it drops its untried future
-events, as in V2. Differences:
+events, replacing it regenerates them and deleting it drops its untried future events, as in
+V2, but only once the metadata change is committed: V2 changes the events first, so a
+rejected request (say, a failing `bulk` item after a replace) can leave the old trigger
+firing on the new schedule. Like V2, the commands treat an inconsistent cron trigger as
+absent. Other differences:
 
 * `get_scheduled_events` quotes `order_by` columns, so an unknown column is a plain
   database error; V2 pastes the column into its SQL and reports the whole statement.
-* `get_cron_triggers` lists triggers by name (V2's order follows a hash map) and includes
-  inconsistent ones.
+* `get_cron_triggers` lists triggers by name (V2's order follows a hash map).
 * Request and response transforms are not supported yet: a cron trigger with one is
   inconsistent, and `create_scheduled_event` rejects them.
 

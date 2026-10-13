@@ -10,24 +10,46 @@ use tokio_postgres::types::ToSql;
 use crate::admin::{opt_json, opt_string};
 use crate::catalog::pg_err;
 use crate::cron::CronSchedule;
-use crate::scheduled::{CRON_EVENTS_AHEAD, Kind, delete_future_cron_events, insert_cron_events};
+use crate::scheduled::{
+    CRON_EVENTS_AHEAD, Kind, delete_future_cron_events, insert_cron_events, now_secs, utc,
+};
 
-/// V2's `populateInitialCronTriggerEvents`: the next 100 events from now. With `replace`,
-/// the trigger's untried future events are deleted first (`dropFutureCronEventsTx`).
-pub async fn populate_cron_events(
-    pool: &Pool,
-    trigger: &str,
-    schedule: &CronSchedule,
-    replace: bool,
-) -> Result<(), String> {
-    if replace {
-        delete_future_cron_events(pool, &[trigger.to_owned()]).await?;
+/// A change to a cron trigger's stored events, applied once the metadata change that causes
+/// it is committed (so a rejected request never changes what fires).
+#[derive(Debug, Clone)]
+pub enum CronEventChange {
+    /// V2's `populateInitialCronTriggerEvents`: the next 100 events from now. With `replace`,
+    /// the trigger's untried future events are deleted first (`dropFutureCronEventsTx`).
+    Populate {
+        trigger: String,
+        schedule: CronSchedule,
+        replace: bool,
+    },
+    /// The trigger was deleted: drop its untried future events.
+    Drop { trigger: String },
+}
+
+/// Apply committed [`CronEventChange`]s in order.
+pub async fn apply_cron_changes(pool: &Pool, changes: &[CronEventChange]) -> Result<(), String> {
+    for change in changes {
+        match change {
+            CronEventChange::Populate {
+                trigger,
+                schedule,
+                replace,
+            } => {
+                if *replace {
+                    delete_future_cron_events(pool, std::slice::from_ref(trigger)).await?;
+                }
+                let times = schedule.next_n(now_secs(), CRON_EVENTS_AHEAD);
+                insert_cron_events(pool, trigger, &times).await?;
+            }
+            CronEventChange::Drop { trigger } => {
+                delete_future_cron_events(pool, std::slice::from_ref(trigger)).await?;
+            }
+        }
     }
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    insert_cron_events(pool, trigger, &schedule.next_n(now, CRON_EVENTS_AHEAD)).await
+    Ok(())
 }
 
 /// A one-off event to insert; JSON columns are given as JSON text.
@@ -96,11 +118,6 @@ pub struct OrderBy {
     pub descending: bool,
 }
 
-/// `timestamptz` as aeson renders a `UTCTime`.
-fn utc(col: &str) -> String {
-    format!("(to_json({col} AT TIME ZONE 'UTC') #>> '{{}}') || 'Z'")
-}
-
 fn quote_ident(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
@@ -116,9 +133,17 @@ async fn page_query(
     order: &str,
     page: &Page,
 ) -> Result<(Option<i64>, Vec<Row>), String> {
-    let client = pool.get().await.map_err(|e| e.to_string())?;
+    let mut client = pool.get().await.map_err(|e| e.to_string())?;
+    // One snapshot for both statements, so the count agrees with the page.
+    let tx = client
+        .build_transaction()
+        .isolation_level(tokio_postgres::IsolationLevel::RepeatableRead)
+        .read_only(true)
+        .start()
+        .await
+        .map_err(pg_err)?;
     let count = if page.count {
-        let row = client
+        let row = tx
             .query_one(
                 &format!("SELECT count(*) FROM {from} WHERE {filter}"),
                 params,
@@ -136,7 +161,8 @@ async fn page_query(
     if let Some(offset) = page.offset {
         sql.push_str(&format!(" OFFSET {offset}"));
     }
-    let rows = client.query(&sql, params).await.map_err(pg_err)?;
+    let rows = tx.query(&sql, params).await.map_err(pg_err)?;
+    tx.commit().await.map_err(pg_err)?;
     Ok((count, rows))
 }
 
