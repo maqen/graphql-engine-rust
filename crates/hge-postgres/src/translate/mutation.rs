@@ -360,6 +360,11 @@ impl Translator<'_> {
             self.b.push(" DO NOTHING");
             return Ok(());
         }
+        if matches!(oc.target, Some(ConflictTarget::Any)) {
+            return Err(Error::unexpected(
+                "ON CONFLICT DO UPDATE needs a conflict target",
+            ));
+        }
         self.b.push(" DO UPDATE SET ");
         let mut first = true;
         for c in &oc.update_columns {

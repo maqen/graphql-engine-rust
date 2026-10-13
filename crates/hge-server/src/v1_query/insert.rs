@@ -9,7 +9,6 @@ use hge_schema::TableInfo;
 use hge_schema::mutation::UpdateAccess;
 use serde_json::Value as Json;
 
-use super::boolexp::{nullify_missing_session_value, nullify_missing_session_variables};
 use super::json::{self, Obj, Path, display_table, err400, parse_failed};
 use super::lower::{Lowerer, PermKind, column_info, dml_value, mutation_output, mutation_table};
 use hge_metadata_api::ApiError;
@@ -136,7 +135,7 @@ impl Lowerer<'_> {
         let returning = match &q.returning {
             Some(cols) => {
                 let perm = self.select_permission_for(table, &q.path, RETURNING_NEEDS_SELECT)?;
-                Some(self.returning(table, perm, cols, &q.path.key("returning"))?)
+                Some(self.returning(table, perm, cols, session, &q.path.key("returning"))?)
             }
             None => None,
         };
@@ -196,20 +195,22 @@ impl Lowerer<'_> {
 
         // V2 checks updated rows against the update permission's check when there is one,
         // else against the insert check.
-        let mut update_check = on_conflict
+        let update_check = on_conflict
             .as_ref()
             .and(access.update.as_ref())
             .and_then(|u| u.check.clone());
-        // Only the insert permission's session variables are required; V2 reads the update
-        // permission's with `current_setting`, so a missing one is NULL.
-        let mut on_conflict = on_conflict;
-        if let Some(oc) = &mut on_conflict {
-            for f in oc.filter.iter_mut().chain(update_check.iter_mut()) {
-                nullify_missing_session_variables(f, session);
-            }
-            for (_, v) in &mut oc.presets {
-                nullify_missing_session_value(v, session);
-            }
+        // An upsert also requires the update permission's session variables. V2 reads them
+        // with `current_setting`, so a missing one is NULL and a NULL check passes; we refuse
+        // instead, as plain `update` does.
+        if on_conflict.is_some()
+            && let Some(ua) = access.update.as_ref()
+        {
+            self.require_session_variables(
+                ua.filter.iter().chain(ua.check.iter()),
+                ua.presets.iter().map(|(_, v)| v),
+                session,
+                &q.path,
+            )?;
         }
         let check = match (&ia.check, update_check) {
             (None, None) => None,
@@ -241,6 +242,13 @@ fn conflict_clause(
 ) -> Result<OnConflict, ApiError> {
     let validate_columns = |cols: &[String]| -> Result<(), ApiError> {
         let cols_path = path.key("constraint_on");
+        if cols.is_empty() {
+            return Err(err400(
+                Code::ParseFailed,
+                "expected a non-empty array of column names",
+                &cols_path,
+            ));
+        }
         for (i, c) in cols.iter().enumerate() {
             column_info(table, c, "", &cols_path.index(i))?;
         }
@@ -310,7 +318,13 @@ fn conflict_clause(
             OnConflict {
                 constraint,
                 target,
-                update_columns: input_columns.to_vec(),
+                // With no input columns, V2 still updates the update presets; an empty
+                // `update_columns` would mean `DO NOTHING`.
+                update_columns: if input_columns.is_empty() {
+                    ua.presets.iter().map(|(c, _)| c.clone()).collect()
+                } else {
+                    input_columns.to_vec()
+                },
                 presets: ua.presets.clone(),
                 filter: ua.filter.clone(),
             }

@@ -523,11 +523,10 @@ pub fn session_variables(exp: &BoolExp, out: &mut Vec<String>) {
 /// V2's `count` does not validate headers: a session variable the request lacks reads as
 /// `NULL`.
 pub fn nullify_missing_session_variables(exp: &mut BoolExp, session: &hge_core::Session) {
-    for_each_value(exp, &mut |v| nullify_missing_session_value(v, session));
+    for_each_value(exp, &mut |v| nullify_missing_value(v, session));
 }
 
-/// A session variable the request lacks reads as `NULL` (V2's `current_setting` lookup).
-pub fn nullify_missing_session_value(v: &mut Value, session: &hge_core::Session) {
+fn nullify_missing_value(v: &mut Value, session: &hge_core::Session) {
     if let Value::Session { name, ty } = v
         && session.variables.get(name).is_none()
     {
@@ -571,6 +570,10 @@ pub fn nullify_missing_in_select(select: &mut Select, session: &hge_core::Sessio
                     }
                     break;
                 }
+                OrderByTarget::ComputedField(call) => {
+                    for_each_call_value(call, &mut |v| nullify_missing_value(v, session));
+                    break;
+                }
                 OrderByTarget::Column(_) => break,
             }
         }
@@ -585,6 +588,10 @@ pub fn nullify_missing_in_select(select: &mut Select, session: &hge_core::Sessio
                     nullify_missing_session_variables(cond, session);
                 }
             }
+            Field::ComputedScalar(cf) => {
+                for_each_call_value(&mut cf.call, &mut |v| nullify_missing_value(v, session));
+            }
+            Field::ComputedTable(sel) => nullify_missing_in_select(sel, session),
             // `/v1/query` builds no aggregate fields.
             Field::Typename(_) | Field::ArrayAggregate(_) => {}
         }
@@ -613,32 +620,52 @@ fn for_each_value(exp: &mut BoolExp, f: &mut impl FnMut(&mut Value)) {
             for_each_value(&mut p.predicate, f);
         }
         BoolExp::Relationship { exp, .. } | BoolExp::Exists { exp, .. } => for_each_value(exp, f),
+        BoolExp::ComputedTable { call, exp } => {
+            for_each_call_value(call, f);
+            for_each_value(exp, f);
+        }
+        BoolExp::CompareComputed { call, op, .. } => {
+            for_each_call_value(call, f);
+            for_each_op_value(op, f);
+        }
         BoolExp::CompareColumns { .. } => {}
-        BoolExp::Compare { op, .. } => match op {
-            CompareOp::Eq(v)
-            | CompareOp::Neq(v)
-            | CompareOp::Gt(v)
-            | CompareOp::Lt(v)
-            | CompareOp::Gte(v)
-            | CompareOp::Lte(v)
-            | CompareOp::In(v)
-            | CompareOp::Nin(v)
-            | CompareOp::Like(v)
-            | CompareOp::NLike(v)
-            | CompareOp::ILike(v)
-            | CompareOp::NILike(v)
-            | CompareOp::Similar(v)
-            | CompareOp::NSimilar(v)
-            | CompareOp::Regex(v)
-            | CompareOp::NRegex(v)
-            | CompareOp::IRegex(v)
-            | CompareOp::NIRegex(v)
-            | CompareOp::Contains(v)
-            | CompareOp::ContainedIn(v)
-            | CompareOp::HasKey(v)
-            | CompareOp::HasKeysAny(v)
-            | CompareOp::HasKeysAll(v) => f(v),
-            CompareOp::IsNull(_) => {}
-        },
+        BoolExp::Compare { op, .. } => for_each_op_value(op, f),
+    }
+}
+
+fn for_each_op_value(op: &mut CompareOp, f: &mut impl FnMut(&mut Value)) {
+    match op {
+        CompareOp::Eq(v)
+        | CompareOp::Neq(v)
+        | CompareOp::Gt(v)
+        | CompareOp::Lt(v)
+        | CompareOp::Gte(v)
+        | CompareOp::Lte(v)
+        | CompareOp::In(v)
+        | CompareOp::Nin(v)
+        | CompareOp::Like(v)
+        | CompareOp::NLike(v)
+        | CompareOp::ILike(v)
+        | CompareOp::NILike(v)
+        | CompareOp::Similar(v)
+        | CompareOp::NSimilar(v)
+        | CompareOp::Regex(v)
+        | CompareOp::NRegex(v)
+        | CompareOp::IRegex(v)
+        | CompareOp::NIRegex(v)
+        | CompareOp::Contains(v)
+        | CompareOp::ContainedIn(v)
+        | CompareOp::HasKey(v)
+        | CompareOp::HasKeysAny(v)
+        | CompareOp::HasKeysAll(v) => f(v),
+        CompareOp::IsNull(_) => {}
+    }
+}
+
+fn for_each_call_value(call: &mut hge_ir::FunctionCall, f: &mut impl FnMut(&mut Value)) {
+    for arg in &mut call.args {
+        if let hge_ir::FunctionArgValue::Value(v) = &mut arg.value {
+            f(v);
+        }
     }
 }

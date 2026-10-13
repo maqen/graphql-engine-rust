@@ -294,6 +294,7 @@ impl<'a> Lowerer<'a> {
         table: &TableInfo,
         perm: &SelectPermission,
         columns: &[String],
+        session: &Session,
         path: &Path,
     ) -> Result<Vec<(String, Field)>, ApiError> {
         for c in columns {
@@ -314,7 +315,13 @@ impl<'a> Lowerer<'a> {
                     ty: info.ty.clone(),
                     stringify: self.stringify(&info.ty),
                     json_path: None,
-                    redact: perm.redaction(c).cloned().map(Box::new),
+                    // A session variable missing from a redaction condition reads as NULL
+                    // (the column is redacted), as in `select`.
+                    redact: perm.redaction(c).map(|cond| {
+                        let mut cond = cond.clone();
+                        super::boolexp::nullify_missing_session_variables(&mut cond, session);
+                        Box::new(cond)
+                    }),
                 }),
             ));
         }

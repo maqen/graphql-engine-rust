@@ -121,7 +121,9 @@ impl Lowerer<'_> {
         }
 
         let returning = match &q.returning {
-            Some(cols) => Some(self.returning(table, perm, cols, &q.path.key("returning"))?),
+            Some(cols) => {
+                Some(self.returning(table, perm, cols, session, &q.path.key("returning"))?)
+            }
             None => None,
         };
 

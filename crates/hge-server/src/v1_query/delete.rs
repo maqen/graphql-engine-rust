@@ -49,7 +49,9 @@ impl Lowerer<'_> {
         self.require_session_variables(da.filter.iter(), [], session, &q.path)?;
         let perm = self.select_permission_for(table, &q.path, DELETE_NEEDS_SELECT)?;
         let returning = match &q.returning {
-            Some(cols) => Some(self.returning(table, perm, cols, &q.path.key("returning"))?),
+            Some(cols) => {
+                Some(self.returning(table, perm, cols, session, &q.path.key("returning"))?)
+            }
             None => None,
         };
         let mut where_ = self.bool_exp(table, perm, &q.where_, &q.path.key("where"))?;
