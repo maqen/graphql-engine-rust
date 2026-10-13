@@ -210,6 +210,9 @@ pub async fn build_state(metadata: Metadata, config: &ServerConfig) -> AppState 
 
     let (tables, table_issues) = resolve_tables(&metadata, &catalogs);
     inconsistencies.extend(table_issues);
+    let (event_triggers, event_issues) =
+        crate::events::prepare(&metadata, &tables, &sources, config).await;
+    inconsistencies.extend(event_issues);
     for issue in &inconsistencies {
         warn!(target: "metadata", "inconsistent metadata: {issue}");
     }
@@ -223,5 +226,7 @@ pub async fn build_state(metadata: Metadata, config: &ServerConfig) -> AppState 
         stringify_numeric_types: config.stringify_numeric_types,
         dangerously_collapse_booleans: config.v1_boolean_null_collapse,
     };
-    AppState::new(metadata, tables, sources, inconsistencies, options)
+    let mut state = AppState::new(metadata, tables, sources, inconsistencies, options);
+    state.event_triggers = Arc::new(event_triggers);
+    state
 }

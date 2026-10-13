@@ -1,0 +1,76 @@
+# Event trigger deliveries. Each case runs `sql` against the source, then waits for
+# `deliveries` (webhook path + body) in order. Volatile keys (id, created_at,
+# trace_context) are removed from bodies before comparing.
+cases:
+  - description: insert by a mutation carries the session variables
+    sql: |
+      BEGIN;
+      SET LOCAL "hasura.user" = '{"x-hasura-role":"user","x-hasura-user-id":"77"}';
+      INSERT INTO ev.item (name, price, big, info) VALUES ('a', 1.50, 9007199254740993, '{"b":1,"a":[1.0,2]}');
+      COMMIT;
+    deliveries:
+      - path: ok
+        body:
+          delivery_info: {current_retry: 0, max_retries: 0}
+          event:
+            data:
+              new: {big: 9007199254740993, id: 1, info: {a: [1.0, 2], b: 1}, name: a, price: 1.5}
+              old: null
+            op: INSERT
+            session_variables: {x-hasura-role: user, x-hasura-user-id: '77'}
+          table: {name: item, schema: ev}
+          trigger: {name: item_events}
+
+  - description: update of an unlisted column sends nothing; a listened column sends payload columns
+    sql: |
+      UPDATE ev.item SET price = 2;
+      UPDATE ev.item SET name = 'b';
+    deliveries:
+      - path: ok
+        body:
+          delivery_info: {current_retry: 0, max_retries: 0}
+          event:
+            data:
+              new: {id: 1, name: b}
+              old: {id: 1, name: a}
+            op: UPDATE
+            session_variables: null
+          table: {name: item, schema: ev}
+          trigger: {name: item_events}
+
+  - description: delete
+    sql: DELETE FROM ev.item;
+    deliveries:
+      - path: ok
+        body:
+          delivery_info: {current_retry: 0, max_retries: 0}
+          event:
+            data:
+              new: null
+              old: {big: 9007199254740993, id: 1, info: {a: [1.0, 2], b: 1}, name: b, price: 2}
+            op: DELETE
+            session_variables: null
+          table: {name: item, schema: ev}
+          trigger: {name: item_events}
+
+  - description: a failing webhook is retried num_retries times
+    sql: INSERT INTO ev.flaky (name) VALUES ('x');
+    deliveries:
+      - path: fail
+        body:
+          delivery_info: {current_retry: 0, max_retries: 1}
+          event:
+            data: {new: {id: 1, name: x}, old: null}
+            op: INSERT
+            session_variables: null
+          table: {name: flaky, schema: ev}
+          trigger: {name: flaky-events}
+      - path: fail
+        body:
+          delivery_info: {current_retry: 1, max_retries: 1}
+          event:
+            data: {new: {id: 1, name: x}, old: null}
+            op: INSERT
+            session_variables: null
+          table: {name: flaky, schema: ev}
+          trigger: {name: flaky-events}

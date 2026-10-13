@@ -1,0 +1,12 @@
+table:
+  name: broken
+  schema: ev
+event_triggers:
+  - name: broken_events
+    definition:
+      insert:
+        columns: '*'
+    retry_conf:
+      interval_sec: 10
+      num_retries: 0
+    webhook_from_env: HGE_TEST_UNSET_WEBHOOK_VARIABLE

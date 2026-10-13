@@ -131,6 +131,46 @@ struct ServeArgs {
     /// Accepted for compatibility.
     #[arg(long, env = "HASURA_GRAPHQL_ENABLED_LOG_TYPES")]
     enabled_log_types: Option<String>,
+
+    /// Maximum concurrent event trigger deliveries.
+    #[arg(long, env = "HASURA_GRAPHQL_EVENTS_HTTP_POOL_SIZE", default_value = "100", value_parser = clap::value_parser!(u32).range(1..))]
+    events_http_pool_size: u32,
+
+    /// Events fetched per source per poll; 0 disables delivery.
+    #[arg(
+        long,
+        env = "HASURA_GRAPHQL_EVENTS_FETCH_BATCH_SIZE",
+        default_value = "100"
+    )]
+    events_fetch_batch_size: u32,
+
+    /// Milliseconds to wait after a poll that found no events; 0 disables delivery.
+    #[arg(
+        long,
+        env = "HASURA_GRAPHQL_EVENTS_FETCH_INTERVAL",
+        default_value = "1000"
+    )]
+    events_fetch_interval: u64,
+
+    /// Seconds to wait for in-flight deliveries on shutdown.
+    #[arg(
+        long,
+        env = "HASURA_GRAPHQL_GRACEFUL_SHUTDOWN_TIMEOUT",
+        default_value = "60"
+    )]
+    graceful_shutdown_timeout: u64,
+
+    /// No event trigger catalog set-up and no delivery workers.
+    #[arg(long, env = "HASURA_GRAPHQL_DISABLE_EVENTING", value_parser = parse_bool, default_value = "false")]
+    disable_eventing: bool,
+
+    /// Keep SQL triggers up to date but deliver nothing from this instance.
+    #[arg(long, env = "HASURA_GRAPHQL_DISABLE_EVENT_PROCESSING", value_parser = parse_bool, default_value = "false")]
+    disable_event_processing: bool,
+
+    /// Log failed event deliveries at error level.
+    #[arg(long, env = "HASURA_GRAPHQL_ENABLE_TRIGGERS_ERROR_LOG_LEVEL", value_parser = parse_bool, default_value = "false")]
+    enable_triggers_error_log_level: bool,
 }
 
 fn init_logging(level: &str) {
@@ -197,7 +237,21 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
         pg_connections: args.pg_connections,
         use_prepared_statements: args.use_prepared_statements,
         preserve_401_errors: args.preserve_401_errors,
+        events: hge_events_config(args),
     })
+}
+
+fn hge_events_config(args: &ServeArgs) -> hge_server::config::EventingConfig {
+    hge_server::config::EventingConfig {
+        http_pool_size: args.events_http_pool_size as usize,
+        fetch_batch_size: i64::from(args.events_fetch_batch_size),
+        fetch_interval: std::time::Duration::from_millis(args.events_fetch_interval),
+        graceful_shutdown_timeout: std::time::Duration::from_secs(args.graceful_shutdown_timeout),
+        disable_eventing: args.disable_eventing,
+        disable_event_processing: args.disable_event_processing,
+        triggers_error_log_level: args.enable_triggers_error_log_level,
+        ..ServerConfig::default().events
+    }
 }
 
 fn main() -> anyhow::Result<()> {

@@ -1,0 +1,25 @@
+table:
+  name: item
+  schema: ev
+event_triggers:
+  - name: item_events
+    definition:
+      enable_manual: true
+      insert:
+        columns: '*'
+      update:
+        columns:
+          - name
+        payload:
+          - id
+          - name
+      delete:
+        columns: '*'
+    retry_conf:
+      interval_sec: 10
+      num_retries: 0
+      timeout_sec: 60
+    webhook: '__WEBHOOK__/ok'
+    headers:
+      - name: X-Static
+        value: static-value

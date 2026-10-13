@@ -1,0 +1,13 @@
+table:
+  name: flaky
+  schema: ev
+event_triggers:
+  - name: flaky-events
+    definition:
+      insert:
+        columns: '*'
+    retry_conf:
+      interval_sec: 1
+      num_retries: 1
+      timeout_sec: 5
+    webhook: '__WEBHOOK__/fail'

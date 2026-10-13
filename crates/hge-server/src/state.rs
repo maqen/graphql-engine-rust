@@ -19,6 +19,8 @@ pub struct AppState {
     pub sources: HashMap<String, Arc<PgSource>>,
     pub inconsistencies: Vec<String>,
     pub options: SchemaOptions,
+    /// Deliverable event triggers of this metadata version.
+    pub event_triggers: Arc<hge_events::EventTriggers>,
     /// Roles named anywhere in metadata; every other role sees the same empty schema.
     known_roles: HashSet<RoleName>,
     /// `graphql_schema_introspection.disabled_for_roles`
@@ -85,6 +87,7 @@ impl AppState {
             sources,
             inconsistencies,
             options,
+            event_triggers: Arc::default(),
             schemas: RwLock::new(HashMap::new()),
         };
         // Build the admin schema eagerly so the first request is fast and errors surface early.
