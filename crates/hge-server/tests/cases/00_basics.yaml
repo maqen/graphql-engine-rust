@@ -133,6 +133,23 @@ cases:
       data:
         article: [{ id: 2 }, { id: 4 }]
 
+  - description: a float literal for Int is a type mismatch
+    query:
+      query: "{ author(limit: 1.5) { id } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.args.limit", code: validation-failed }
+          message: "expected a 32-bit integer for type 'Int', but found a float"
+
+  - description: an out-of-range Int is a parse failure, shown as Haskell's Scientific
+    query:
+      query: "query ($l: Int) { author(limit: $l) { id } }"
+      variables: { l: 3000000000 }
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.args.limit", code: parse-failed }
+          message: "The value 3.0e9 lies outside the bounds or is not an integer. Maybe it is a float, or is there integer overflow?"
+
   - description: unknown field
     query:
       query: "{ author { nope } }"

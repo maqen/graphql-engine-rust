@@ -346,7 +346,9 @@ pub async fn call_detailed(
     match status {
         200..=299 => {
             if let Err(message) = validate::validate(&handler.output, &body) {
+                // V2's `throwUnexpected` here is a 400.
                 return Err(Error::new(Code::Unexpected, message)
+                    .with_status(400)
                     .with_internal(internal(
                         handler,
                         call,
@@ -364,13 +366,15 @@ pub async fn call_detailed(
             Ok(HandlerResponse { body, set_cookies })
         }
         400..=499 => {
-            let error = client_error(&body).with_internal(internal(
-                handler,
-                call,
-                &transformed,
-                Value::String("unexpected response".into()),
-                Some(info(&body)),
-            ));
+            let error = client_error(&body)
+                .with_status(status)
+                .with_internal(internal(
+                    handler,
+                    call,
+                    &transformed,
+                    Value::String("unexpected response".into()),
+                    Some(info(&body)),
+                ));
             let code = match body.get("code") {
                 Some(Value::String(c)) if error.code != Code::ParseFailed => c.clone(),
                 _ => error.code.as_str().to_owned(),

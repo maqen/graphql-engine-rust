@@ -134,6 +134,19 @@ enum Endpoint {
     V1Alpha1,
 }
 
+impl Endpoint {
+    /// The status of a request that failed with `err` (not used for authentication errors).
+    fn error_status(self, err: &Error) -> StatusCode {
+        match self {
+            Endpoint::V1 => StatusCode::OK,
+            Endpoint::V1Alpha1 => {
+                StatusCode::from_u16(err.status.unwrap_or_else(|| err.code.http_status()))
+                    .unwrap_or(StatusCode::BAD_REQUEST)
+            }
+        }
+    }
+}
+
 async fn graphql_post(
     State(engine): State<Arc<Engine>>,
     headers: HeaderMap,
@@ -168,11 +181,14 @@ async fn post(engine: &Engine, headers: &HeaderMap, body: Bytes, endpoint: Endpo
     let log = log.map(|l| l.session(&auth.session));
     let parsed: Result<GraphQLBody, _> = serde_json::from_slice(&body);
     let resp = match parsed {
-        Ok(body) => run(engine, &auth.session, headers, body, rid, log).await,
+        Ok(body) => run(engine, &auth.session, headers, body, endpoint, rid, log).await,
         Err(e) => {
             let err = Error::new(Code::InvalidJson, format!("Error in $: {e}"));
-            let mut resp =
-                json_response(StatusCode::OK, graphql::error_body(&err, false), Some(rid));
+            let mut resp = json_response(
+                endpoint.error_status(&err),
+                graphql::error_body(&err, false),
+                Some(rid),
+            );
             http_log::attach(&mut resp, log.map(|l| l.failed(&err, RequestMode::Error)));
             resp
         }
@@ -257,6 +273,7 @@ async fn graphql_get(
         &auth.session,
         &headers,
         GraphQLBody::Single(req),
+        Endpoint::V1,
         rid,
         log,
     )
@@ -326,6 +343,7 @@ async fn run(
     session: &Session,
     headers: &HeaderMap,
     body: GraphQLBody,
+    endpoint: Endpoint,
     rid: String,
     log: Option<HttpLogInfo>,
 ) -> Response {
@@ -352,7 +370,11 @@ async fn run(
         }
         l
     });
-    let mut resp = json_response(StatusCode::OK, out.body, Some(rid));
+    let status = match (&out.error, batched) {
+        (Some(e), false) => endpoint.error_status(e),
+        _ => StatusCode::OK,
+    };
+    let mut resp = json_response(status, out.body, Some(rid));
     http_log::attach(&mut resp, log);
     // Action handlers' `Set-Cookie` headers (mutations only, spec 06 §8.6).
     for cookie in out.set_cookies {
