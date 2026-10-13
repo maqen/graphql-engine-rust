@@ -387,8 +387,12 @@ Merge rules (`Build()`):
 Validation runs at schema-cache build time.
 
 - If custom types are invalid, the object `custom_types` is
-  **inconsistent**. All actions are then also marked inconsistent with reason
-  `custom types are inconsistent`.
+  **inconsistent** (name `custom_types custom_types`). Every action, whether or
+  not it uses the broken types, is then also marked inconsistent with reason
+  `custom types are inconsistent` (no `in action "…"; ` prefix; verified against
+  v2.51.0). The `definition` shown for the custom types is their `ToJSON`: all
+  four lists, every optional field as `null`, relationship `source` filled in and
+  `remote_table` as `{"schema", "name"}`.
 - Error message: `validation for the given custom types failed because <reason>`
   when there is one error. With several errors it is
   `validation for the given custom types failed for the following reasons:\n  • <r1>\n  • <r2>\n`.
@@ -408,10 +412,10 @@ Reasons. Names are rendered in double quotes; `dquoteList` renders
 | Duplicate names across object fields + relationship names | `the object "O" has duplicate fields: "f"` |
 | Object field `arguments` present | `the object "O" can't have arguments` |
 | All relationships of one object must use one source | `the object "O" has relationships refers to tables in multiple sources` |
-| Relationship source/table exists | `the remote table "public.user" for relationship "r" of object type "O" does not exist` (table rendered qualified) |
+| Relationship source/table exists | `the remote table "user" for relationship "r" of object type "O" does not exist` (table rendered with `qualifiedObjectToText`: `schema.name`, but just `name` in `public`) |
 | `field_mapping` key is an object field | `the field "f" for relationship "r" in object type "O" does not exist` |
 | Mapped field is not a list type | `the type of the field "f" for relationship "r" in object type "O" is a list type` |
-| Mapped column exists in the table | `the column "c" of remote table "public.user" for relationship "r" of object type "O" does not exist` |
+| Mapped column exists in the table | `the column "c" of remote table "user" for relationship "r" of object type "O" does not exist` (same table rendering) |
 | Enum values unique | `the enum type "E" has duplicate values: "V"` |
 
 Golden tests: `tests-py/queries/actions/custom-types/*.yaml`. Note the double

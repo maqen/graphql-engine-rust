@@ -6,7 +6,7 @@
 //! unknown keys are ignored.
 
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use hge_core::{Code, Error, QualifiedTable};
 use hge_transforms::{ParseError, RequestTransform, ResponseTransform};
@@ -173,6 +173,62 @@ impl Action {
     }
 }
 
+impl Action {
+    /// V2's `ToJSON CreateAction`: the `definition` of an inconsistent action. Unlike the
+    /// export it has no `ignored_client_headers` and no permissions, and writes every
+    /// other field (`comment` and argument descriptions as `null`).
+    pub fn to_create_action_json(&self) -> Value {
+        let d = &self.definition;
+        let mut def = serde_json::Map::new();
+        def.insert(
+            "arguments".into(),
+            d.arguments
+                .iter()
+                .map(|a| json!({"name": a.name, "type": a.ty, "description": a.description}))
+                .collect(),
+        );
+        def.insert("output_type".into(), json!(d.output_type));
+        def.insert(
+            "headers".into(),
+            d.headers
+                .iter()
+                .map(|h| match h {
+                    HeaderConf::Value { name, value } => json!({"name": name, "value": value}),
+                    HeaderConf::FromEnv { name, env } => {
+                        json!({"name": name, "value_from_env": env})
+                    }
+                })
+                .collect(),
+        );
+        def.insert(
+            "forward_client_headers".into(),
+            json!(d.forward_client_headers),
+        );
+        def.insert("handler".into(), json!(d.handler));
+        def.insert("timeout".into(), json!(d.timeout_secs));
+        if let Some(t) = &d.request_transform {
+            def.insert("request_transform".into(), t.to_json());
+        }
+        if let Some(t) = &d.response_transform {
+            def.insert("response_transform".into(), t.to_json());
+        }
+        match d.action_type {
+            ActionType::Query => {
+                def.insert("type".into(), json!("query"));
+            }
+            ActionType::Mutation(kind) => {
+                def.insert("type".into(), json!("mutation"));
+                let kind = match kind {
+                    ActionKind::Synchronous => "synchronous",
+                    ActionKind::Asynchronous => "asynchronous",
+                };
+                def.insert("kind".into(), json!(kind));
+            }
+        }
+        json!({"name": self.name, "definition": def, "comment": self.comment})
+    }
+}
+
 impl ActionDefinition {
     pub fn from_json(v: &Value) -> Result<ActionDefinition, String> {
         let obj = v
@@ -293,6 +349,20 @@ pub fn check_transforms(actions: &[Value]) -> Result<(), Error> {
     Ok(())
 }
 
+/// Remove every `null`-valued object key, recursively.
+pub fn strip_nulls(v: Value) -> Value {
+    match v {
+        Value::Object(o) => Value::Object(
+            o.into_iter()
+                .filter(|(_, v)| !v.is_null())
+                .map(|(k, v)| (k, strip_nulls(v)))
+                .collect(),
+        ),
+        Value::Array(items) => Value::Array(items.into_iter().map(strip_nulls).collect()),
+        other => other,
+    }
+}
+
 /// `custom_types`.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(default)]
@@ -307,8 +377,47 @@ impl CustomTypes {
     pub fn from_json(v: Option<&Value>) -> Result<CustomTypes, String> {
         match v {
             None | Some(Value::Null) => Ok(CustomTypes::default()),
-            Some(v) => serde_json::from_value(v.clone()).map_err(|e| e.to_string()),
+            // `null` reads as absent, as in V2's `.:?` (`source: null` is `default`).
+            Some(v) => serde_json::from_value(strip_nulls(v.clone())).map_err(|e| e.to_string()),
         }
+    }
+
+    /// V2's `ToJSON CustomTypes` (Template Haskell, `hasuraJSON`): every list and every
+    /// optional field is written, `null` when unset. This is the `definition` of an
+    /// inconsistent `custom_types` object.
+    pub fn to_v2_json(&self) -> Value {
+        let field = |name: &str, ty: &str, description: &Option<String>| json!({"name": name, "description": description, "type": ty});
+        json!({
+            "input_objects": self.input_objects.iter().map(|t| json!({
+                "name": t.name,
+                "description": t.description,
+                "fields": t.fields.iter().map(|f| field(&f.name, &f.ty, &f.description)).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+            "objects": self.objects.iter().map(|t| json!({
+                "name": t.name,
+                "description": t.description,
+                "fields": t.fields.iter().map(|f| {
+                    let mut o = field(&f.name, &f.ty, &f.description);
+                    o["arguments"] = f.arguments.clone().unwrap_or(Value::Null);
+                    o
+                }).collect::<Vec<_>>(),
+                "relationships": t.relationships.iter().map(|r| json!({
+                    "name": r.name,
+                    "type": match r.rel_type { RelType::Object => "object", RelType::Array => "array" },
+                    "source": r.source,
+                    "remote_table": {"schema": r.remote_table.schema, "name": r.remote_table.name},
+                    "field_mapping": r.field_mapping,
+                })).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+            "scalars": self.scalars.iter().map(|t| json!({"name": t.name, "description": t.description})).collect::<Vec<_>>(),
+            "enums": self.enums.iter().map(|t| json!({
+                "name": t.name,
+                "description": t.description,
+                "values": t.values.iter().map(|v| json!({
+                    "value": v.value, "description": v.description, "is_deprecated": v.is_deprecated,
+                })).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+        })
     }
 }
 

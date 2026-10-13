@@ -197,9 +197,11 @@ pub fn resolve_actions(
     if metadata.actions.is_empty() && metadata.custom_types.is_none() {
         return (ResolvedActions::default(), inconsistencies);
     }
-    let types = match CustomTypes::from_json(metadata.custom_types.as_ref())
-        .map_err(|e| vec![e])
-        .and_then(|ct| resolve_custom_types(&ct, tables))
+    let parsed = CustomTypes::from_json(metadata.custom_types.as_ref());
+    let types = match parsed
+        .as_ref()
+        .map_err(|e| vec![e.clone()])
+        .and_then(|ct| resolve_custom_types(ct, tables))
     {
         Ok(t) => t,
         Err(reasons) => {
@@ -215,16 +217,19 @@ pub fn resolve_actions(
                     m
                 }
             };
-            inconsistencies.push(InconsistentObject::custom_types(
-                message,
-                metadata.custom_types.clone().unwrap_or_default(),
-            ));
+            // V2 shows its parsed custom types (unparsable ones never get this far there).
+            let definition = match &parsed {
+                Ok(ct) => ct.to_v2_json(),
+                Err(_) => metadata.custom_types.clone().unwrap_or_default(),
+            };
+            inconsistencies.push(InconsistentObject::custom_types(message, definition));
             for a in &metadata.actions {
                 let name = action_name(a);
+                // V2 marks every action, without its usual `in action "…"; ` prefix.
                 inconsistencies.push(InconsistentObject::action(
                     &name,
-                    format!("in action \"{name}\"; custom types are inconsistent"),
-                    a.clone(),
+                    "custom types are inconsistent",
+                    create_action_json(a),
                 ));
             }
             return (ResolvedActions::default(), inconsistencies);
@@ -251,7 +256,7 @@ pub fn resolve_actions(
             inconsistencies.push(InconsistentObject::action(
                 &action_name(a),
                 reason.clone(),
-                a.clone(),
+                create_action_json(a),
             ));
         }
     }
@@ -283,11 +288,17 @@ pub fn resolve_actions(
             Err(e) => inconsistencies.push(InconsistentObject::action(
                 &action.name,
                 format!("in action \"{}\"; {e}", action.name),
-                raw.clone(),
+                action.to_create_action_json(),
             )),
         }
     }
     (ResolvedActions { types, actions }, inconsistencies)
+}
+
+/// The `definition` V2 shows for an inconsistent action (`ToJSON CreateAction`); an
+/// action that does not parse is shown as written.
+fn create_action_json(raw: &serde_json::Value) -> serde_json::Value {
+    Action::from_json(raw).map_or_else(|_| raw.clone(), |a| a.to_create_action_json())
 }
 
 /// Inherited role → its (transitive) parent roles.
@@ -474,7 +485,7 @@ fn resolve_custom_types(ct: &CustomTypes, tables: &Tables) -> Result<CustomTypeD
             let Some(table) = tables.get(&rel.source, &rel.remote_table) else {
                 errors.push(format!(
                     "the remote table \"{}\" for relationship \"{}\" of object type \"{}\" does not exist",
-                    rel.remote_table, rel.name, obj.name
+                    rel.remote_table.v2_text(), rel.name, obj.name
                 ));
                 continue;
             };
@@ -494,7 +505,7 @@ fn resolve_custom_types(ct: &CustomTypes, tables: &Tables) -> Result<CustomTypeD
                 if !table.columns.contains_key(column) {
                     errors.push(format!(
                         "the column \"{column}\" of remote table \"{}\" for relationship \"{}\" of object type \"{}\" does not exist",
-                        rel.remote_table, rel.name, obj.name
+                        rel.remote_table.v2_text(), rel.name, obj.name
                     ));
                 }
                 mapping.push((field.clone(), column.clone()));
@@ -792,7 +803,7 @@ mod tests {
              • duplicate type names: \"O\"\n  \
              • the type \"Nope\" for field \"f\" in  object type \"O\" does not exist\n"
         );
-        assert_eq!(errs[1], "in action \"a\"; custom types are inconsistent");
+        assert_eq!(errs[1], "custom types are inconsistent");
     }
 
     #[test]

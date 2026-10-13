@@ -101,7 +101,12 @@ impl InconsistentObject {
 
     /// The custom types (`definition` is the `custom_types` metadata).
     pub fn custom_types(reason: impl Into<String>, definition: Value) -> Self {
-        Self::new("custom_types", "custom_types", reason, definition)
+        Self::new(
+            "custom_types",
+            "custom_types custom_types",
+            reason,
+            definition,
+        )
     }
 
     /// A tracked table. `definition` is usually the table's name object.

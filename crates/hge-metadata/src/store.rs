@@ -128,6 +128,9 @@ pub trait MetadataStore: Send + Sync {
         kind: CatalogStateKind,
         state: &'a Value,
     ) -> BoxFuture<'a, Result<(), Error>>;
+
+    /// Delete an action's async action log rows (`drop_action` with `clear_data`).
+    fn delete_action_logs<'a>(&'a self, action: &'a str) -> BoxFuture<'a, Result<(), Error>>;
 }
 
 /// In-process store, for servers without a metadata database and for tests.
@@ -252,6 +255,11 @@ impl MetadataStore for MemoryStore {
             CatalogStateKind::Cli => i.catalog.cli_state = state.clone(),
             CatalogStateKind::Console => i.catalog.console_state = state.clone(),
         });
+        Box::pin(async { Ok(()) })
+    }
+
+    /// Without a metadata database there is no action log.
+    fn delete_action_logs<'a>(&'a self, _action: &'a str) -> BoxFuture<'a, Result<(), Error>> {
         Box::pin(async { Ok(()) })
     }
 }
