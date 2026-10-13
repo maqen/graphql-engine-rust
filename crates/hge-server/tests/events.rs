@@ -93,10 +93,11 @@ fn metadata_dir(base: &str) -> PathBuf {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn event_trigger_cases() {
-    let Ok(url) = std::env::var("HASURA_GRAPHQL_DATABASE_URL") else {
+    let Some(db) = hge_testdb::TestDb::create("events").await else {
         eprintln!("HASURA_GRAPHQL_DATABASE_URL not set; skipping event trigger tests");
         return;
     };
+    let url = db.url().to_owned();
     let (client, conn) = tokio_postgres::connect(&url, tokio_postgres::NoTls)
         .await
         .unwrap();

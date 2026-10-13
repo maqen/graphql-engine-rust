@@ -4,9 +4,9 @@
 //! V2-style cases (`description`, `url`, `status`, `headers`, `query`, `response`).
 //! `config.fixture` names the directory under `tests/fixtures/` (default `basic`) whose
 //! `schema.sql` is applied and whose `metadata/` is loaded before the file runs.
-//! Requests go through the full router in-process. The database comes from
-//! `HASURA_GRAPHQL_DATABASE_URL` (also what the fixture metadata reads); without it
-//! the test is skipped.
+//! Requests go through the full router in-process. The tests run in a fresh database on the
+//! server `HASURA_GRAPHQL_DATABASE_URL` points at (see `hge-testdb`); without it the test is
+//! skipped.
 
 use std::path::{Path, PathBuf};
 
@@ -183,10 +183,11 @@ async fn run_file(path: &Path, database_url: &str) -> Vec<String> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn graphql_cases() {
-    let Ok(url) = std::env::var("HASURA_GRAPHQL_DATABASE_URL") else {
+    let Some(db) = hge_testdb::TestDb::create("graphql").await else {
         eprintln!("HASURA_GRAPHQL_DATABASE_URL not set; skipping end-to-end tests");
         return;
     };
+    let url = db.url().to_owned();
     let mut failures = vec![];
     for file in case_files() {
         failures.extend(run_file(&file, &url).await);

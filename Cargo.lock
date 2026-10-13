@@ -923,6 +923,7 @@ dependencies = [
  "deadpool-postgres",
  "futures",
  "hge-core",
+ "hge-testdb",
  "rand 0.9.5",
  "reqwest",
  "serde",
@@ -1044,6 +1045,7 @@ dependencies = [
  "hge-postgres",
  "hge-schema",
  "hge-subscriptions",
+ "hge-testdb",
  "http",
  "indexmap",
  "ring",
@@ -1074,6 +1076,14 @@ dependencies = [
  "tokio",
  "tracing",
  "xxhash-rust",
+]
+
+[[package]]
+name = "hge-testdb"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+ "tokio-postgres",
 ]
 
 [[package]]

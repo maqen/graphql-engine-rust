@@ -166,10 +166,11 @@ fn case_files() -> Vec<PathBuf> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn action_cases() {
-    let Ok(url) = std::env::var("HASURA_GRAPHQL_DATABASE_URL") else {
+    let Some(db) = hge_testdb::TestDb::create("actions").await else {
         eprintln!("HASURA_GRAPHQL_DATABASE_URL not set; skipping action tests");
         return;
     };
+    let url = db.url().to_owned();
     setup_database(&url).await;
     let addr = start_handler().await;
     let config = ServerConfig {

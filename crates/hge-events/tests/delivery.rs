@@ -142,10 +142,11 @@ async fn wait_for(pool: &Pool, sql: &str, want: usize) -> Value {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn event_triggers_end_to_end() {
-    let Ok(url) = std::env::var("HASURA_GRAPHQL_DATABASE_URL") else {
+    let Some(db) = hge_testdb::TestDb::create("delivery").await else {
         eprintln!("HASURA_GRAPHQL_DATABASE_URL not set; skipping");
         return;
     };
+    let url = db.url().to_owned();
     let pool = pool(&url);
     exec(
         &pool,

@@ -54,10 +54,11 @@ async fn query(pool: &Pool, sql: &str) -> Value {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn scheduled_events_end_to_end() {
-    let Ok(url) = std::env::var("HASURA_GRAPHQL_DATABASE_URL") else {
+    let Some(db) = hge_testdb::TestDb::create("scheduled").await else {
         eprintln!("HASURA_GRAPHQL_DATABASE_URL not set; skipping");
         return;
     };
+    let url = db.url().to_owned();
     let pool = deadpool_postgres::Config {
         url: Some(url),
         ..Default::default()

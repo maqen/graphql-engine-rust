@@ -7,8 +7,8 @@
 //! marked `todo` are known differences: they must still differ, so fixing one means
 //! removing its marker.
 //!
-//! The database comes from `HASURA_GRAPHQL_DATABASE_URL` (its `hdb_catalog` is dropped first); without it the test is
-//! skipped.
+//! The test runs in a throwaway database on the Postgres server `HASURA_GRAPHQL_DATABASE_URL`
+//! points at (see `hge-testdb`); without it the test is skipped.
 
 use axum::body::Body;
 use axum::http::Request;
@@ -73,11 +73,13 @@ async fn reset_database(url: &str) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn metadata_api_matches_v2() {
-    // The scenario's metadata reads the database from this same variable.
-    let Ok(url) = std::env::var("HASURA_GRAPHQL_DATABASE_URL") else {
+    // The scenario's sources name `HASURA_GRAPHQL_DATABASE_URL`, which resolves to the
+    // server's own database URL, this test database.
+    let Some(db) = hge_testdb::TestDb::create("metadata_api").await else {
         eprintln!("HASURA_GRAPHQL_DATABASE_URL not set; skipping end-to-end tests");
         return;
     };
+    let url = db.url().to_owned();
     reset_database(&url).await;
     let config = ServerConfig {
         database_url: Some(url),

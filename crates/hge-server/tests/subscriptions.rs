@@ -1,6 +1,6 @@
 //! GraphQL over WebSockets, end to end: a real server on a local port, real WebSocket
-//! clients (both sub-protocols) and a real Postgres (`HASURA_GRAPHQL_DATABASE_URL`; the test
-//! is skipped without it and wipes that database's `public` schema).
+//! clients (both sub-protocols) and a throwaway database on the Postgres server
+//! `HASURA_GRAPHQL_DATABASE_URL` points at (see `hge-testdb`; skipped without it).
 
 use std::path::Path;
 use std::sync::Arc;
@@ -198,10 +198,11 @@ fn data(id: &str, ty: &str, data: Value) -> Value {
 
 #[tokio::test]
 async fn websockets() {
-    let Ok(url) = std::env::var("HASURA_GRAPHQL_DATABASE_URL") else {
+    let Some(db) = hge_testdb::TestDb::create("subscriptions").await else {
         eprintln!("HASURA_GRAPHQL_DATABASE_URL not set; skipping");
         return;
     };
+    let url = db.url().to_owned();
     let server = start(&url, |_| {}).await;
     aggregate_live_query(&server).await;
     apollo_live_queries(&server).await;
