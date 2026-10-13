@@ -245,7 +245,7 @@ impl Query {
             return Ok(Query::Metadata {
                 command: Command {
                     name: metadata_command(ty),
-                    args: args.clone(),
+                    args: legacy_metadata_args(version, ty, args),
                     version: match version {
                         Version::V1 => 1,
                         Version::V2 => 2,
@@ -323,6 +323,22 @@ impl Query {
             Query::Other { ty, .. } => matches!(ty.as_str(), "insert" | "update" | "delete"),
             Query::Select(_) | Query::Count(_) | Query::Metadata { .. } => false,
         }
+    }
+}
+
+/// Legacy (version 1) `track_function` and `untrack_function` take the bare function
+/// (`{"schema": .., "name": ..}`, V2's `TrackFunction` newtype); `pg_*` wants
+/// `{"function": ..}`.
+fn legacy_metadata_args(version: Version, ty: &str, args: &Json) -> Json {
+    let bare_function = version == Version::V1
+        && matches!(ty, "track_function" | "untrack_function")
+        && args
+            .as_object()
+            .is_some_and(|o| !o.contains_key("function"));
+    if bare_function {
+        serde_json::json!({ "function": args })
+    } else {
+        args.clone()
     }
 }
 
@@ -433,6 +449,24 @@ mod tests {
     fn run_sql_args_parse_up_front() {
         let e = Query::parse(&json!({"type": "run_sql", "args": {}}), &Path::root()).unwrap_err();
         assert_eq!(e.error.path, "$.args");
+    }
+
+    #[test]
+    fn bare_track_function_is_wrapped() {
+        let q = json!({"type": "track_function", "args": {"schema": "public", "name": "f"}});
+        let Query::Metadata { command, .. } = Query::parse(&q, &Path::root()).unwrap() else {
+            panic!("expected a metadata query");
+        };
+        assert_eq!(command.name, "pg_track_function");
+        assert_eq!(
+            command.args,
+            json!({"function": {"schema": "public", "name": "f"}})
+        );
+        let q = json!({"type": "untrack_function", "args": {"function": "f", "source": "s"}});
+        let Query::Metadata { command, .. } = Query::parse(&q, &Path::root()).unwrap() else {
+            panic!("expected a metadata query");
+        };
+        assert_eq!(command.args, json!({"function": "f", "source": "s"}));
     }
 
     #[test]
