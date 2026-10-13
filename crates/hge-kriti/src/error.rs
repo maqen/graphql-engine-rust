@@ -2,7 +2,10 @@
 
 use serde_json::{Map, Value};
 
-/// A source position: `line` is 0-based, `column` is 1-based and counts Unicode characters.
+/// A source position: `line` is 0-based, `column` is 1-based.
+///
+/// Like kriti, the column only advances for single-byte (ASCII) characters; multi-byte
+/// UTF-8 characters occupy no columns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Position {
     pub line: usize,

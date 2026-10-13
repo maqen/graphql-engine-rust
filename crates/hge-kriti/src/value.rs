@@ -189,6 +189,12 @@ fn encode_string(s: &str, out: &mut String) {
 
 /// Integers print exactly; floats use `Scientific`'s `Generic` format (`1.0`, `0.25`,
 /// `1.0e-2`, `1.2345678e8`), i.e. exponent notation outside `0.1 <= |x| < 10^7`.
+///
+/// aeson prints integral Scientifics (exponent `0..=1024`) as plain integers. An integral
+/// `f64` of magnitude `>= 2^63` can only stem from an integer or exponent literal (e.g.
+/// `1e30`, or an integer too big for `u64`), so it prints as its shortest digits padded
+/// with zeros. Smaller integral floats keep `x.0`, since `serde_json` cannot tell `100.0`
+/// (aeson: `100.0`) from `1e2` (aeson: `100`).
 fn encode_number(n: &Number, out: &mut String) {
     if n.is_i64() || n.is_u64() {
         let _ = write!(out, "{n}");
@@ -207,7 +213,10 @@ fn encode_number(n: &Number, out: &mut String) {
     let (mantissa, exp) = sci.split_once('e').unwrap_or((&sci, "0"));
     let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
     let e = exp.parse::<i64>().unwrap_or(0) + 1;
-    if !(0..=7).contains(&e) {
+    if f.abs() >= 2f64.powi(63) && f.fract() == 0.0 {
+        let zeros = usize::try_from(e).unwrap_or(0).saturating_sub(digits.len());
+        let _ = write!(out, "{digits}{}", "0".repeat(zeros));
+    } else if !(0..=7).contains(&e) {
         let (first, rest) = digits.split_at(1);
         let rest = if rest.is_empty() { "0" } else { rest };
         let _ = write!(out, "{first}.{rest}e{}", e - 1);
@@ -255,6 +264,8 @@ mod tests {
             (1234567.5, "1234567.5"),
             (-2.0, "-2.0"),
             (100.0, "100.0"),
+            (1e30, "1000000000000000000000000000000"),
+            (-1.5e20, "-150000000000000000000"),
         ];
         for (f, s) in cases {
             assert_eq!(encode(&json!(f)), s, "{f}");

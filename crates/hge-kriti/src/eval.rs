@@ -4,7 +4,7 @@
 //! `$body.input.id` never clones `$body`.
 
 use crate::Bindings;
-use crate::ast::{Accessor, BinOp, Expr, ExprKind};
+use crate::ast::{Accessor, BinOp, Elif, Expr, ExprKind};
 use crate::error::{ErrorCode, KritiError, Span};
 use crate::functions::Functions;
 use crate::value::{as_int, encode, json_cmp, json_eq, type_name};
@@ -87,111 +87,154 @@ fn lookup<'a>(env: Env<'a>, name: &str) -> Option<&'a Value> {
     env.vars.get(name)
 }
 
+/// Thin dispatcher: every arm lives in its own out-of-line function so the recursive frame
+/// stays small even in debug builds (deep templates must not overflow a 2 MiB stack).
 fn eval_in<'a>(expr: &Expr, env: Env<'a>) -> Res<'a> {
     let span = expr.span;
-    Ok(Cow::Owned(match &expr.kind {
-        ExprKind::String(s) => Value::String(s.clone()),
-        ExprKind::Number(n) => Value::Number(n.clone()),
-        ExprKind::Bool(b) => Value::Bool(*b),
-        ExprKind::Null => Value::Null,
-        ExprKind::Object(fields) => {
-            let mut entries = Vec::with_capacity(fields.len());
-            for (k, v) in fields {
-                entries.push((k.clone(), eval_in(v, env)?.into_owned()));
-            }
-            // Keys are already sorted and unique.
-            Value::Object(entries.into_iter().collect())
+    match &*expr.kind {
+        ExprKind::String(_) | ExprKind::Number(_) | ExprKind::Bool(_) | ExprKind::Null => {
+            Ok(Cow::Owned(literal(&expr.kind)))
         }
-        ExprKind::Array(items) => Value::Array(
-            items
-                .iter()
-                .map(|e| eval_in(e, env).map(Cow::into_owned))
-                .collect::<Result<_, _>>()?,
-        ),
-        ExprKind::Template(parts) => {
-            let mut out = String::new();
-            for part in parts {
-                match &*eval_in(part, env)? {
-                    Value::String(s) => out.push_str(s),
-                    other => out.push_str(&encode(other)),
-                }
-            }
-            Value::String(out)
-        }
-        ExprKind::Var(name) => {
-            return lookup(env, name)
-                .map(Cow::Borrowed)
-                .ok_or_else(|| name_error(span, name));
-        }
-        ExprKind::Field(base, acc) => return field(span, base, acc, env),
-        ExprKind::Optional(base, fields) => return optional(base, fields, env),
+        ExprKind::Object(fields) => object(fields, env),
+        ExprKind::Array(items) => array(items, env),
+        ExprKind::Template(parts) => template(parts, env),
+        ExprKind::Var(name) => lookup(env, name)
+            .map(Cow::Borrowed)
+            .ok_or_else(|| name_error(span, name)),
+        ExprKind::Field(base, acc) => field(span, base, acc, env),
+        ExprKind::Optional(base, fields) => optional(base, fields, env),
         ExprKind::If {
             cond,
             then,
             elifs,
             otherwise,
-        } => {
-            let branches = std::iter::once((span, &**cond, &**then))
-                .chain(elifs.iter().map(|e| (e.span, &e.cond, &e.body)));
-            for (cond_span, cond, body) in branches {
-                match &*eval_in(cond, env)? {
-                    Value::Bool(true) => return eval_in(body, env),
-                    Value::Bool(false) => {}
-                    other => return Err(type_error(cond_span, other, "Boolean")),
-                }
-            }
-            return eval_in(otherwise, env);
-        }
-        ExprKind::Binary(op, lhs, rhs) => binary(span, *op, lhs, rhs, env)?,
+        } => iff(span, cond, then, elifs, otherwise, env),
+        ExprKind::Binary(op, lhs, rhs) => binary(span, *op, lhs, rhs, env).map(Cow::Owned),
         ExprKind::Range {
             index,
             binder,
             over,
             body,
-        } => {
-            let over = eval_in(over, env)?;
-            let Value::Array(items) = &*over else {
-                return Err(type_error(span, &over, "Array"));
-            };
-            let mut out = Vec::with_capacity(items.len());
-            for (i, item) in items.iter().enumerate() {
-                let elem = Frame {
-                    name: binder,
-                    value: item,
-                    parent: env.frame,
-                };
-                let idx_value = Value::from(i);
-                let idx_frame;
-                let frame = match index {
-                    Some(name) => {
-                        idx_frame = Frame {
-                            name,
-                            value: &idx_value,
-                            parent: Some(&elem),
-                        };
-                        &idx_frame
-                    }
-                    None => &elem,
-                };
-                let inner = Env {
-                    frame: Some(frame),
-                    ..env
-                };
-                out.push(eval_in(body, inner)?.into_owned());
-            }
-            Value::Array(out)
-        }
-        ExprKind::Call(name, arg) => {
-            let value = eval_in(arg, env)?;
-            match env.funcs.call(name, &value) {
-                None => return Err(name_error(span, name)),
-                Some(Ok(v)) => v,
-                Some(Err(msg)) => return Err(KritiError::new(ErrorCode::Function, msg, arg.span)),
-            }
-        }
-    }))
+        } => range(span, index.as_deref(), binder, over, body, env),
+        ExprKind::Call(name, arg) => call(span, name, arg, env),
+    }
 }
 
+#[inline(never)]
+fn literal(kind: &ExprKind) -> Value {
+    match kind {
+        ExprKind::String(s) => Value::String(s.clone()),
+        ExprKind::Number(n) => Value::Number(n.clone()),
+        ExprKind::Bool(b) => Value::Bool(*b),
+        _ => Value::Null,
+    }
+}
+
+#[inline(never)]
+fn object<'a>(fields: &[(String, Expr)], env: Env<'a>) -> Res<'a> {
+    let mut entries = Vec::with_capacity(fields.len());
+    for (k, v) in fields {
+        entries.push((k.clone(), eval_in(v, env)?.into_owned()));
+    }
+    // Keys are already sorted and unique.
+    Ok(Cow::Owned(Value::Object(entries.into_iter().collect())))
+}
+
+#[inline(never)]
+fn array<'a>(items: &[Expr], env: Env<'a>) -> Res<'a> {
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+        out.push(eval_in(item, env)?.into_owned());
+    }
+    Ok(Cow::Owned(Value::Array(out)))
+}
+
+#[inline(never)]
+fn template<'a>(parts: &[Expr], env: Env<'a>) -> Res<'a> {
+    let mut out = String::new();
+    for part in parts {
+        match &*eval_in(part, env)? {
+            Value::String(s) => out.push_str(s),
+            other => out.push_str(&encode(other)),
+        }
+    }
+    Ok(Cow::Owned(Value::String(out)))
+}
+
+#[inline(never)]
+fn iff<'a>(
+    span: Span,
+    cond: &Expr,
+    then: &Expr,
+    elifs: &[Elif],
+    otherwise: &Expr,
+    env: Env<'a>,
+) -> Res<'a> {
+    let branches =
+        std::iter::once((span, cond, then)).chain(elifs.iter().map(|e| (e.span, &e.cond, &e.body)));
+    for (cond_span, cond, body) in branches {
+        match &*eval_in(cond, env)? {
+            Value::Bool(true) => return eval_in(body, env),
+            Value::Bool(false) => {}
+            other => return Err(type_error(cond_span, other, "Boolean")),
+        }
+    }
+    eval_in(otherwise, env)
+}
+
+#[inline(never)]
+fn range<'a>(
+    span: Span,
+    index: Option<&str>,
+    binder: &str,
+    over: &Expr,
+    body: &Expr,
+    env: Env<'a>,
+) -> Res<'a> {
+    let over = eval_in(over, env)?;
+    let Value::Array(items) = &*over else {
+        return Err(type_error(span, &over, "Array"));
+    };
+    let mut out = Vec::with_capacity(items.len());
+    for (i, item) in items.iter().enumerate() {
+        let elem = Frame {
+            name: binder,
+            value: item,
+            parent: env.frame,
+        };
+        let idx_value = Value::from(i);
+        let idx_frame;
+        let frame = match index {
+            Some(name) => {
+                idx_frame = Frame {
+                    name,
+                    value: &idx_value,
+                    parent: Some(&elem),
+                };
+                &idx_frame
+            }
+            None => &elem,
+        };
+        let inner = Env {
+            frame: Some(frame),
+            ..env
+        };
+        out.push(eval_in(body, inner)?.into_owned());
+    }
+    Ok(Cow::Owned(Value::Array(out)))
+}
+
+#[inline(never)]
+fn call<'a>(span: Span, name: &str, arg: &Expr, env: Env<'a>) -> Res<'a> {
+    let value = eval_in(arg, env)?;
+    match env.funcs.call(name, &value) {
+        None => Err(name_error(span, name)),
+        Some(Ok(v)) => Ok(Cow::Owned(v)),
+        Some(Err(msg)) => Err(KritiError::new(ErrorCode::Function, msg, arg.span)),
+    }
+}
+
+#[inline(never)]
 fn field<'a>(span: Span, base: &Expr, acc: &Accessor, env: Env<'a>) -> Res<'a> {
     let value = eval_in(base, env)?;
     match (&*value, acc) {
@@ -220,6 +263,7 @@ fn field<'a>(span: Span, base: &Expr, acc: &Accessor, env: Env<'a>) -> Res<'a> {
     }
 }
 
+#[inline(never)]
 fn optional<'a>(base: &Expr, fields: &[Accessor], env: Env<'a>) -> Res<'a> {
     let value = eval_in(base, env).unwrap_or(Cow::Owned(Value::Null));
     // kriti evaluates the bracket keys right to left (its field list is reversed).
@@ -253,6 +297,7 @@ fn optional<'a>(base: &Expr, fields: &[Accessor], env: Env<'a>) -> Res<'a> {
     Ok(current)
 }
 
+#[inline(never)]
 fn binary(
     span: Span,
     op: BinOp,

@@ -6,7 +6,8 @@ use serde_json::Number;
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Expr {
     pub span: Span,
-    pub kind: ExprKind,
+    /// Boxed so `Expr` stays small: parser and evaluator frames hold many of them.
+    pub kind: Box<ExprKind>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +28,7 @@ pub(crate) enum BinOp {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Accessor {
     Key(String),
-    Expr(Box<Expr>),
+    Expr(Expr),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,21 +50,21 @@ pub(crate) enum ExprKind {
     /// String template parts; literal fragments are `String` nodes.
     Template(Vec<Expr>),
     Var(String),
-    Field(Box<Expr>, Accessor),
+    Field(Expr, Accessor),
     /// `e?f1 f2 …`: errors in `e` become null, the whole chain is null-safe.
-    Optional(Box<Expr>, Vec<Accessor>),
+    Optional(Expr, Vec<Accessor>),
     If {
-        cond: Box<Expr>,
-        then: Box<Expr>,
+        cond: Expr,
+        then: Expr,
         elifs: Vec<Elif>,
-        otherwise: Box<Expr>,
+        otherwise: Expr,
     },
-    Binary(BinOp, Box<Expr>, Box<Expr>),
+    Binary(BinOp, Expr, Expr),
     Range {
         index: Option<String>,
         binder: String,
-        over: Box<Expr>,
-        body: Box<Expr>,
+        over: Expr,
+        body: Expr,
     },
-    Call(String, Box<Expr>),
+    Call(String, Expr),
 }

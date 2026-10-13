@@ -22,7 +22,9 @@
 //! precision): integers beyond `u64`/`i64` and decimals are held as `f64`, so very large or
 //! very precise numbers lose precision, and number literals overflowing `f64` are rejected.
 //! Output objects have sorted keys (aeson's Map-based objects); interpolated non-string
-//! values use aeson's compact encoding with sorted keys.
+//! values use aeson's compact encoding with sorted keys. Templates nested deeper than 256
+//! levels (brackets, parens, objects, `{{ }}`, control flow, postfix chains) are rejected
+//! with a Parse Error so that parsing and evaluation cannot overflow the stack.
 
 mod ast;
 mod error;

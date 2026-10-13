@@ -171,22 +171,27 @@ impl Lexer<'_> {
         self.chars.get(self.i + k).copied()
     }
 
-    fn error(&self) -> KritiError {
-        let end = Position::new(self.pos.line, self.pos.column + self.src.len());
+    /// A lex error after the DFA consumed `stuck_after` ASCII characters of a partial match
+    /// (Alex reports the position where scanning got stuck).
+    fn error(&self, stuck_after: usize) -> KritiError {
+        let start = Position::new(self.pos.line, self.pos.column + stuck_after);
+        let end = Position::new(start.line, start.column + self.src.len());
         KritiError::new(
             ErrorCode::Lex,
             format!("Invalid Lexeme: '{}'", self.src),
-            Span::new(self.pos, end),
+            Span::new(start, end),
         )
     }
 
     /// Consumes `n` characters and returns the span from the previous item's end.
     fn advance(&mut self, n: usize) -> Span {
         for _ in 0..n {
-            if self.chars[self.i] == '\n' {
+            let c = self.chars[self.i];
+            if c == '\n' {
                 self.pos.line += 1;
                 self.pos.column = 1;
-            } else {
+            } else if c.len_utf8() == 1 {
+                // sic: kriti's `alexGetByte` does not advance the column for multi-byte chars.
                 self.pos.column += 1;
             }
             self.i += 1;
@@ -301,7 +306,9 @@ impl Lexer<'_> {
             (']', _) => (1, Sym::SquareClose),
             ('(', _) => (1, Sym::ParenOpen),
             (')', _) => (1, Sym::ParenClose),
-            _ => return Err(self.error()),
+            // Prefixes of `==`, `!=`, `&&`, `||` and negative numbers are consumed first.
+            ('=' | '!' | '&' | '|' | '-', _) => return Err(self.error(1)),
+            _ => return Err(self.error(0)),
         };
         self.emit(n, Tok::Sym(sym));
         Ok(())
@@ -362,14 +369,14 @@ impl Lexer<'_> {
                             .take_while(|c| c.is_ascii_hexdigit())
                             .collect();
                         if hex.len() != 4 {
-                            return Err(self.error());
+                            return Err(self.error(2 + hex.len()));
                         }
                         let code = u32::from_str_radix(&hex, 16).unwrap_or(0xFFFD);
                         let ch = char::from_u32(code).unwrap_or('\u{FFFD}');
                         self.emit(6, Tok::Str(ch.to_string()));
                         return Ok(());
                     }
-                    _ => return Err(self.error()),
+                    _ => return Err(self.error(1)),
                 };
                 self.emit(2, Tok::Str(s.into()));
             }
@@ -388,7 +395,7 @@ impl Lexer<'_> {
                 self.modes.pop();
                 self.emit(1, Tok::Sym(Sym::SingleQuote));
             }
-            '{' => return Err(self.error()),
+            '{' => return Err(self.error(0)),
             _ => {
                 let n = self.count_while(0, |c| !matches!(c, '\'' | '{'));
                 let text = self.text(n);
@@ -479,11 +486,11 @@ mod tests {
         assert_eq!(str_tok.tok, Tok::Str("σ".into()));
         assert_eq!(
             str_tok.span,
-            Span::new(Position::new(1, 4), Position::new(1, 5))
+            Span::new(Position::new(1, 4), Position::new(1, 4))
         );
         assert_eq!(
             lexed.last_span,
-            Span::new(Position::new(1, 11), Position::new(2, 1))
+            Span::new(Position::new(1, 10), Position::new(2, 1))
         );
     }
 
@@ -496,7 +503,12 @@ mod tests {
             err.span,
             Span::new(Position::new(0, 6), Position::new(0, 17))
         );
-        assert!(lex(r#""\q""#).is_err());
-        assert!(lex("'a{'").is_err());
+        let col = |src: &str| lex(src).err().unwrap().span.start.column;
+        assert_eq!(col("{{ a = b }}"), 7);
+        assert_eq!(col(r#""\u12""#), 6);
+        assert_eq!(col(r#"{{ "\q" }}"#), 6);
+        assert_eq!(col("-a"), 2);
+        assert_eq!(col("'a{'"), 3);
+        assert_eq!(col("σ@"), 1);
     }
 }
