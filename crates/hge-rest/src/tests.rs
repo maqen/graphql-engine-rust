@@ -89,7 +89,9 @@ fn path_checks_and_ambiguity_match_v2() {
         amb["conflicts"][0]["definition"]["query"],
         "query ok($id: Int!) { author_by_pk(id: $id) { id } }"
     );
-    assert!(issues[2].involves("rest_endpoint", "rest_endpoint e_ok"));
+    assert!(issues[2].involves("rest_endpoint", "rest_endpoint e_amb"));
+    assert_eq!(issues[2].id(), ("rest_endpoint", "rest_endpoint e_amb"));
+    assert!(!issues[2].involves("rest_endpoint", "rest_endpoint e_ok"));
     assert!(!issues[2].involves("rest_endpoint", "rest_endpoint e_amb3"));
 
     let get = RequestMethod::Endpoint(EndpointMethod::Get);

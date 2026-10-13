@@ -312,7 +312,13 @@ pub struct Seconds(pub serde_json::Number);
 impl<'de> Deserialize<'de> for Seconds {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         match Value::deserialize(d)? {
-            Value::Number(n) => Ok(Seconds(n)),
+            // `DiffTime` re-encodes integral values without a fraction (`5.0` -> `5`).
+            Value::Number(n) => Ok(Seconds(match n.as_f64() {
+                Some(f) if !n.is_i64() && !n.is_u64() && f.fract() == 0.0 && f.abs() < 9e15 => {
+                    (f as i64).into()
+                }
+                _ => n,
+            })),
             other => Err(de::Error::custom(format!(
                 "parsing DiffTime failed, expected Number, but encountered {}",
                 aeson_type(&other)
@@ -470,7 +476,7 @@ mod tests {
             "rate_limit": {"global": {"max_reqs_per_min": 10, "unique_params": "ip"},
                 "per_role": {"user": {"max_reqs_per_min": 3, "unique_params": ["X-Hasura-User-Id"]}}},
             "depth_limit": {"global": 5},
-            "time_limit": {"global": 2.5, "per_role": {"u": 1}},
+            "time_limit": {"global": 2.5, "per_role": {"u": 1.0}},
             "batch_limit": {"global": 2, "per_role": null},
         }))
         .unwrap();

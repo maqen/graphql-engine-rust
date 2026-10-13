@@ -30,8 +30,19 @@ pub fn build(metadata: &Metadata) -> (RestEndpoints, Vec<InconsistentObject>) {
     }
 
     let mut issues = vec![];
+    // V2 reports every duplicate-variable error, then every empty-segment error.
     for (e, endpoint) in &routable {
-        if let Some(reason) = path_issue(&e.url, &endpoint.segments) {
+        if has_duplicate_vars(&endpoint.segments) {
+            let reason = format!("Duplicate variables found in endpoint path: {}", e.url);
+            issues.push(endpoint_issue(e, reason).bare());
+        }
+    }
+    for (e, endpoint) in &routable {
+        if has_empty_segment(&endpoint.segments) {
+            let reason = format!(
+                "Empty segments or unnamed variables are not allowed: {}",
+                e.url
+            );
             issues.push(endpoint_issue(e, reason).bare());
         }
     }
@@ -147,24 +158,21 @@ fn is_shorthand(text: &str) -> bool {
     }
 }
 
-fn path_issue(url: &str, segments: &[Segment]) -> Option<String> {
-    if segments
+fn has_empty_segment(segments: &[Segment]) -> bool {
+    segments
         .iter()
         .any(|s| matches!(s, Segment::Literal(l) | Segment::Var(l) if l.is_empty()))
-    {
-        return Some(format!(
-            "Empty segments or unnamed variables are not allowed: {url}"
-        ));
-    }
+}
+
+fn has_duplicate_vars(segments: &[Segment]) -> bool {
     let mut seen = HashSet::new();
-    let duplicate = segments
+    segments
         .iter()
         .filter_map(|s| match s {
             Segment::Var(name) => Some(name),
             Segment::Literal(_) => None,
         })
-        .any(|name| !seen.insert(name));
-    duplicate.then(|| format!("Duplicate variables found in endpoint path: {url}"))
+        .any(|name| !seen.insert(name))
 }
 
 /// Two endpoints conflict when they share a method and some URL matches both. Conflicting

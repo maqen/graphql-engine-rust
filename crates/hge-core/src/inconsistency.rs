@@ -47,8 +47,9 @@ impl InconsistentObject {
     }
 
     /// V2's `AmbiguousRestEndpoints`: several REST endpoints can match the same URL and
-    /// method. `conflicts` are `(endpoint name, endpoint JSON)`; every one of them counts as
-    /// involved, so creating any of them reports this object.
+    /// method. `conflicts` are `(endpoint name, endpoint JSON)`, sorted by name; V2
+    /// attributes the group to the first one (its id, what `drop_inconsistent_metadata`
+    /// drops, and the only endpoint whose creation reports it as its own error).
     pub fn ambiguous_rest_endpoints(
         reason: impl Into<String>,
         conflicts: Vec<(String, Value)>,
@@ -56,6 +57,7 @@ impl InconsistentObject {
         let reason = reason.into();
         let involves = conflicts
             .iter()
+            .take(1)
             .map(|(name, _)| ("rest_endpoint".to_owned(), format!("rest_endpoint {name}")))
             .collect();
         let definition = Value::Array(conflicts.into_iter().map(|(_, v)| v).collect());
@@ -167,7 +169,10 @@ impl InconsistentObject {
 
     /// Identity used to decide whether an inconsistency is new (V2 compares object ids).
     pub fn id(&self) -> (&str, &str) {
-        (&self.kind, &self.name)
+        match self.involves.first() {
+            Some((kind, name)) if self.kind == AMBIGUOUS_REST_ENDPOINTS => (kind, name),
+            _ => (&self.kind, &self.name),
+        }
     }
 
     /// The JSON object V2 returns.
