@@ -1,0 +1,84 @@
+steps:
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      - name: author
+        columns:
+        - id
+        limit: 1
+  response:
+    error: when selecting an 'obj_relationship' 'where', 'order_by', 'limit' and 'offset'  can't be used
+    path: $.args.columns[1]
+    code: unexpected-payload
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      - name: writer
+        columns:
+        - id
+  response:
+    error: relationship "writer" does not exist
+    path: $.args.columns[1].name
+    code: not-exists
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      - name: title
+        columns:
+        - id
+  response:
+    error: expecting a relationship; but, "title" is a postgres column; only relationships can be expanded
+    path: $.args.columns[1].name
+    code: unexpected-payload
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      - author
+  response:
+    error: 'no such column exists: "author"'
+    path: $.args.columns[1]
+    code: permission-denied
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      - 5
+  response:
+    error: A column should either be a string or an object (relationship)
+    path: $.args.columns[1]
+    code: parse-failed
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns: id
+  response:
+    error: parsing [] failed, expected Array, but encountered String
+    path: $.args.columns
+    code: parse-failed

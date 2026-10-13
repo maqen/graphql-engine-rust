@@ -1,0 +1,80 @@
+steps:
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      order_by: author
+  response:
+    error: '"author" is a relationship and should be expanded'
+    path: $.args.order_by[0]
+    code: unexpected-payload
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - id
+      order_by: articles.id
+  response:
+    error: '"articles" is an array relationship and can''t be used in ''order_by'''
+    path: $.args.order_by[0]
+    code: unexpected-payload
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      order_by: title.foo
+  response:
+    error: '"title" is a Postgres column and cannot be chained further'
+    path: $.args.order_by[0]
+    code: unexpected-payload
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      order_by: nope
+  response:
+    error: '"nope" does not exist'
+    path: $.args.order_by[0]
+    code: not-exists
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      order_by: 5
+  response:
+    error: 'Expecting : array/string/object'
+    path: $.args.order_by
+    code: parse-failed
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      order_by:
+      - 5
+  response:
+    error: expecting an object or string for order by
+    path: $.args.order_by
+    code: parse-failed

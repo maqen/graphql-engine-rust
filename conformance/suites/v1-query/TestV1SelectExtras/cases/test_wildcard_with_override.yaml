@@ -1,0 +1,33 @@
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - title
+      - name: author
+        alias: writer
+        columns:
+        - name
+      - '*.*'
+      order_by: id
+      limit: 2
+  response:
+  - title: Article 1
+    writer:
+      name: Author 1
+    id: 1
+    content: Sample article content 1
+    is_published: false
+    published_on: null
+    author_id: 1
+  - title: Article 2
+    writer:
+      name: Author 1
+    id: 2
+    content: Sample article content 2
+    is_published: true
+    published_on: null
+    author_id: 1

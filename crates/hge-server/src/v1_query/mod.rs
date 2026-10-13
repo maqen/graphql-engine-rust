@@ -1,0 +1,189 @@
+//! `POST /v1/query`: V2's legacy combined schema/metadata API (deprecated, still served).
+//!
+//! The JSON DML (`select`, `count`, …) is lowered to the same IR as GraphQL queries and runs
+//! through the source's executor, so there is one SQL generator. Errors use V2's `QErr`
+//! body with per-error HTTP statuses; paths point into the request (`$.args.where`), and
+//! inside `bulk` at the sub-query (`$.args[1].args.table`).
+
+mod boolexp;
+mod count;
+mod json;
+mod lower;
+mod query;
+mod select;
+
+use std::sync::Arc;
+
+use axum::body::Bytes;
+use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::Response;
+use hge_core::{Code, Error, Session};
+use hge_ir::{QueryRoot, SourceExecutor};
+
+use crate::graphql::include_internal;
+use crate::routes::{json_response, request_id};
+use crate::state::{AppState, Engine};
+use hge_metadata_api::ApiError;
+use json::{Path, err400};
+use lower::Lowerer;
+use query::Query;
+
+/// The route handler.
+pub async fn handler(
+    State(engine): State<Arc<Engine>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let rid = request_id(&headers);
+    // Authenticate before looking at the body, as V2 does.
+    let auth = match engine.auth.authenticate(&headers, None).await {
+        Ok(auth) => auth,
+        Err(e) => {
+            let body = e.error.to_api_json(false).to_string();
+            return json_response(e.status, body, Some(rid));
+        }
+    };
+    let session = auth.session;
+    let internal = include_internal(&engine, &session);
+    match run(&engine, &session, &body).await {
+        Ok(out) => {
+            let mut resp = json_response(StatusCode::OK, out, Some(rid));
+            for cookie in auth.set_cookies {
+                resp.headers_mut().append(header::SET_COOKIE, cookie);
+            }
+            resp
+        }
+        Err(e) => {
+            let status = StatusCode::from_u16(e.status).unwrap_or(StatusCode::BAD_REQUEST);
+            json_response(status, e.error.to_api_json(internal).to_string(), Some(rid))
+        }
+    }
+}
+
+/// Parse and run one request body, returning the response JSON.
+pub async fn run(engine: &Engine, session: &Session, body: &[u8]) -> Result<String, ApiError> {
+    let request = parse_body(body)?;
+    let query = Query::parse(&request, &Path::root())?;
+    if query.requires_admin() && !session.is_admin() {
+        return Err(err400(
+            Code::AccessDenied,
+            "restricted access : admin only",
+            &Path::root().key("args"),
+        ));
+    }
+    let exec = Executor {
+        state: engine.state.load_full(),
+        session,
+    };
+    exec.run(&query).await
+}
+
+/// V2 maps every control character to a space before decoding (clients embed raw newlines
+/// in JSON strings).
+fn parse_body(body: &[u8]) -> Result<serde_json::Value, ApiError> {
+    let cleaned: Vec<u8> = body
+        .iter()
+        .map(|&b| if b < 0x20 { b' ' } else { b })
+        .collect();
+    serde_json::from_slice(&cleaned)
+        .map_err(|e| err400(Code::InvalidJson, format!("Error in $: {e}"), &Path::root()))
+}
+
+struct Executor<'a> {
+    state: Arc<AppState>,
+    session: &'a Session,
+}
+
+impl Executor<'_> {
+    fn run<'q>(&'q self, query: &'q Query) -> hge_ir::BoxFuture<'q, Result<String, ApiError>> {
+        Box::pin(async move {
+            match query {
+                Query::Select(q) => {
+                    let lw = self.lowerer(&q.source);
+                    let select = lw.select(q, self.session)?;
+                    self.execute(&q.source, QueryRoot::Select(select), &q.path)
+                        .await
+                }
+                Query::Count(q) => {
+                    let lw = self.lowerer(&q.source);
+                    let count = lw.count(q, self.session)?;
+                    let n = self
+                        .execute(&q.source, QueryRoot::Count(count), &q.path)
+                        .await?;
+                    Ok(format!("{{\"count\":{n}}}"))
+                }
+                Query::Bulk(queries) => {
+                    // Not transactional, like V2: each sub-query commits on its own.
+                    let mut out = String::from("[");
+                    for (i, q) in queries.iter().enumerate() {
+                        if i > 0 {
+                            out.push(',');
+                        }
+                        out.push_str(&self.run(q).await?);
+                    }
+                    out.push(']');
+                    Ok(out)
+                }
+                Query::Other { ty, path, .. } => Err(err400(
+                    Code::NotSupported,
+                    format!("\"{ty}\" is not supported on /v1/query yet"),
+                    path,
+                )),
+            }
+        })
+    }
+
+    fn lowerer<'s>(&'s self, source: &str) -> Lowerer<'s> {
+        Lowerer::new(
+            &self.state.tables,
+            source,
+            &self.session.role,
+            &self.state.options,
+        )
+    }
+
+    /// Run one root field on a source; DB errors are reported at the query's `args`.
+    async fn execute(
+        &self,
+        source: &str,
+        root: QueryRoot,
+        path: &Path,
+    ) -> Result<String, ApiError> {
+        let executor = self.state.sources.get(source).ok_or_else(|| {
+            err400(
+                Code::NotExists,
+                format!("source with name \"{source}\" does not exist"),
+                path,
+            )
+        })?;
+        let mut out = executor
+            .execute_query(&[&root], self.session)
+            .await
+            .map_err(|e| dml_error(e, path))?;
+        Ok(out.pop().unwrap_or_else(|| "null".to_owned()))
+    }
+}
+
+/// V2's `dmlTxErrorHandler` statuses: expected DB errors are 400, anything else is a 500
+/// `unexpected` "database query error".
+fn dml_error(e: Error, path: &Path) -> ApiError {
+    let e = e.with_path(path.as_str());
+    match e.code {
+        Code::PostgresError => ApiError {
+            status: 500,
+            error: Error {
+                code: Code::Unexpected,
+                ..e
+            },
+        },
+        Code::Unexpected => ApiError {
+            status: 500,
+            error: e,
+        },
+        _ => ApiError {
+            status: 400,
+            error: e,
+        },
+    }
+}

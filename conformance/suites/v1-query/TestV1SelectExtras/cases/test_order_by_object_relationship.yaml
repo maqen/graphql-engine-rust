@@ -1,0 +1,35 @@
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      order_by:
+      - -author.name
+      - id
+  response:
+  - id: 4
+  - id: 3
+  - id: 1
+  - id: 2
+- url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      order_by:
+      - column: author.name
+        type: desc
+        nulls: last
+      - column: id
+  response:
+  - id: 4
+  - id: 3
+  - id: 1
+  - id: 2

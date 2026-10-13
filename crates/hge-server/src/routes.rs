@@ -36,7 +36,8 @@ pub fn router(engine: Arc<Engine>) -> Router {
     if engine.config.api_enabled("metadata") {
         router = router
             .route("/v1/metadata", axum::routing::post(metadata_post))
-            .route("/v2/query", axum::routing::post(query_post));
+            .route("/v2/query", axum::routing::post(query_post))
+            .route("/v1/query", axum::routing::post(crate::v1_query::handler));
     }
     let mut router = router
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
@@ -88,7 +89,7 @@ async fn version() -> Response {
     )
 }
 
-fn request_id(headers: &HeaderMap) -> String {
+pub(crate) fn request_id(headers: &HeaderMap) -> String {
     if let Some(id) = headers.get("x-request-id").and_then(|v| v.to_str().ok()) {
         return id.to_owned();
     }
@@ -104,7 +105,11 @@ fn request_id(headers: &HeaderMap) -> String {
     )
 }
 
-fn json_response(status: StatusCode, body: String, request_id: Option<String>) -> Response {
+pub(crate) fn json_response(
+    status: StatusCode,
+    body: String,
+    request_id: Option<String>,
+) -> Response {
     let mut resp = (status, body).into_response();
     resp.headers_mut().insert(
         header::CONTENT_TYPE,

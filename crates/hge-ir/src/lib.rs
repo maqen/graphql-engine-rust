@@ -6,6 +6,7 @@
 //! database type, and permission filters are already merged in.
 
 pub mod backend;
+pub mod count;
 pub mod mutation;
 pub mod permissions;
 pub mod select;
@@ -14,6 +15,7 @@ pub mod value;
 use std::sync::Arc;
 
 pub use backend::{BoxFuture, SourceExecutor};
+pub use count::Count;
 pub use mutation::*;
 pub use permissions::*;
 pub use select::*;
@@ -59,4 +61,6 @@ pub enum QueryRoot {
     Select(Select),
     /// `author_by_pk(id: 1)`: a single JSON object or `null`.
     SelectOne(Select),
+    /// Legacy `count` (`/v1/query`): a JSON number.
+    Count(Count),
 }
