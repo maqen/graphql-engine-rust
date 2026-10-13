@@ -276,6 +276,10 @@ fn invalid_permissions_are_inconsistent() {
             json!({"name": {"_has_key": "a"}}),
             "only supported on jsonb",
         ),
+        (
+            json!({"name": {"$jsonb_path_exists": "$.a"}}),
+            "only supported on jsonb",
+        ),
         (json!({"id": {"_like": "1"}}), "only supported on string"),
         (
             json!({"id": {"_ceq": ["x", "id"]}}),

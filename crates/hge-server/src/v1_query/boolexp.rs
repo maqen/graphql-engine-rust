@@ -292,6 +292,15 @@ impl BoolExpLowerer<'_, '_> {
                     _ => CompareOp::HasKeysAll(list(v, &text, path)?),
                 })
             }
+            "jsonb_path_exists" | "jsonb_path_match" => {
+                guard(scalars::is_jsonb(ty), "\"jsonb\"")?;
+                let v = literal(v, &ColumnType::builtin("jsonpath"), path)?;
+                cmp(if name == "jsonb_path_exists" {
+                    CompareOp::JsonbPathExists(v)
+                } else {
+                    CompareOp::JsonbPathMatch(v)
+                })
+            }
             "ceq" | "cne" | "cneq" | "cgt" | "clt" | "cgte" | "clte" => {
                 let op = match name {
                     "ceq" => ColumnCompareOp::Eq,
@@ -308,10 +317,8 @@ impl BoolExpLowerer<'_, '_> {
                     other,
                 })
             }
-            "cast" | "jsonb_path_exists" | "jsonb_path_match" | "ancestor" | "ancestor_any"
-            | "descendant" | "descendant_any" | "matches" | "matches_any" | "matches_fulltext" => {
-                Err(not_supported_yet(op, path))
-            }
+            "cast" | "ancestor" | "ancestor_any" | "descendant" | "descendant_any" | "matches"
+            | "matches_any" | "matches_fulltext" => Err(not_supported_yet(op, path)),
             _ if name.starts_with("st_") => Err(not_supported_yet(op, path)),
             _ => Err(unknown()),
         }

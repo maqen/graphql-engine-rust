@@ -310,9 +310,9 @@ pub enum CompareOp {
     HasKeysAny(Value),
     /// jsonb `?&` (value is `text[]`)
     HasKeysAll(Value),
-    /// `jsonb_path_exists(column, value)` (value is `jsonpath`)
+    /// jsonb `@?` (value is `jsonpath`)
     JsonbPathExists(Value),
-    /// `jsonb_path_match(column, value)` (value is `jsonpath`)
+    /// jsonb `@@` (value is `jsonpath`)
     JsonbPathMatch(Value),
     /// `_cast`: compare the column cast to `to` (jsonb to text, geometry to geography and
     /// back) with `op`, whose values have type `to`.

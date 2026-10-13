@@ -98,7 +98,9 @@ cases:
         query ($p: String) {
           exists: author(where: {info: {_jsonb_path_exists: "$.langs[*] ? (@ == \"rust\")"}}) { id }
           match: author(where: {info: {_jsonb_path_match: $p}}) { id }
-          none: author(where: {info: {_jsonb_path_exists: "$.nope"}}) { id } }
+          none: author(where: {info: {_jsonb_path_exists: "$.nope"}}) { id }
+          strict: author(where: {info: {_jsonb_path_exists: "strict $.nope"}}) { id }
+          notBool: author(where: {info: {_jsonb_path_match: "$.city"}}) { id } }
       variables:
         p: '$.city == "Oslo"'
     response:
@@ -106,6 +108,8 @@ cases:
         exists: [{ id: 1 }]
         match: [{ id: 1 }]
         none: []
+        strict: []
+        notBool: []
 
   - description: order by object relationship column
     query:

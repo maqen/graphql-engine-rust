@@ -256,7 +256,7 @@ An empty object `{}` is true. This is the usual "no restriction" filter.
 | `_contains`, `_contained_in` | jsonb or array | jsonb, arrays | `@>`, `<@` |
 | `_has_key` | text | jsonb | `?` |
 | `_has_keys_any`, `_has_keys_all` | text[] | jsonb | `?|`, `?&` |
-| `_jsonb_path_exists`, `_jsonb_path_match` | jsonpath | jsonb | `jsonb_path_exists`, `@@` (inferred) |
+| `_jsonb_path_exists`, `_jsonb_path_match` | jsonpath | jsonb | `@?`, `@@` (rhs `(v)::jsonpath`, see 03) |
 | `_st_contains`, `_st_crosses`, `_st_equals`, `_st_intersects`, `_st_overlaps`, `_st_touches`, `_st_within`, `_st_d_within`, `_st_3d_d_within`, `_st_3d_intersects` (exactly this list; the raster operators `_st_intersects_rast` etc. exist only in GraphQL `where`, not in permissions) | geometry/geography | PostGIS | `ST_*` functions |
 | `_ceq`, `_cne`/`_cneq`, `_cgt`, `_clt`, `_cgte`, `_clte` | column reference | any | column-to-column comparison |
 | `_is_null`, `$is_null`, `_contains`/`$contains`, `_has_key`/`$has_key`, ... | | | every operator in this table has a `$` twin (`parseBoolExpOperations`) |

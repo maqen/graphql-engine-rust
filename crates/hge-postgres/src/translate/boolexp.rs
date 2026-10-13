@@ -145,18 +145,6 @@ impl Translator<'_> {
                 casts.push(to);
                 return self.compare_cast(op, &casts, lhs);
             }
-            JsonbPathExists(v) | JsonbPathMatch(v) => {
-                self.b.push(if matches!(op, JsonbPathExists(_)) {
-                    "jsonb_path_exists("
-                } else {
-                    "jsonb_path_match("
-                });
-                self.operand(casts, lhs)?;
-                self.b.push(", ");
-                self.value(v)?;
-                self.b.push(")");
-                return Ok(());
-            }
             Spatial(f, v) => {
                 self.b.push(f.function()).push("(");
                 self.operand(casts, lhs)?;
@@ -223,12 +211,11 @@ impl Translator<'_> {
             HasKey(v) => (" ? ", v, ""),
             HasKeysAny(v) => (" ?| ", v, ""),
             HasKeysAll(v) => (" ?& ", v, ""),
-            IsNull(_)
-            | Cast { .. }
-            | Spatial(..)
-            | DWithin(_)
-            | JsonbPathExists(_)
-            | JsonbPathMatch(_) => {
+            // V2 uses the operators, which yield NULL (not an error) on strict-mode or
+            // non-boolean paths, and can use a `jsonb_path_ops` index.
+            JsonbPathExists(v) => (" @? ", v, ""),
+            JsonbPathMatch(v) => (" @@ ", v, ""),
+            IsNull(_) | Cast { .. } | Spatial(..) | DWithin(_) => {
                 unreachable!("handled above")
             }
         };
