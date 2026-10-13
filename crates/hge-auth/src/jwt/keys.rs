@@ -107,16 +107,18 @@ impl Key {
             return false;
         }
         use Alg::*;
-        match (&self.material, alg) {
-            (Material::Hmac(_), HS256 | HS384 | HS512) => true,
-            (Material::Public(PublicKey::Rsa { .. }), RS256 | RS384 | RS512)
-            | (Material::Public(PublicKey::Rsa { .. }), PS256 | PS384 | PS512) => true,
-            (Material::Public(PublicKey::EcP256(_)), ES256)
-            | (Material::Public(PublicKey::EcP384(_)), ES384)
-            | (Material::Public(PublicKey::Ed25519(_)), EdDSA) => true,
-            // ring has no P-521, so ES512 tokens cannot be checked.
-            _ => false,
-        }
+        matches!(
+            (&self.material, alg),
+            (Material::Hmac(_), HS256 | HS384 | HS512)
+                | (
+                    Material::Public(PublicKey::Rsa { .. }),
+                    RS256 | RS384 | RS512 | PS256 | PS384 | PS512
+                )
+                | (Material::Public(PublicKey::EcP256(_)), ES256)
+                | (Material::Public(PublicKey::EcP384(_)), ES384)
+                | (Material::Public(PublicKey::EcP521(_)), ES512)
+                | (Material::Public(PublicKey::Ed25519(_)), EdDSA)
+        )
     }
 
     /// Check a signature. The key must be [`usable_for`](Self::usable_for) `alg`.
@@ -131,6 +133,9 @@ impl Key {
                     _ => return false,
                 };
                 hmac::verify(key, message, sig).is_ok()
+            }
+            Material::Public(PublicKey::Rsa { n, e }) if !ring_rsa_size(n) => {
+                legacy::verify_rsa(n, e, alg, message, sig)
             }
             Material::Public(PublicKey::Rsa { n, e }) => {
                 let params = match alg {
@@ -161,7 +166,7 @@ impl Key {
                     .verify(message, sig)
                     .is_ok()
             }
-            Material::Public(PublicKey::EcP521(_)) => false,
+            Material::Public(PublicKey::EcP521(point)) => legacy::verify_p521(point, message, sig),
         }
     }
 }
@@ -177,6 +182,56 @@ impl KeySet {
 
     pub fn has_kid(&self, kid: &str) -> bool {
         self.0.iter().any(|k| k.kid.as_deref() == Some(kid))
+    }
+}
+
+/// ring verifies RSA moduli of 2048 to 8192 bits; others take the slow path.
+fn ring_rsa_size(n: &[u8]) -> bool {
+    let bits = match n.first() {
+        Some(&b) => (n.len() - 1) * 8 + (8 - b.leading_zeros() as usize),
+        None => 0,
+    };
+    (2048..=8192).contains(&bits)
+}
+
+/// RustCrypto fallbacks for keys V2 (jose) accepts but ring cannot check: RSA outside
+/// 2048-8192 bits and P-521. Slower, so only used for those keys.
+mod legacy {
+    use p521::ecdsa::signature::Verifier as _;
+    use rsa::{BigUint, Pkcs1v15Sign, Pss, RsaPublicKey};
+    use sha2::{Digest, Sha256, Sha384, Sha512};
+
+    use super::Alg;
+
+    pub(super) fn verify_rsa(n: &[u8], e: &[u8], alg: Alg, message: &[u8], sig: &[u8]) -> bool {
+        let Ok(key) = RsaPublicKey::new_with_max_size(
+            BigUint::from_bytes_be(n),
+            BigUint::from_bytes_be(e),
+            16_384,
+        ) else {
+            return false;
+        };
+        let result = match alg {
+            Alg::RS256 => key.verify(Pkcs1v15Sign::new::<Sha256>(), &Sha256::digest(message), sig),
+            Alg::RS384 => key.verify(Pkcs1v15Sign::new::<Sha384>(), &Sha384::digest(message), sig),
+            Alg::RS512 => key.verify(Pkcs1v15Sign::new::<Sha512>(), &Sha512::digest(message), sig),
+            Alg::PS256 => key.verify(Pss::new::<Sha256>(), &Sha256::digest(message), sig),
+            Alg::PS384 => key.verify(Pss::new::<Sha384>(), &Sha384::digest(message), sig),
+            Alg::PS512 => key.verify(Pss::new::<Sha512>(), &Sha512::digest(message), sig),
+            _ => return false,
+        };
+        result.is_ok()
+    }
+
+    /// ES512: P-521 with SHA-512, fixed-size `r || s` signature.
+    pub(super) fn verify_p521(point: &[u8], message: &[u8], sig: &[u8]) -> bool {
+        let (Ok(key), Ok(sig)) = (
+            p521::ecdsa::VerifyingKey::from_sec1_bytes(point),
+            p521::ecdsa::Signature::from_slice(sig),
+        ) else {
+            return false;
+        };
+        key.verify(message, &sig).is_ok()
     }
 }
 
@@ -200,9 +255,8 @@ pub fn static_key(ty: &str, key: &str) -> Result<Key, String> {
         "RS256" | "RS384" | "RS512" => |k| matches!(k, PublicKey::Rsa { .. }),
         "ES256" => |k| matches!(k, PublicKey::EcP256(_)),
         "ES384" => |k| matches!(k, PublicKey::EcP384(_)),
+        "ES512" => |k| matches!(k, PublicKey::EcP521(_)),
         "Ed25519" => |k| matches!(k, PublicKey::Ed25519(_)),
-        // V2 accepts ES512 keys; ring cannot verify P-521 signatures, so fail at startup
-        // rather than rejecting every token.
         _ => return Err(format!("Invalid JWK: Key type: {ty} is not supported")),
     };
     let public =

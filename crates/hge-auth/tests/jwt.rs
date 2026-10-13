@@ -623,3 +623,38 @@ async fn hostile_but_signed_claims_do_not_panic() {
         .unwrap_err();
     assert_eq!(err(e).2, "Could not verify JWT: JWTNotInAudience");
 }
+
+/// Keys ring cannot check (RSA under 2048 bits, P-521) work like in V2. The tokens were
+/// signed with openssl; the private keys were not kept.
+#[tokio::test]
+async fn legacy_keys() {
+    for (ty, key, token) in [
+        (
+            "RS256",
+            include_str!("fixtures/rsa1024_public.pem"),
+            include_str!("fixtures/rsa1024.jwt"),
+        ),
+        (
+            "ES512",
+            include_str!("fixtures/ec521_public.pem"),
+            include_str!("fixtures/ec521.jwt"),
+        ),
+    ] {
+        let a = jwt_auth(json!({"type": ty, "key": key})).await;
+        let ok = run(&a, &[("authorization", &bearer(token.trim()))]).await;
+        assert_eq!(ok.unwrap().session.role.as_str(), "user", "{ty}");
+        // A tampered signature fails.
+        let mut bad: Vec<char> = token.trim().chars().collect();
+        let i = bad.len() - 10;
+        bad[i] = if bad[i] == 'A' { 'B' } else { 'A' };
+        let bad: String = bad.into_iter().collect();
+        let e = run(&a, &[("authorization", &bearer(&bad))])
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err(e).2,
+            "Could not verify JWT: JWSError JWSInvalidSignature",
+            "{ty}"
+        );
+    }
+}

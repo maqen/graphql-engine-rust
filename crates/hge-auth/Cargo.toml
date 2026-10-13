@@ -14,6 +14,8 @@ http.workspace = true
 httpdate.workspace = true
 reqwest = { workspace = true, features = ["rustls-tls", "http2"] }
 ring.workspace = true
+rsa.workspace = true
+p521.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 subtle.workspace = true
