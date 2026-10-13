@@ -214,6 +214,8 @@ async fn websockets() {
     auth_failures(&server).await;
     server_close(&server).await;
     jwt_expiry(&server).await;
+    async_actions(&server, &url).await;
+    async_actions_with_relationships(&server, &url).await;
 
     let server = start(&url, |c| {
         c.websocket.init_timeout = Duration::from_millis(200)
@@ -715,6 +717,231 @@ async fn restrictions(server: &Server) {
             other => panic!("expected a 404 on {path}, got {other:?}"),
         }
     }
+}
+
+/// Subscriptions to an async action's result: sent when it changes, then `complete`.
+async fn async_actions(server: &Server, url: &str) {
+    let id = server.graphql("mutation { asyncTask(n: 1) }").await["data"]["asyncTask"]
+        .as_str()
+        .expect("action id")
+        .to_owned();
+    let mut ws = server.connect(Some("graphql-transport-ws")).await;
+    init(&mut ws, admin()).await;
+    let sub = format!(
+        r#"subscription {{ task: asyncTask(id: "{id}") {{ id output {{ label }} errors }} }}"#
+    );
+    send(
+        &mut ws,
+        json!({"id": "1", "type": "subscribe", "payload": {"query": sub}}),
+    )
+    .await;
+    assert_eq!(
+        recv(&mut ws).await,
+        data(
+            "1",
+            "next",
+            json!({"task": {"id": id, "output": null, "errors": null}})
+        )
+    );
+    // Nothing is sent while the result is unchanged (it is read every second).
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    quiet(&mut ws).await;
+    let (client, conn) = tokio_postgres::connect(url, tokio_postgres::NoTls)
+        .await
+        .unwrap();
+    tokio::spawn(conn);
+    client
+        .execute(
+            r#"UPDATE hdb_catalog.hdb_action_log
+               SET response_payload = '{"label": "done"}', status = 'completed'
+               WHERE id = $1::text::uuid"#,
+            &[&id],
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        recv(&mut ws).await,
+        data(
+            "1",
+            "next",
+            json!({"task": {"id": id, "output": {"label": "done"}, "errors": null}})
+        )
+    );
+    assert_eq!(recv(&mut ws).await, json!({"type": "complete", "id": "1"}));
+    // The id is free again.
+    send(
+        &mut ws,
+        json!({"id": "1", "type": "subscribe", "payload": {"query": sub}}),
+    )
+    .await;
+    assert_eq!(
+        recv(&mut ws).await["payload"]["data"]["task"]["output"]["label"],
+        "done"
+    );
+    assert_eq!(recv(&mut ws).await, json!({"type": "complete", "id": "1"}));
+
+    // Several actions complete once the last one has finished; errors finish one too.
+    let second = server.graphql("mutation { asyncTask(n: 2) }").await["data"]["asyncTask"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let both = format!(
+        r#"subscription @_multiple_top_level_fields {{ a: asyncTask(id: "{id}") {{ output {{ label }} }} b: asyncTask(id: "{second}") {{ errors }} }}"#
+    );
+    send(
+        &mut ws,
+        json!({"id": "3", "type": "subscribe", "payload": {"query": both}}),
+    )
+    .await;
+    assert_eq!(
+        recv(&mut ws).await,
+        data(
+            "3",
+            "next",
+            json!({"a": {"output": {"label": "done"}}, "b": {"errors": null}})
+        )
+    );
+    client
+        .execute(
+            r#"UPDATE hdb_catalog.hdb_action_log
+               SET errors = '{"path": "$", "error": "failed", "code": "unexpected"}', status = 'error'
+               WHERE id = $1::text::uuid"#,
+            &[&second],
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        recv(&mut ws).await,
+        data(
+            "3",
+            "next",
+            json!({"a": {"output": {"label": "done"}}, "b": {"errors": {"code": "unexpected", "error": "failed", "path": "$"}}})
+        )
+    );
+    assert_eq!(recv(&mut ws).await, json!({"type": "complete", "id": "3"}));
+
+    // Async action results cannot be mixed with database fields.
+    let mixed = format!(
+        r#"subscription @_multiple_top_level_fields {{ asyncTask(id: "{id}") {{ id }} message {{ id }} }}"#
+    );
+    send(
+        &mut ws,
+        json!({"id": "2", "type": "subscribe", "payload": {"query": mixed}}),
+    )
+    .await;
+    assert_eq!(
+        recv(&mut ws).await["payload"][0]["message"],
+        "async action queries with no relationships aren't expected to mix with normal source database queries"
+    );
+}
+
+/// An output type with relationships makes the result a live query: it never completes,
+/// follows the relationships, and only the session that created the action sees it.
+async fn async_actions_with_relationships(server: &Server, url: &str) {
+    let id = server.graphql("mutation { asyncLink(n: 1) }").await["data"]["asyncLink"]
+        .as_str()
+        .expect("action id")
+        .to_owned();
+    let sub = format!(
+        r#"subscription {{ link: asyncLink(id: "{id}") {{ output {{ messageId message {{ body }} }} }} }}"#
+    );
+    let mut ws = server.connect(None).await;
+    init(&mut ws, admin()).await;
+    send(
+        &mut ws,
+        json!({"id": "1", "type": "start", "payload": {"query": sub}}),
+    )
+    .await;
+    assert_eq!(
+        recv(&mut ws).await,
+        data("1", "data", json!({"link": {"output": null}}))
+    );
+    // Another session does not see the admin's action.
+    let mut other = server.connect(None).await;
+    init(&mut other, user(1)).await;
+    send(
+        &mut other,
+        json!({"id": "1", "type": "start", "payload": {"query": sub}}),
+    )
+    .await;
+    assert_eq!(
+        recv(&mut other).await,
+        data("1", "data", json!({"link": null}))
+    );
+
+    let (client, conn) = tokio_postgres::connect(url, tokio_postgres::NoTls)
+        .await
+        .unwrap();
+    tokio::spawn(conn);
+    client
+        .execute(
+            r#"UPDATE hdb_catalog.hdb_action_log
+               SET response_payload = '{"messageId": 2}', status = 'completed'
+               WHERE id = $1::text::uuid"#,
+            &[&id],
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        recv(&mut ws).await,
+        data(
+            "1",
+            "data",
+            json!({"link": {"output": {"messageId": 2, "message": {"body": "two"}}}})
+        )
+    );
+    // Finished, but still running: no `complete`.
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    quiet(&mut ws).await;
+    // After `stop` nothing more is sent.
+    send(&mut ws, json!({"id": "1", "type": "stop"})).await;
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    quiet(&mut ws).await;
+    quiet(&mut other).await;
+
+    // Actions with and without relationships, or with relationships and database fields,
+    // do not mix.
+    let task = server.graphql("mutation { asyncTask(n: 3) }").await["data"]["asyncTask"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for (op, message) in [
+        (
+            format!(r#"a: asyncLink(id: "{id}") {{ id }} b: asyncTask(id: "{task}") {{ id }}"#),
+            "async action queries with no relationships aren't expected to mix with normal source database queries",
+        ),
+        (
+            format!(r#"a: asyncLink(id: "{id}") {{ id }} message {{ id }}"#),
+            "async action queries with relationships cannot be mixed with database queries in one subscription",
+        ),
+    ] {
+        let query = format!("subscription @_multiple_top_level_fields {{ {op} }}");
+        send(
+            &mut ws,
+            json!({"id": "3", "type": "start", "payload": {"query": query}}),
+        )
+        .await;
+        let err = recv(&mut ws).await;
+        assert_eq!(err["type"], "error");
+        assert_eq!(err["payload"]["errors"][0]["message"], message);
+        assert_eq!(recv(&mut ws).await, json!({"type": "complete", "id": "3"}));
+    }
+
+    // An unknown id is an error, without `complete`.
+    let missing =
+        r#"subscription { asyncTask(id: "00000000-0000-0000-0000-000000000000") { id } }"#;
+    send(
+        &mut ws,
+        json!({"id": "2", "type": "start", "payload": {"query": missing}}),
+    )
+    .await;
+    let err = recv(&mut ws).await;
+    assert_eq!(err["type"], "error");
+    assert_eq!(
+        err["payload"]["errors"][0]["message"],
+        "database query error"
+    );
+    quiet(&mut ws).await;
 }
 
 /// With no room in the send queue, every result overflows.
