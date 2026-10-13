@@ -64,21 +64,26 @@ pub async fn openapi(
         let e = Error::new(Code::NotFound, "resource does not exist");
         return error_response(&e, StatusCode::NOT_FOUND, false, rid);
     }
-    let session = match engine.auth.authenticate(&headers, None).await {
-        Ok(auth) => auth.session,
+    let auth = match engine.auth.authenticate(&headers, None).await {
+        Ok(auth) => auth,
         Err(e) => return error_response(&e.error, e.status, false, rid),
     };
-    if !session.role.is_admin() {
+    let mut resp = if auth.session.role.is_admin() {
+        let state = engine.state.load_full();
+        let admin = state.role_schema(&RoleName::admin(), false);
+        let doc = hge_rest::openapi(&admin.schema, &state.prepared.rest);
+        json_response(StatusCode::OK, doc.to_string(), Some(rid))
+    } else {
         let e = Error::new(
             Code::AccessDenied,
             "You have to be an admin to access this endpoint",
         );
-        return error_response(&e, StatusCode::BAD_REQUEST, false, rid);
+        error_response(&e, StatusCode::BAD_REQUEST, false, rid)
+    };
+    for cookie in auth.set_cookies {
+        resp.headers_mut().append(header::SET_COOKIE, cookie);
     }
-    let state = engine.state.load_full();
-    let admin = state.role_schema(&RoleName::admin(), false);
-    let doc = hge_rest::openapi(&admin.schema, &state.prepared.rest);
-    json_response(StatusCode::OK, doc.to_string(), Some(rid))
+    resp
 }
 
 fn error_response(e: &Error, status: StatusCode, include_internal: bool, rid: String) -> Response {
