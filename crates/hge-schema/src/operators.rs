@@ -29,6 +29,15 @@ pub fn cast_targets(ty: &ColumnType) -> Vec<(&'static str, ColumnType)> {
     }
 }
 
+/// The target type of a permission filter's `_cast: {<type>: …}`, which names the Postgres
+/// type (`text`, not GraphQL's `String`).
+pub fn permission_cast_target(ty: &ColumnType, type_name: &str) -> Option<ColumnType> {
+    cast_targets(ty)
+        .into_iter()
+        .map(|(_, t)| t)
+        .find(|t| t.name == type_name)
+}
+
 /// The target type of `_cast: {<field>: …}` on a column of type `ty`.
 pub fn cast_target(ty: &ColumnType, field: &str) -> Option<ColumnType> {
     cast_targets(ty)
@@ -147,14 +156,23 @@ pub fn spatial_op(
     if !scalars::is_geo(ty) {
         return None;
     }
-    if let Some(f) = SpatialOp::from_name(op) {
-        return Some(value(v, ty, path).map(|v| CompareOp::Spatial(f, v)));
-    }
+    let f = SpatialOp::from_name(op);
     let three_d = match op {
+        _ if f.is_some() => false,
         "st_d_within" => false,
         "st_3d_d_within" => true,
         _ => return None,
     };
+    // Only `st_intersects` and `st_d_within` exist for geography.
+    if ty.name == "geography" && !matches!(op, "st_intersects" | "st_d_within") {
+        return Some(Err(Error::validation(format!(
+            "the operator _{op} is only supported on geometry columns"
+        ))
+        .with_path(path)));
+    }
+    if let Some(f) = f {
+        return Some(value(v, ty, path).map(|v| CompareOp::Spatial(f, v)));
+    }
     Some(d_within(three_d, v, ty, path, value))
 }
 
@@ -182,10 +200,11 @@ fn d_within(
             &ColumnType::builtin("float8"),
             &format!("{path}.distance"),
         )?,
-        // V2 defaults `use_spheroid` to true for geography.
+        // V2 defaults an absent `use_spheroid` to true for geography (an explicit null stays
+        // NULL, so `ST_DWithin` matches nothing).
         use_spheroid: match obj.get("use_spheroid") {
             _ if !geography => None,
-            None | Some(Json::Null) => Some(Value::literal("true", ColumnType::builtin("bool"))),
+            None => Some(Value::literal("true", ColumnType::builtin("bool"))),
             Some(s) => Some(value(
                 s,
                 &ColumnType::builtin("bool"),
@@ -236,6 +255,33 @@ mod tests {
     }
 
     #[test]
+    fn permission_casts_name_postgres_types() {
+        let jsonb = ColumnType::builtin("jsonb");
+        assert_eq!(
+            permission_cast_target(&jsonb, "text"),
+            Some(ColumnType::builtin("text"))
+        );
+        assert_eq!(permission_cast_target(&jsonb, "String"), None);
+        assert_eq!(
+            permission_cast_target(&geo("geometry"), "geography"),
+            Some(geo("geography"))
+        );
+    }
+
+    #[test]
+    fn geography_has_only_intersects_and_d_within() {
+        let point = json!({"type": "Point", "coordinates": [1, 2]});
+        assert!(matches!(
+            graphql_spatial_op("_st_contains", &point, &geo("geography"), "$"),
+            Some(Err(_))
+        ));
+        assert!(matches!(
+            graphql_spatial_op("_st_intersects", &point, &geo("geography"), "$"),
+            Some(Ok(_))
+        ));
+    }
+
+    #[test]
     fn spatial_operators() {
         let point = json!({"type": "Point", "coordinates": [1, 2]});
         let op = graphql_spatial_op("_st_within", &point, &geo("geometry"), "$").unwrap();
@@ -267,6 +313,16 @@ mod tests {
         };
         assert_eq!(d.use_spheroid, None);
         assert!(d.three_d);
+        let explicit_null = json!({"distance": 1, "from": {"type": "Point", "coordinates": [1, 2]}, "use_spheroid": null});
+        let Some(Ok(CompareOp::DWithin(d))) =
+            graphql_spatial_op("_st_d_within", &explicit_null, &geo("geography"), "$")
+        else {
+            panic!("expected DWithin");
+        };
+        assert_eq!(
+            d.use_spheroid,
+            Some(Value::null(ColumnType::builtin("bool")))
+        );
         let missing = graphql_spatial_op(
             "_st_d_within",
             &json!({"distance": 1}),

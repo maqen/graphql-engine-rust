@@ -613,9 +613,19 @@ impl Lowerer<'_> {
         };
         for (field, ops) in targets {
             let item_path = format!("{path}.{field}");
-            let (Some(to), Json::Object(ops)) = (crate::operators::cast_target(ty, field), ops)
-            else {
+            let Some(to) = crate::operators::cast_target(ty, field) else {
                 continue;
+            };
+            let ops = match ops {
+                Json::Object(ops) => ops,
+                Json::Null if self.rs.options.dangerously_collapse_booleans => continue,
+                _ => {
+                    return Err(Error::validation(format!(
+                        "unexpected null value for type '{}'",
+                        scalars::comparison_exp_name(&to)
+                    ))
+                    .with_path(item_path));
+                }
             };
             for op in self.comparisons(&to, ops, &item_path)? {
                 out.push(CompareOp::Cast {

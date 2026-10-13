@@ -735,6 +735,8 @@ impl Builder<'_> {
         if self.schema.types.contains_key(&name) {
             return name;
         }
+        // Also reached for cast targets, which may be no column's type.
+        self.note_scalar(ty);
         let scalar = scalars::scalar_name(&ty.element());
         // Operator values are nullable in the schema (V2 rejects or collapses nulls later).
         let value_ty = scalars::column_type_ref(ty, true);

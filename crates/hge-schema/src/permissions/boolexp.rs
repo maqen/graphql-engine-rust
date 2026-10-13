@@ -394,12 +394,13 @@ impl Parser<'_> {
         };
         let mut items = vec![];
         for (target, ops) in targets {
-            let to = crate::operators::cast_target(&col.ty, target).ok_or_else(|| {
-                format!(
-                    "cannot cast column of type {} to type {target}",
-                    scalars::scalar_name(&col.ty)
-                )
-            })?;
+            let to =
+                crate::operators::permission_cast_target(&col.ty, target).ok_or_else(|| {
+                    format!(
+                        "cannot cast column of type \"{}\" to type \"{target}\"",
+                        col.ty.name
+                    )
+                })?;
             let cast_col = ColumnInfo {
                 ty: to.clone(),
                 ..col.clone()
