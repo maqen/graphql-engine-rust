@@ -306,6 +306,24 @@ impl Runtime for Engine {
         }
     }
 
+    async fn post_drop_source(&self, source: &hge_metadata::Source, pg: Arc<PgSource>) {
+        let triggers: Vec<String> = source
+            .tables
+            .iter()
+            .flat_map(|t| &t.event_triggers)
+            .filter_map(|t| t.get("name").and_then(|n| n.as_str()).map(str::to_owned))
+            .collect();
+        if let Err(e) = hge_events::catalog::drop_source_catalog(pg.pool(), &triggers).await {
+            tracing::warn!(
+                target: "metadata",
+                source = %source.name,
+                error = %e,
+                "Error executing cleanup actions after removing source '{}'. Consider cleaning up tables in hdb_catalog schema manually.",
+                source.name
+            );
+        }
+    }
+
     fn install(&self, prepared: Prepared, metadata: Metadata, resource_version: i64) {
         load::log_prepared(&prepared);
         let state = AppState::new(

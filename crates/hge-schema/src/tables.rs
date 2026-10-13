@@ -354,10 +354,7 @@ fn resolve_table(
             },
             ObjectRelUsing::Manual {
                 manual_configuration,
-            } => {
-                let (t, m) = manual(manual_configuration);
-                Ok((t, m, false))
-            }
+            } => manual(cat, catalog, tracked, manual_configuration).map(|(t, m)| (t, m, false)),
         };
         let (target, mapping, forward) = match resolved {
             Ok(r) => r,
@@ -373,6 +370,17 @@ fn resolve_table(
                 continue;
             }
         };
+        if let Some(e) = field_conflict(&columns, &rel.name, std::slice::from_ref(&rel.name)) {
+            issues.push(relationship_issue(
+                "object_relation",
+                rel,
+                &rel.name,
+                source,
+                &entry.table,
+                e,
+            ));
+            continue;
+        }
         let nullable = !forward
             || mapping
                 .iter()
@@ -396,7 +404,7 @@ fn resolve_table(
             } => reverse_fk(cat, catalog, source, foreign_key_constraint_on, &rel.name),
             ArrayRelUsing::Manual {
                 manual_configuration,
-            } => Ok(manual(manual_configuration)),
+            } => manual(cat, catalog, tracked, manual_configuration),
         };
         let (target, mapping) = match resolved {
             Ok(r) => r,
@@ -412,6 +420,18 @@ fn resolve_table(
                 continue;
             }
         };
+        let names = [rel.name.clone(), format!("{}_aggregate", rel.name)];
+        if let Some(e) = field_conflict(&columns, &rel.name, &names) {
+            issues.push(relationship_issue(
+                "array_relation",
+                rel,
+                &rel.name,
+                source,
+                &entry.table,
+                e,
+            ));
+            continue;
+        }
         array_relationships.push(Arc::new(RelationshipInfo {
             name: rel.name.clone(),
             kind: RelKind::Array,
@@ -476,6 +496,92 @@ fn resolve_table(
     })
 }
 
+/// V2's dependency pass for relationships: one whose target table is not among the resolved
+/// tables (untracked, or itself inconsistent) is reported and dropped.
+pub fn drop_dangling_relationships(tables: &mut Tables, issues: &mut Vec<InconsistentObject>) {
+    let present: HashSet<(Arc<str>, QualifiedTable)> = tables.by_name.keys().cloned().collect();
+    let resolved = |r: &RelationshipInfo| present.contains(&(r.source.clone(), r.target.clone()));
+    for slot in &mut tables.ordered {
+        let table = slot.as_ref();
+        let dangling = |rels: &[Arc<RelationshipInfo>]| rels.iter().any(|r| !resolved(r));
+        if !dangling(&table.object_relationships) && !dangling(&table.array_relationships) {
+            continue;
+        }
+        let mut info = table.clone();
+        let entry = &table.entry;
+        let mut report = |r: &RelationshipInfo| {
+            let reason = format!("table \"{}\" is not tracked", r.target.v2_text());
+            let issue = match r.kind {
+                RelKind::Object => entry
+                    .object_relationships
+                    .iter()
+                    .find(|m| m.name == r.name)
+                    .map(|m| {
+                        relationship_issue(
+                            "object_relation",
+                            m,
+                            &r.name,
+                            &info.source,
+                            &info.name,
+                            reason,
+                        )
+                    }),
+                RelKind::Array => entry
+                    .array_relationships
+                    .iter()
+                    .find(|m| m.name == r.name)
+                    .map(|m| {
+                        relationship_issue(
+                            "array_relation",
+                            m,
+                            &r.name,
+                            &info.source,
+                            &info.name,
+                            reason,
+                        )
+                    }),
+            };
+            issues.extend(issue);
+        };
+        for r in table
+            .object_relationships
+            .iter()
+            .chain(&table.array_relationships)
+        {
+            if !resolved(r) {
+                report(r);
+            }
+        }
+        info.object_relationships.retain(|r| resolved(r));
+        info.array_relationships.retain(|r| resolved(r));
+        let info = Arc::new(info);
+        tables
+            .by_name
+            .insert((info.source.clone(), info.name.clone()), info.clone());
+        *slot = info;
+    }
+}
+
+/// V2's checks of a relationship against the table's columns: one of its GraphQL names
+/// (`gql_names`) taken by a column's custom name, else its `name` equal to a column's name.
+fn field_conflict(
+    columns: &IndexMap<String, ColumnInfo>,
+    name: &str,
+    gql_names: &[String],
+) -> Option<String> {
+    for n in gql_names {
+        if let Some(col) = columns.values().find(|c| &c.gql_name == n && &c.name != n) {
+            return Some(format!(
+                "field definition conflicts with custom field name for postgres column \"{}\"",
+                col.name
+            ));
+        }
+    }
+    columns
+        .contains_key(name)
+        .then(|| "field definition conflicts with postgres column".to_owned())
+}
+
 /// Object relationship through a foreign key on this table.
 fn forward_fk(
     cat: &TableCatalog,
@@ -487,14 +593,11 @@ fn forward_fk(
         .iter()
         .find(|fk| {
             fk.columns.len() == columns.len()
-                && columns.iter().all(|c| fk.columns.iter().any(|(l, _)| l == c))
+                && columns
+                    .iter()
+                    .all(|c| fk.columns.iter().any(|(l, _)| l == c))
         })
-        .ok_or_else(|| {
-            format!(
-                "relationship \"{rel}\" of table \"{}\": no foreign key constraint exists on the columns {:?}",
-                cat.name, columns
-            )
-        })?;
+        .ok_or_else(|| no_constraint(cat, rel))?;
     Ok((fk.ref_table.clone(), fk.columns.clone()))
 }
 
@@ -521,14 +624,11 @@ fn reverse_fk(
         .find(|fk| {
             fk.ref_table == cat.name
                 && fk.columns.len() == columns.len()
-                && columns.iter().all(|c| fk.columns.iter().any(|(l, _)| l == c))
+                && columns
+                    .iter()
+                    .all(|c| fk.columns.iter().any(|(l, _)| l == c))
         })
-        .ok_or_else(|| {
-            format!(
-                "relationship \"{rel}\" of table \"{}\": no foreign key constraint exists on {:?} of table \"{}\" referencing it",
-                cat.name, columns, remote.table
-            )
-        })?;
+        .ok_or_else(|| no_constraint(cat, rel))?;
     let mapping = fk
         .columns
         .iter()
@@ -537,14 +637,45 @@ fn reverse_fk(
     Ok((remote.table.clone(), mapping))
 }
 
-fn manual(cfg: &ManualRelConfig) -> (QualifiedTable, Vec<(String, String)>) {
-    (
+fn no_constraint(cat: &TableCatalog, rel: &str) -> String {
+    format!(
+        "in table \"{}\": in relationship \"{rel}\": no foreign constraint exists on the given column(s)",
+        cat.name.v2_text()
+    )
+}
+
+fn manual(
+    cat: &TableCatalog,
+    catalog: &SourceCatalog,
+    tracked: &HashSet<QualifiedTable>,
+    cfg: &ManualRelConfig,
+) -> Result<(QualifiedTable, Vec<(String, String)>), String> {
+    let remote = tracked
+        .contains(&cfg.remote_table)
+        .then(|| catalog.table(&cfg.remote_table))
+        .flatten()
+        .ok_or_else(|| format!("table \"{}\" is not tracked", cfg.remote_table.v2_text()))?;
+    for (local, remote_col) in &cfg.column_mapping {
+        if cat.column(local).is_none() {
+            return Err(format!(
+                "table \"{}\" has no field named \"{local}\"",
+                cat.name.v2_text()
+            ));
+        }
+        if remote.column(remote_col).is_none() {
+            return Err(format!(
+                "table \"{}\" has no field named \"{remote_col}\"",
+                remote.name.v2_text()
+            ));
+        }
+    }
+    Ok((
         cfg.remote_table.clone(),
         cfg.column_mapping
             .iter()
             .map(|(l, r)| (l.clone(), r.clone()))
             .collect(),
-    )
+    ))
 }
 
 /// Names the schema itself defines; a table may not generate any of them.
@@ -730,6 +861,8 @@ mod tests {
     use indexmap::IndexMap;
     use serde_json::json;
 
+    use super::field_conflict;
+
     fn table(name: &str) -> (QualifiedTable, TableCatalog) {
         let qt = QualifiedTable::new("public", name);
         let id = ColumnInfo {
@@ -792,5 +925,34 @@ mod tests {
             assert_eq!(errs.len(), 1, "{other}: {errs:?}");
         }
         assert!(clash("article_comment").is_empty());
+    }
+
+    #[test]
+    fn relationship_field_conflicts() {
+        let col = |name: &str, gql: &str| {
+            (
+                name.to_owned(),
+                super::ColumnInfo {
+                    name: name.to_owned(),
+                    gql_name: gql.to_owned(),
+                    ty: ColumnType::builtin("text"),
+                    nullable: true,
+                    description: None,
+                    mutable: true,
+                    enum_ref: None,
+                },
+            )
+        };
+        let columns = IndexMap::from([col("id", "id"), col("name", "articles")]);
+        let rel = |n: &str| [n.to_owned(), format!("{n}_aggregate")];
+        assert_eq!(
+            field_conflict(&columns, "articles", &rel("articles")).as_deref(),
+            Some("field definition conflicts with custom field name for postgres column \"name\"")
+        );
+        assert_eq!(
+            field_conflict(&columns, "id", &rel("id")).as_deref(),
+            Some("field definition conflicts with postgres column")
+        );
+        assert_eq!(field_conflict(&columns, "tags", &rel("tags")), None);
     }
 }

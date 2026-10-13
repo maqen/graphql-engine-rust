@@ -123,6 +123,31 @@ pub struct SourceConfiguration {
     pub extra: Extra,
 }
 
+impl SourceConfiguration {
+    /// The connection defaults V2 fills in when it parses a Postgres source configuration.
+    pub fn fill_pg_defaults(&mut self) {
+        let fill = |info: &mut PgConnectionInfo| {
+            if info.isolation_level.is_none() {
+                info.isolation_level = Some("read-committed".to_owned());
+            }
+            if info.use_prepared_statements.is_none() {
+                info.use_prepared_statements = Some(false);
+            }
+            if let Some(pool) = &mut info.pool_settings
+                && pool.connection_lifetime.is_none()
+            {
+                pool.connection_lifetime = Some(600);
+            }
+        };
+        if let Some(info) = &mut self.connection_info {
+            fill(info);
+        }
+        for info in self.read_replicas.iter_mut().flatten() {
+            fill(info);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PgConnectionInfo {
     pub database_url: UrlConfig,
@@ -392,7 +417,7 @@ pub enum ObjectRelUsing {
 
 /// `foreign_key_constraint_on` for object relationships: a column, a list of columns
 /// (both on the current table), or `{table, column(s)}` for a reverse (remote-side) fk.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(untagged)]
 pub enum ObjectFkOn {
     Column(String),
@@ -400,13 +425,67 @@ pub enum ObjectFkOn {
     Remote(RemoteFk),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// A one-element column list is kept as a plain column, like V2.
+impl Serialize for ObjectFkOn {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            ObjectFkOn::Column(c) => c.serialize(s),
+            ObjectFkOn::Columns(cs) if cs.len() == 1 => cs[0].serialize(s),
+            ObjectFkOn::Columns(cs) => cs.serialize(s),
+            ObjectFkOn::Remote(r) => r.serialize(s),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "RawRemoteFk")]
 pub struct RemoteFk {
     pub table: QualifiedTable,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub column: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub columns: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+struct RawRemoteFk {
+    table: QualifiedTable,
+    #[serde(default)]
+    column: Option<String>,
+    #[serde(default)]
+    columns: Option<Vec<String>>,
+}
+
+/// V2 requires exactly one of `column` and `columns`.
+impl TryFrom<RawRemoteFk> for RemoteFk {
+    type Error = &'static str;
+
+    fn try_from(raw: RawRemoteFk) -> Result<Self, Self::Error> {
+        if raw.column.is_some() == raw.columns.is_some() {
+            return Err(REMOTE_FK_COLUMNS_ERROR);
+        }
+        Ok(RemoteFk {
+            table: raw.table,
+            column: raw.column,
+            columns: raw.columns,
+        })
+    }
+}
+
+/// V2's parse error for a `{table, column(s)}` foreign key without exactly one of them.
+pub const REMOTE_FK_COLUMNS_ERROR: &str = "expected exactly one of 'column' or 'columns'";
+
+/// V2 keeps a single column as `column` and several as `columns`.
+impl Serialize for RemoteFk {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let columns = self.columns();
+        let mut map = s.serialize_map(Some(2))?;
+        map.serialize_entry("table", &self.table)?;
+        match columns.as_slice() {
+            [one] => map.serialize_entry("column", one)?,
+            _ => map.serialize_entry("columns", &columns)?,
+        }
+        map.end()
+    }
 }
 
 impl RemoteFk {
@@ -442,7 +521,8 @@ pub enum ArrayRelUsing {
 pub struct ManualRelConfig {
     pub remote_table: QualifiedTable,
     pub column_mapping: IndexMap<String, String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Always written (`null` when unset), like V2.
+    #[serde(default)]
     pub insertion_order: Option<String>,
 }
 

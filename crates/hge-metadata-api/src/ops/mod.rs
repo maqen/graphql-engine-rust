@@ -6,8 +6,12 @@
 pub mod actions;
 mod args;
 pub mod event_triggers;
+pub mod functions_events;
 pub mod metadata;
+pub mod objects;
+pub mod relationships_permissions;
 pub mod scheduled;
+pub mod sources_tables;
 
 use hge_core::Code;
 use serde_json::Value;
@@ -95,7 +99,6 @@ const PG_COMMANDS: &[&str] = &[
     "test_connection_template",
     "get_source_tables",
     "get_table_info",
-    "get_source_trackables",
     "track_table",
     "track_tables",
     "untrack_table",
@@ -143,7 +146,7 @@ const PG_COMMANDS: &[&str] = &[
     "drop_logical_model_select_permission",
 ];
 
-fn not_implemented(name: &str) -> ApiError {
+pub(crate) fn not_implemented(name: &str) -> ApiError {
     ApiError::bad(
         Code::NotSupported,
         format!("metadata command \"{name}\" is not supported yet"),
@@ -214,10 +217,17 @@ pub async fn run_agnostic<R: Runtime>(ctx: &mut Ctx<'_, R>, cmd: &Command) -> Ap
         "get_scheduled_event_invocations" => {
             scheduled::get_scheduled_event_invocations(ctx, args).await
         }
+        "get_table_info" => sources_tables::get_table_info_agnostic(ctx, args).await,
+        name if objects::COMMANDS.contains(&name) => objects::run(ctx, name, args).await,
+        name if sources_tables::COMMANDS.contains(&name) => {
+            sources_tables::run(ctx, name, args).await
+        }
         name => Err(not_implemented(name)),
     }
 }
 
+/// A backend command (`pg_<command>`). Modules see the command without its prefix; the
+/// source defaults to `"default"` when `args.source` is absent.
 pub async fn run_backend<R: Runtime>(
     ctx: &mut Ctx<'_, R>,
     backend: &str,
@@ -235,6 +245,11 @@ pub async fn run_backend<R: Runtime>(
         "get_event_logs" => event_triggers::get_event_logs(ctx, args).await,
         "get_event_invocation_logs" => event_triggers::get_event_invocation_logs(ctx, args).await,
         "get_event_by_id" => event_triggers::get_event_by_id(ctx, args).await,
+        c if sources_tables::COMMANDS.contains(&c) => sources_tables::run(ctx, c, args).await,
+        c if relationships_permissions::COMMANDS.contains(&c) => {
+            relationships_permissions::run(ctx, c, args).await
+        }
+        c if functions_events::COMMANDS.contains(&c) => functions_events::run(ctx, c, args).await,
         _ => Err(not_implemented(&format!("{backend}_{command}"))),
     }
 }

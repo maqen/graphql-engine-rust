@@ -445,6 +445,45 @@ pub async fn drop_trigger(pool: &Pool, name: &str, archive: bool) -> Result<(), 
     Ok(())
 }
 
+/// The source tables V2 drops from a database that also holds metadata
+/// (`src-rsr/drop_pg_source.sql`).
+const DROP_PG_SOURCE_SQL: &str = "\
+DROP TABLE IF EXISTS hdb_catalog.hdb_source_catalog_version;
+DROP FUNCTION IF EXISTS hdb_catalog.insert_event_log(text, text, text, text, json);
+DROP TABLE IF EXISTS hdb_catalog.event_invocation_logs;
+DROP TABLE IF EXISTS hdb_catalog.event_log;
+DROP TABLE IF EXISTS hdb_catalog.hdb_event_log_cleanups;";
+
+/// After a source is dropped from metadata, clean the engine's traces out of its database
+/// (V2's `postDropSourceHook`). A database that also holds metadata
+/// (`hdb_catalog.hdb_metadata`) keeps its `hdb_catalog` schema: only the SQL of `triggers`
+/// and the event tables go. Any other database loses the whole `hdb_catalog` schema, and
+/// with it every `notify_hasura_*` function and the SQL triggers calling them.
+///
+/// When another source still uses the same database, its event log and triggers go too:
+/// V2 does exactly this, and the parity is deliberate.
+pub async fn drop_source_catalog(pool: &Pool, triggers: &[String]) -> Result<(), DdlError> {
+    let mut client = pool.get().await.map_err(|e| e.to_string())?;
+    let tx = client.transaction().await.map_err(pg_err)?;
+    lock(&tx).await?;
+    if exists(&tx, "hdb_catalog.hdb_metadata").await? {
+        for name in triggers {
+            for op in Op::ALL {
+                tx.batch_execute(&ddl::drop_trigger_function_sql(name, op))
+                    .await
+                    .map_err(pg_err)?;
+            }
+        }
+        tx.batch_execute(DROP_PG_SOURCE_SQL).await.map_err(pg_err)?;
+    } else {
+        tx.batch_execute("DROP SCHEMA IF EXISTS hdb_catalog CASCADE")
+            .await
+            .map_err(pg_err)?;
+    }
+    tx.commit().await.map_err(pg_err)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::trigger_of;
