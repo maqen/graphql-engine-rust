@@ -120,6 +120,42 @@ pub async fn execute(
     }
 }
 
+/// Subscriptions hook (spec §9.5): the current value of an async action query root field
+/// (`<action>(id: uuid!)`, lowered to [`ActionCall::AsyncQuery`]) and whether the action has
+/// finished. A subscription polls this with the subscriber's [`RequestContext`] and sends
+/// `value` whenever it changes, completing once `finished` is true. Relationship fields in
+/// `output` must be rejected before subscribing (`not-supported`), as in V2. Errors are the
+/// same as for the query; any other root field kind is an `unexpected` error.
+pub async fn poll(
+    field: &ActionRootField,
+    ctx: &RequestContext<'_>,
+    sources: &dyn Sources,
+) -> Result<async_action::AsyncQueryPoll, Error> {
+    match &field.call {
+        ActionCall::AsyncQuery {
+            id,
+            output,
+            fields,
+            has_relationships,
+        } => {
+            async_action::poll_async_query(
+                &field.action,
+                id,
+                output,
+                fields,
+                *has_relationships,
+                ctx,
+                sources,
+            )
+            .await
+        }
+        _ => Err(Error::unexpected(format!(
+            "\"{}\" is not an asynchronous action query",
+            field.action
+        ))),
+    }
+}
+
 /// The text form of a join key value, as bound into SQL.
 fn key_text(v: &Value) -> String {
     match v {

@@ -87,8 +87,8 @@ async fn execute_one(
     }
 }
 
-/// The engine's sources, for action relationships.
-struct StateSources<'a>(&'a AppState);
+/// Database access for action relationships (also used by async action subscriptions).
+pub(crate) struct StateSources<'a>(pub(crate) &'a AppState);
 
 impl hge_actions::Sources for StateSources<'_> {
     fn executor(&self, source: &str) -> Option<&dyn SourceExecutor> {
