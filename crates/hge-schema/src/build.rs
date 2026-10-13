@@ -586,7 +586,7 @@ impl Builder<'_> {
                     self.with_select_args(field, &target)
                 }
             };
-            field.description = Some(cf.description.clone());
+            field.description = cf.description.clone();
             if cf.has_input_args() {
                 let name = self.ensure_computed_field_args(table, &cf);
                 let ty = if cf.args_required() {

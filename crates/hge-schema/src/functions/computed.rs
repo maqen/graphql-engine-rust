@@ -19,8 +19,9 @@ use crate::tables::is_valid_name;
 pub struct ComputedFieldInfo {
     pub name: String,
     pub function: QualifiedFunction,
-    /// The field description (the metadata comment, else V2's default).
-    pub description: String,
+    /// The field description: the metadata comment (empty means none), else the function's
+    /// database comment, else V2's default.
+    pub description: Option<String>,
     /// The function's input arguments, in order.
     pub args: Vec<FunctionArg>,
     /// Index of the table-row argument in `args`.
@@ -267,10 +268,13 @@ fn resolve_function(
     Ok(ComputedFieldInfo {
         name: name.clone(),
         function: def.function.clone(),
-        description: meta
-            .comment
-            .clone()
-            .unwrap_or_else(|| format!("A computed field, executes function \"{fname}\"")),
+        description: crate::tables::comment_or(meta.comment.as_deref(), || {
+            Some(
+                f.description
+                    .clone()
+                    .unwrap_or_else(|| format!("A computed field, executes function \"{fname}\"")),
+            )
+        }),
         args: f.args.clone(),
         table_arg,
         session_arg,
@@ -420,7 +424,10 @@ mod tests {
         .unwrap();
         assert_eq!((cf.table_arg, cf.session_arg), (1, Some(0)));
         assert!(!cf.has_input_args());
-        assert_eq!(cf.description, "A computed field, executes function \"ok\"");
+        assert_eq!(
+            cf.description.as_deref(),
+            Some("A computed field, executes function \"ok\"")
+        );
     }
 
     #[test]
