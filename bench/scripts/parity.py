@@ -184,10 +184,13 @@ def run_engine(engine, cases):
     return results
 
 
-def record_events(engine, cases):
+def record_events(engine, cases, strict):
+    """Collect an engine's deliveries. Only when recording goldens is "no
+    deliveries" fatal; when comparing, it is just a failed event row, so the
+    report still covers every case."""
     has_mutations = any(c.is_mutation for c in cases)
-    counts = wait_events(engine.name, min_wait=5.0 if has_mutations else 0.0)
-    if has_mutations and not counts:
+    counts = wait_events(engine.name, min_wait=5.0 if has_mutations else 0.0) or {}
+    if strict and has_mutations and not counts:
         sys.exit("suite has mutations but no event deliveries arrived; is the handler reachable from the engine?")
     # Round-trip through loads so live counts compare equal to golden RawNums.
     return {"counts": loads(json.dumps(counts)), "payloads": event_payloads(engine.name)}
@@ -225,7 +228,7 @@ def main():
         if check_events:
             reset_events(engine.name)
         res = run_engine(engine, cases)
-        return res, (record_events(engine, cases) if check_events else None)
+        return res, (record_events(engine, cases, strict=args.record) if check_events else None)
 
     res_a, events_a = run_with_events(eng_a)
 
