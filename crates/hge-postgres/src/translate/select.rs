@@ -464,7 +464,6 @@ impl<'s> Translator<'s> {
     pub(crate) fn value(&mut self, v: &Value) -> Result<(), Error> {
         match v {
             Value::Literal { text, ty } => {
-                // Session variables (below) keep Postgres' own text input for geometries.
                 self.b.input_param(text.clone(), ty);
             }
             Value::Session { name, ty } => {
@@ -474,7 +473,9 @@ impl<'s> Translator<'s> {
                         format!("missing session variable: \"{name}\""),
                     )
                 })?;
-                self.b.param(Some(text.to_owned()), ty);
+                // V2 reads geometries in session variables as GeoJSON too
+                // (`withConstructorFn`).
+                self.b.input_param(Some(text.to_owned()), ty);
             }
         }
         Ok(())

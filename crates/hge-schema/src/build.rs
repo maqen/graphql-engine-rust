@@ -743,21 +743,28 @@ impl Builder<'_> {
         if self.schema.types.contains_key(&name) {
             return name;
         }
+        // Also reached for cast targets, which may be no column's type.
+        self.note_scalar(ty);
         let scalar = scalars::scalar_name(&ty.element());
         // Operator values are nullable in the schema (V2 rejects or collapses nulls later).
         let value_ty = scalars::column_type_ref(ty, true);
         let value_list_ty = scalars::column_type_ref(ty, false).list();
         let mut fields: Vec<InputValueDef> = vec![];
 
-        if scalars::is_jsonb(ty) {
-            let cast_name = "jsonb_cast_exp".to_owned();
-            let text_cmp = self.ensure_comparison_exp(&ColumnType::builtin("text"));
+        // Cast targets' comparison types are built after this one: geometry and geography
+        // refer to each other.
+        let casts = crate::operators::cast_targets(ty);
+        if !casts.is_empty() {
+            let cast_name = format!("{scalar}_cast_exp");
             if !self.schema.types.contains_key(&cast_name) {
                 let mut cast_fields = IndexMap::new();
-                cast_fields.insert(
-                    "String".to_owned(),
-                    InputValueDef::new("String", TypeRef::named(text_cmp)),
-                );
+                for (field, target) in &casts {
+                    let cmp = scalars::comparison_exp_name(target);
+                    cast_fields.insert(
+                        (*field).to_owned(),
+                        InputValueDef::new(*field, TypeRef::named(cmp)),
+                    );
+                }
                 self.schema.add(TypeDef::InputObject(InputObjectDef {
                     name: cast_name.clone(),
                     description: None,
@@ -766,6 +773,7 @@ impl Builder<'_> {
             }
             fields.push(InputValueDef::new("_cast", TypeRef::named(cast_name)));
         }
+        fields.extend(crate::operators::spatial_fields(&mut self.schema, ty));
         fields.push(InputValueDef::new("_eq", value_ty.clone()));
         fields.push(InputValueDef::new("_gt", value_ty.clone()));
         fields.push(InputValueDef::new("_gte", value_ty.clone()));
@@ -858,6 +866,9 @@ impl Builder<'_> {
             )),
             fields: fields.into_iter().map(|f| (f.name.clone(), f)).collect(),
         }));
+        for (_, target) in &casts {
+            self.ensure_comparison_exp(target);
+        }
         name
     }
 

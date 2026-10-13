@@ -353,17 +353,73 @@ impl Parser<'_> {
                     other,
                 })
             }
-            "cast" | "jsonb_path_exists" | "jsonb_path_match" | "ancestor" | "ancestor_any"
+            "cast" => self.cast(table, root, col, v),
+            "jsonb_path_exists" | "jsonb_path_match" | "ancestor" | "ancestor_any"
             | "descendant" | "descendant_any" | "matches" | "matches_any" | "matches_fulltext" => {
                 Err(format!(
                     "the operator {op} is not supported in permissions yet"
                 ))
             }
-            _ if name.starts_with("st_") => Err(format!(
-                "the operator {op} is not supported in permissions yet"
-            )),
+            _ if name.starts_with("st_") => {
+                let adapt = |v: &Json, ty: &ColumnType, _: &str| {
+                    value(v, ty).map_err(hge_core::Error::validation)
+                };
+                match crate::operators::spatial_op(name, v, ty, "$", &adapt) {
+                    Some(op) => cmp(op.map_err(|e| e.message)?),
+                    None if scalars::is_geo(ty) => Err(format!(
+                        "the operator {op} is not supported in permissions yet"
+                    )),
+                    None => Err(format!(
+                        "operator {op} is only supported on geometry and geography columns"
+                    )),
+                }
+            }
             _ => Err(format!("Unknown operator: {op}")),
         }
+    }
+
+    /// `_cast: {<type>: {<ops>}}`: the operators applied to the column cast to `<type>`.
+    fn cast(
+        &self,
+        table: &TableInfo,
+        root: &TableInfo,
+        col: &ColumnInfo,
+        v: &Json,
+    ) -> Result<BoolExp, PermError> {
+        let Json::Object(targets) = v else {
+            return Err(format!(
+                "expected an object for _cast, but found {}",
+                json_kind(v)
+            ));
+        };
+        let mut items = vec![];
+        for (target, ops) in targets {
+            let to =
+                crate::operators::permission_cast_target(&col.ty, target).ok_or_else(|| {
+                    format!(
+                        "cannot cast column of type \"{}\" to type \"{target}\"",
+                        col.ty.name
+                    )
+                })?;
+            let cast_col = ColumnInfo {
+                ty: to.clone(),
+                ..col.clone()
+            };
+            let exp = match ops {
+                Json::Object(_) => self.column(table, root, &cast_col, ops)?,
+                other => {
+                    return Err(format!(
+                        "expected an object of operators, but found {}",
+                        json_kind(other)
+                    ));
+                }
+            };
+            items.push(cast_compares(exp, &col.ty, &to)?);
+        }
+        Ok(match items.len() {
+            1 => items.pop().expect("one item"),
+            _ => BoolExp::And(items),
+        })
     }
 
     /// `_eq` / `_neq`. With `null_safe`, a null value compares like `IS [NOT] NULL` (V2
@@ -388,6 +444,28 @@ impl Parser<'_> {
             ty: col.ty.clone(),
             op,
         })
+    }
+}
+
+/// Turn the comparisons of a cast column (`exp`, built against type `to`) into comparisons
+/// of the column of type `ty` cast to `to`.
+fn cast_compares(exp: BoolExp, ty: &ColumnType, to: &ColumnType) -> Result<BoolExp, PermError> {
+    match exp {
+        BoolExp::Compare { column, op, .. } => Ok(BoolExp::Compare {
+            column,
+            ty: ty.clone(),
+            op: CompareOp::Cast {
+                to: to.clone(),
+                op: Box::new(op),
+            },
+        }),
+        BoolExp::And(items) => Ok(BoolExp::And(
+            items
+                .into_iter()
+                .map(|e| cast_compares(e, ty, to))
+                .collect::<Result<_, _>>()?,
+        )),
+        _ => Err("column comparison operators cannot be used inside _cast".to_owned()),
     }
 }
 

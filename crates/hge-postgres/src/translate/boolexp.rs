@@ -128,16 +128,65 @@ impl Translator<'_> {
         op: &CompareOp,
         mut lhs: impl FnMut(&mut Self) -> Result<(), Error>,
     ) -> Result<(), Error> {
+        self.compare_cast(op, &[], &mut lhs)
+    }
+
+    /// [`Self::compare_with`] with `lhs` cast to each of `casts`, innermost first.
+    fn compare_cast(
+        &mut self,
+        op: &CompareOp,
+        casts: &[&hge_core::ColumnType],
+        lhs: &mut dyn FnMut(&mut Self) -> Result<(), Error>,
+    ) -> Result<(), Error> {
         use CompareOp::*;
+        match op {
+            Cast { to, op } => {
+                let mut casts = casts.to_vec();
+                casts.push(to);
+                return self.compare_cast(op, &casts, lhs);
+            }
+            Spatial(f, v) => {
+                self.b.push(f.function()).push("(");
+                self.operand(casts, lhs)?;
+                self.b.push(", ");
+                self.value(v)?;
+                self.b.push(")");
+                return Ok(());
+            }
+            DWithin(d) => {
+                let hge_ir::DWithin {
+                    three_d,
+                    from,
+                    distance,
+                    use_spheroid,
+                } = &**d;
+                self.b.push(if *three_d {
+                    "ST_3DDWithin("
+                } else {
+                    "ST_DWithin("
+                });
+                self.operand(casts, lhs)?;
+                self.b.push(", ");
+                self.value(from)?;
+                self.b.push(", ");
+                self.value(distance)?;
+                if let Some(s) = use_spheroid {
+                    self.b.push(", ");
+                    self.value(s)?;
+                }
+                self.b.push(")");
+                return Ok(());
+            }
+            _ => {}
+        }
         self.b.push("(");
+        self.operand(casts, lhs)?;
         if let IsNull(is_null) = op {
-            lhs(self)?;
             self.b
                 .push(if *is_null { " IS NULL" } else { " IS NOT NULL" });
             self.b.push(")");
             return Ok(());
         }
-        lhs(self)?;
         let (sql_op, v, suffix) = match op {
             Eq(v) => (" = ", v, ""),
             Neq(v) => (" <> ", v, ""),
@@ -162,12 +211,31 @@ impl Translator<'_> {
             HasKey(v) => (" ? ", v, ""),
             HasKeysAny(v) => (" ?| ", v, ""),
             HasKeysAll(v) => (" ?& ", v, ""),
-            IsNull(_) => unreachable!("handled above"),
+            IsNull(_) | Cast { .. } | Spatial(..) | DWithin(_) => {
+                unreachable!("handled above")
+            }
         };
         self.b.push(sql_op);
         self.value(v)?;
         self.b.push(suffix);
         self.b.push(")");
+        Ok(())
+    }
+
+    /// The left-hand side of a comparison, cast in order.
+    fn operand(
+        &mut self,
+        casts: &[&hge_core::ColumnType],
+        lhs: &mut dyn FnMut(&mut Self) -> Result<(), Error>,
+    ) -> Result<(), Error> {
+        for _ in casts {
+            self.b.push("(");
+        }
+        lhs(self)?;
+        for to in casts {
+            self.b.push(")::");
+            self.b.type_name(to);
+        }
         Ok(())
     }
 }
