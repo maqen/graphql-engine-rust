@@ -9,6 +9,8 @@
 //!   `serde_json::Value` until that workstream types them.
 
 use hge_core::QualifiedTable;
+
+use crate::collections::{AllowlistEntry, ApiLimits, QueryCollection, RestEndpoint};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -37,17 +39,17 @@ pub struct Metadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_types: Option<Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub query_collections: Vec<Value>,
+    pub query_collections: Vec<QueryCollection>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub allowlist: Vec<Value>,
+    pub allowlist: Vec<AllowlistEntry>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cron_triggers: Vec<Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inherited_roles: Vec<InheritedRole>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub rest_endpoints: Vec<Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub api_limits: Option<Value>,
+    pub rest_endpoints: Vec<RestEndpoint>,
+    #[serde(default, skip_serializing_if = "crate::collections::api_limits_absent")]
+    pub api_limits: Option<ApiLimits>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metrics_config: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
