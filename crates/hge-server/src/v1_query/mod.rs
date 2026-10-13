@@ -178,13 +178,18 @@ impl<'a> Executor<'a> {
         })
     }
 
+    /// The request's working metadata, once a metadata query in it has changed something:
+    /// later DML in the same bulk sees it, as in V2.
+    fn working(&self) -> Option<&crate::load::Prepared> {
+        self.ctx.as_ref().and_then(|c| c.prepared.as_ref())
+    }
+
     fn lowerer<'s>(&'s self, source: &str) -> Lowerer<'s> {
-        Lowerer::new(
-            &self.state.tables,
-            source,
-            &self.session.role,
-            &self.state.options,
-        )
+        let tables = match self.working() {
+            Some(p) => &p.tables,
+            None => &self.state.tables,
+        };
+        Lowerer::new(tables, source, &self.session.role, &self.state.options)
     }
 
     /// Run one root field on a source; DB errors are reported at the query's `args`.
@@ -194,7 +199,11 @@ impl<'a> Executor<'a> {
         root: QueryRoot,
         path: &Path,
     ) -> Result<String, ApiError> {
-        let executor = self.state.sources.get(source).ok_or_else(|| {
+        let executor = match self.working() {
+            Some(p) => p.sources.get(source).map(|s| s.pg.clone()),
+            None => self.state.sources.get(source).cloned(),
+        };
+        let executor = executor.ok_or_else(|| {
             err400(
                 Code::NotExists,
                 format!("source with name \"{source}\" does not exist"),

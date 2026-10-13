@@ -1,0 +1,33 @@
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: run_sql
+      args:
+        sql: alter table author add column nickname text default 'nick'
+    - type: select
+      args:
+        table: author
+        columns:
+        - id
+        - nickname
+        order_by: id
+        limit: 1
+  response:
+  - result_type: CommandOk
+    result: null
+  - - id: 1
+      nickname: nick
+- url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - nickname
+      limit: 1
+  response:
+  - nickname: nick
