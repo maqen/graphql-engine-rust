@@ -1,0 +1,52 @@
+# Cloud Run service with CPU always allocated (option 1 in docs/deployment/cloud-run.md).
+# gcloud run services replace deploy/cloud-run/service.yaml --region=REGION
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: hasura
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "10"
+        # Background workers (event, scheduled and cron triggers, async actions, schema sync)
+        # need CPU between requests.
+        run.googleapis.com/cpu-throttling: "false"
+        run.googleapis.com/startup-cpu-boost: "true"
+        run.googleapis.com/cloudsql-instances: PROJECT:REGION:INSTANCE
+    spec:
+      containerConcurrency: 250
+      # WebSocket connections are closed after this; clients reconnect.
+      timeoutSeconds: 3600
+      containers:
+        - image: REGION-docker.pkg.dev/PROJECT/REPO/graphql-engine-rust:TAG
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          env:
+            - name: HASURA_GRAPHQL_DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: hasura-db-url, key: latest }
+            - name: HASURA_GRAPHQL_ADMIN_SECRET
+              valueFrom:
+                secretKeyRef: { name: hasura-admin-secret, key: latest }
+            # Cloud Run kills the instance 10 s after SIGTERM; the engine first spends up to
+            # 5 s closing WebSockets, so 5 + 4 fits.
+            - name: HASURA_GRAPHQL_GRACEFUL_SHUTDOWN_TIMEOUT
+              value: "4"
+            - name: HASURA_GRAPHQL_ENABLED_APIS
+              value: metadata,graphql
+          startupProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 15
+            failureThreshold: 4

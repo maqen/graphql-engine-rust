@@ -1,0 +1,18 @@
+# Render Blueprint: New > Blueprint, pointing at this repository.
+services:
+  - type: web
+    name: hasura
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /healthz
+    # Worst-case shutdown: 5 s closing WebSockets + max(30 s HTTP drain,
+    # HASURA_GRAPHQL_GRACEFUL_SHUTDOWN_TIMEOUT) = 35 s; Render's default is 30 s.
+    maxShutdownDelaySeconds: 40
+    envVars:
+      - key: HASURA_GRAPHQL_DATABASE_URL
+        sync: false
+      - key: HASURA_GRAPHQL_ADMIN_SECRET
+        generateValue: true
+      - key: HASURA_GRAPHQL_GRACEFUL_SHUTDOWN_TIMEOUT
+        value: "25"

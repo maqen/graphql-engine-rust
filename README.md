@@ -45,6 +45,9 @@ docker run -p 8080:8080 \
   graphql-engine-rust
 ```
 
+Deployment guides for Cloud Run, Kubernetes, Fly.io, Render and Cloudflare are in
+[docs/deployment](docs/deployment/README.md).
+
 Supported environment variables: `HASURA_GRAPHQL_DATABASE_URL`,
 `HASURA_GRAPHQL_METADATA_DATABASE_URL`, `HASURA_GRAPHQL_METADATA_DIR`,
 `HASURA_GRAPHQL_ADMIN_SECRET(S)`, `HASURA_GRAPHQL_UNAUTHORIZED_ROLE`,
