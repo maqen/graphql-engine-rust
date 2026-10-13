@@ -64,7 +64,11 @@ impl<'de> Deserialize<'de> for ListedQuery {
             query: String,
         }
         let raw = Raw::deserialize(d)?;
-        if async_graphql_parser::parse_query(&raw.query).is_err() {
+        // V2 only checks the syntax here: documents with no operation, several anonymous
+        // operations or duplicate names are stored (and reported elsewhere, if used).
+        if let Err(async_graphql_parser::Error::Syntax { .. }) =
+            async_graphql_parser::parse_query(&raw.query)
+        {
             return Err(de::Error::custom("parsing the graphql query failed"));
         }
         Ok(ListedQuery {
@@ -84,7 +88,7 @@ impl QueryCollection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AllowlistEntry {
     pub collection: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     pub scope: AllowlistScope,
 }
 
@@ -288,7 +292,11 @@ pub struct IntLimit(pub i64);
 impl<'de> Deserialize<'de> for IntLimit {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let n = serde_json::Number::deserialize(d)?;
-        n.as_i64().map(IntLimit).ok_or_else(|| {
+        // aeson takes any integral number (`5.0`, `1e2`).
+        let integral = n
+            .as_f64()
+            .filter(|f| f.fract() == 0.0 && *f >= i64::MIN as f64 && *f < i64::MAX as f64);
+        n.as_i64().or(integral.map(|f| f as i64)).map(IntLimit).ok_or_else(|| {
             de::Error::custom(format!(
                 "parsing Int failed, value is either floating or will cause over or underflow {n}"
             ))
@@ -396,6 +404,14 @@ mod tests {
             ),
             "parsing the graphql query failed"
         );
+        // Valid syntax that is not a single executable operation is still stored.
+        for q in [
+            "fragment F on T { a }",
+            "query a { a } query a { b }",
+            "{ a } { b }",
+        ] {
+            serde_json::from_value::<ListedQuery>(json!({"name": "q", "query": q})).unwrap();
+        }
         assert_eq!(
             err::<QueryCollection>(json!({"name": "", "definition": {"queries": []}})),
             "empty string not allowed"
@@ -404,7 +420,8 @@ mod tests {
 
     #[test]
     fn allowlist_scope() {
-        let e: AllowlistEntry = serde_json::from_value(json!({"collection": "c"})).unwrap();
+        let e: AllowlistEntry =
+            serde_json::from_value(json!({"collection": "c", "scope": null})).unwrap();
         assert_eq!(
             serde_json::to_value(&e).unwrap(),
             json!({"collection": "c", "scope": {"global": true}})
