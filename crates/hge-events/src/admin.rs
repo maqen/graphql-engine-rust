@@ -235,22 +235,22 @@ fn invocation_json(row: &Row) -> Result<Value, String> {
     Ok(Value::Object(m))
 }
 
-fn opt_string(s: Option<String>) -> Value {
+pub(crate) fn opt_string(s: Option<String>) -> Value {
     s.map_or(Value::Null, Value::String)
 }
 
-fn opt_json(text: Option<String>) -> Result<Value, String> {
+pub(crate) fn opt_json(text: Option<String>) -> Result<Value, String> {
     text.map_or(Ok(Value::Null), stored_json)
 }
 
 /// A stored JSON value as V2 returns it: a decoded aeson `Value`, so keys are sorted.
-fn stored_json(text: String) -> Result<Value, String> {
+pub(crate) fn stored_json(text: String) -> Result<Value, String> {
     serde_json::from_str(&text)
         .map(sorted)
         .map_err(|e| format!("invalid JSON in the event log: {e}"))
 }
 
-fn sorted(v: Value) -> Value {
+pub fn sorted(v: Value) -> Value {
     match v {
         Value::Object(obj) => {
             let mut entries: Vec<_> = obj.into_iter().collect();

@@ -17,6 +17,7 @@ pub mod json;
 pub mod model;
 pub mod processor;
 pub mod scheduled;
+pub mod scheduled_admin;
 pub mod store;
 pub mod triggers;
 pub mod webhook;

@@ -7,6 +7,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+deadpool-postgres.workspace = true
 hge-core.workspace = true
 hge-ir.workspace = true
 hge-schema.workspace = true

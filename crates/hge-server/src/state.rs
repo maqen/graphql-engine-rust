@@ -196,6 +196,8 @@ pub struct Engine {
     pub ws: crate::ws::WebSockets,
     /// `hdb_catalog.hdb_action_log` (async actions); `None` without a metadata database.
     pub action_log: Option<Arc<dyn ActionLogStore>>,
+    /// The metadata database, when metadata is stored in Postgres.
+    pub metadata_db: Option<deadpool_postgres::Pool>,
 }
 
 impl Engine {
@@ -218,6 +220,7 @@ impl Engine {
             api_settings,
             metadata_lock: tokio::sync::Mutex::new(()),
             action_log: None,
+            metadata_db: None,
         }
     }
 }
@@ -231,6 +234,10 @@ impl Runtime for Engine {
 
     fn store(&self) -> &dyn MetadataStore {
         self.store.as_ref()
+    }
+
+    fn metadata_db(&self) -> Option<&deadpool_postgres::Pool> {
+        self.metadata_db.as_ref()
     }
 
     fn instance_id(&self) -> &str {

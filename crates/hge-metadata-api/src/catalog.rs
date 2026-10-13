@@ -202,6 +202,11 @@ impl PgCatalog {
         self
     }
 
+    /// The metadata database (also home of cron and one-off scheduled events).
+    pub fn pool(&self) -> &Pool {
+        &self.pool
+    }
+
     async fn client(&self) -> Result<Object, Error> {
         self.pool.get().await.map_err(|e| {
             Error::new(

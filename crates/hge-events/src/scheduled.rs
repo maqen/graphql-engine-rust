@@ -155,7 +155,7 @@ pub struct ScheduledTriggers {
 
 pub type ScheduledProvider = Arc<dyn Fn() -> Arc<ScheduledTriggers> + Send + Sync>;
 
-fn now_secs() -> i64 {
+pub(crate) fn now_secs() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -376,14 +376,14 @@ pub enum Kind {
 }
 
 impl Kind {
-    fn events_table(self) -> &'static str {
+    pub fn events_table(self) -> &'static str {
         match self {
             Kind::Cron => "hdb_cron_events",
             Kind::OneOff => "hdb_scheduled_events",
         }
     }
 
-    fn invocations_table(self) -> &'static str {
+    pub fn invocations_table(self) -> &'static str {
         match self {
             Kind::Cron => "hdb_cron_event_invocation_logs",
             Kind::OneOff => "hdb_scheduled_event_invocation_logs",
@@ -415,7 +415,8 @@ pub struct ScheduledEvent {
 /// UTC rendering of a `timestamptz` like aeson's `UTCTime`.
 const UTC_JSON: &str = "(to_json({c} AT TIME ZONE 'UTC') #>> '{{}}') || 'Z'";
 
-fn utc(col: &str) -> String {
+/// `timestamptz` as aeson renders a `UTCTime`.
+pub(crate) fn utc(col: &str) -> String {
     UTC_JSON.replace("{c}", col).replace("{{}}", "{}")
 }
 

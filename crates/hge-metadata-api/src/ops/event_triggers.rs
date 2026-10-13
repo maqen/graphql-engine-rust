@@ -11,125 +11,22 @@ use std::sync::Arc;
 use hge_core::{Code, QualifiedTable};
 use hge_events::admin::{self, InvocationsOf, LogStatus, Redelivery};
 use hge_events::cron::CronSchedule;
-use hge_events::model::{HeaderConf, MAX_TRIGGER_NAME_LENGTH, is_legal_trigger_name};
+use hge_events::model::{MAX_TRIGGER_NAME_LENGTH, is_legal_trigger_name};
 use hge_postgres::PgSource;
-use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 
+use super::args::{
+    Obj, boolean, db_error, field, headers, int, missing, object, required_string, required_text,
+    text, typed,
+};
 use crate::api::json_kind;
 use crate::ctx::{Check, Ctx};
 use crate::response::{
-    ApiError, ApiResult, aeson_message, already_exists, not_exists, not_supported, parse_failed,
-    success,
+    ApiError, ApiResult, already_exists, not_exists, not_supported, parse_failed, success,
 };
 use crate::runtime::Runtime;
 
-type Obj = Map<String, Value>;
-
 const DEFAULT_LIMIT: i64 = 100;
-
-// ---------------------------------------------------------------------------------------
-// Argument parsing, with aeson's messages and paths.
-
-fn object<'a>(v: &'a Value, path: &str) -> ApiResult<&'a Obj> {
-    v.as_object().ok_or_else(|| {
-        parse_failed(
-            path,
-            format!(
-                "parsing Object failed, expected Object, but encountered {}",
-                json_kind(v)
-            ),
-        )
-    })
-}
-
-/// A present, non-null field.
-fn field<'a>(obj: &'a Obj, key: &str) -> Option<&'a Value> {
-    obj.get(key).filter(|v| !v.is_null())
-}
-
-fn missing(path: &str, key: &str) -> ApiError {
-    parse_failed(path, format!("key \"{key}\" not found"))
-}
-
-fn text(obj: &Obj, key: &str, path: &str) -> ApiResult<Option<String>> {
-    match field(obj, key) {
-        None => Ok(None),
-        Some(Value::String(s)) => Ok(Some(s.clone())),
-        Some(v) => Err(parse_failed(
-            &format!("{path}.{key}"),
-            format!(
-                "parsing Text failed, expected String, but encountered {}",
-                json_kind(v)
-            ),
-        )),
-    }
-}
-
-/// A required string field; aeson calls the type `ty` (`Text`, or `String` for names).
-fn required_string(obj: &Obj, key: &str, path: &str, ty: &str) -> ApiResult<String> {
-    match obj.get(key) {
-        None => Err(missing(path, key)),
-        Some(Value::String(s)) => Ok(s.clone()),
-        Some(v) => Err(parse_failed(
-            &format!("{path}.{key}"),
-            format!(
-                "parsing {ty} failed, expected String, but encountered {}",
-                json_kind(v)
-            ),
-        )),
-    }
-}
-
-fn required_text(obj: &Obj, key: &str, path: &str) -> ApiResult<String> {
-    required_string(obj, key, path, "Text")
-}
-
-fn boolean(obj: &Obj, key: &str, path: &str) -> ApiResult<Option<bool>> {
-    match field(obj, key) {
-        None => Ok(None),
-        Some(Value::Bool(b)) => Ok(Some(*b)),
-        Some(v) => Err(parse_failed(
-            &format!("{path}.{key}"),
-            format!(
-                "parsing Bool failed, expected Boolean, but encountered {}",
-                json_kind(v)
-            ),
-        )),
-    }
-}
-
-fn int(obj: &Obj, key: &str, path: &str) -> ApiResult<Option<i64>> {
-    match field(obj, key) {
-        None => Ok(None),
-        Some(Value::Number(n)) if n.is_i64() => Ok(n.as_i64()),
-        // aeson's bounded `Int` accepts integral floats (`1.0`).
-        Some(Value::Number(n))
-            if n.as_f64().is_some_and(|f| {
-                f.fract() == 0.0 && f >= i64::MIN as f64 && f < i64::MAX as f64
-            }) =>
-        {
-            Ok(n.as_f64().map(|f| f as i64))
-        }
-        Some(v @ Value::Number(_)) => Err(parse_failed(
-            &format!("{path}.{key}"),
-            format!(
-                "parsing Int failed, value is either floating or will cause over or underflow {v}"
-            ),
-        )),
-        Some(v) => Err(parse_failed(
-            &format!("{path}.{key}"),
-            format!(
-                "parsing Int failed, expected Number, but encountered {}",
-                json_kind(v)
-            ),
-        )),
-    }
-}
-
-fn typed<T: DeserializeOwned>(v: &Value, path: &str) -> ApiResult<T> {
-    serde_json::from_value(v.clone()).map_err(|e| parse_failed(path, aeson_message(&e)))
-}
 
 fn source_name(obj: &Obj, path: &str) -> ApiResult<String> {
     Ok(text(obj, "source", path)?.unwrap_or_else(|| "default".to_owned()))
@@ -243,29 +140,7 @@ impl CreateEventTrigger {
         };
         let webhook = text(obj, "webhook", p)?;
         let webhook_from_env = text(obj, "webhook_from_env", p)?;
-        let headers = match field(obj, "headers") {
-            None => None,
-            Some(Value::Array(items)) => Some(
-                items
-                    .iter()
-                    .enumerate()
-                    .map(|(i, h)| {
-                        // Stored as decoded: unknown keys are dropped, as in V2.
-                        let header: HeaderConf = typed(h, &format!("{p}.headers[{i}]"))?;
-                        Ok(serde_json::to_value(header).expect("serialisable"))
-                    })
-                    .collect::<ApiResult<Vec<_>>>()?,
-            ),
-            Some(v) => {
-                return Err(parse_failed(
-                    &format!("{p}.headers"),
-                    format!(
-                        "parsing [] failed, expected Array, but encountered {}",
-                        json_kind(v)
-                    ),
-                ));
-            }
-        };
+        let headers = headers(obj, p)?;
         let replace = boolean(obj, "replace", p)?.unwrap_or(false);
         let cleanup_config = field(obj, "cleanup_config")
             .map(|v| cleanup_config(v, &format!("{p}.cleanup_config")))
@@ -398,12 +273,8 @@ fn retry_conf(v: &Value, path: &str) -> ApiResult<Value> {
 fn cleanup_config(v: &Value, path: &str) -> ApiResult<Value> {
     let obj = object(v, path)?;
     let schedule = required_text(obj, "schedule", path)?;
-    if CronSchedule::parse(&schedule).is_err() {
-        // V2's cron parser reports most malformed schedules like this.
-        return Err(parse_failed(
-            &format!("{path}.schedule"),
-            "Failed reading: takeWhile1",
-        ));
+    if let Err(e) = CronSchedule::parse_v2(&schedule) {
+        return Err(parse_failed(&format!("{path}.schedule"), e));
     }
     let clear_older_than =
         int(obj, "clear_older_than", path)?.ok_or_else(|| missing(path, "clear_older_than"))?;
@@ -440,15 +311,6 @@ fn source_pool<R: Runtime>(ctx: &Ctx<'_, R>, source: &str) -> ApiResult<Arc<PgSo
     ctx.rt
         .source(ctx.prepared.as_ref(), source)
         .ok_or_else(|| not_exists(format!("source with name \"{source}\" does not exist")))
-}
-
-fn db_error(prefix: &str, e: String) -> ApiError {
-    ApiError::new(
-        500,
-        Code::Unexpected,
-        format!("{prefix}: database query error"),
-    )
-    .with_internal(json!({ "error": { "message": e } }))
 }
 
 // ---------------------------------------------------------------------------------------

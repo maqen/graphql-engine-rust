@@ -123,6 +123,12 @@ pub trait Runtime: Send + Sync {
     /// The introspected catalog of a source of a prepared (or else the installed) state.
     fn catalog(&self, prepared: Option<&Self::Prepared>, name: &str) -> Option<Arc<SourceCatalog>>;
 
+    /// The metadata database, where cron and one-off scheduled events live (none when
+    /// metadata is kept in memory).
+    fn metadata_db(&self) -> Option<&deadpool_postgres::Pool> {
+        None
+    }
+
     /// Atomically swap in a prepared state. In-flight requests finish on the old one.
     fn install(&self, prepared: Self::Prepared, metadata: Metadata, resource_version: i64);
 }

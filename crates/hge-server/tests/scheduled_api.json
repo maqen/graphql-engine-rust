@@ -1,0 +1,1662 @@
+{
+ "description": "Recorded from hasura/graphql-engine:v2.51.0-ce on a fresh database; replayed in order. Steps marked todo are known differences and must keep failing until fixed.",
+ "steps": [
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "clear_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "DELETE FROM hdb_catalog.hdb_cron_events; DELETE FROM hdb_catalog.hdb_scheduled_events"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {}
+   },
+   "status": 400,
+   "response": {
+    "error": "key \"name\" not found",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "key \"name\" not found",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "key \"webhook\" not found",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c",
+     "webhook": "http://127.0.0.1:1/hook",
+     "include_in_metadata": true
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "key \"schedule\" not found",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "0 0 1 1 *"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "key \"include_in_metadata\" not found",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "garbage",
+     "include_in_metadata": true
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Failed reading: takeWhile1",
+    "path": "$.args.schedule",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "* * * *",
+     "include_in_metadata": true
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "' ': not enough input",
+    "path": "$.args.schedule",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "61 * * * *",
+     "include_in_metadata": true
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Failed reading: minutes out of range",
+    "path": "$.args.schedule",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "* * * * * *",
+     "include_in_metadata": true
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "endOfInput",
+    "path": "$.args.schedule",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true,
+     "retry_conf": {
+      "num_retries": -1
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "num_retries cannot be a negative value",
+    "path": "$.args.retry_conf",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true,
+     "retry_conf": {
+      "retry_interval_seconds": -1
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "  The predicate (From 0) failed with the message: Value is less than 0\n",
+    "path": "$.args.retry_conf.retry_interval_seconds",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true,
+     "retry_conf": {
+      "num_retries": "x"
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "parsing Int failed, expected Number, but encountered String",
+    "path": "$.args.retry_conf.num_retries",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true,
+     "headers": [
+      {
+       "name": "a"
+      }
+     ]
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "expecting value or value_from_env keys",
+    "path": "$.args.headers[0]",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": 1,
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "parsing String failed, expected String, but encountered Number",
+    "path": "$.args.name",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c1",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true,
+     "payload": {
+      "b": 1,
+      "a": 2
+     },
+     "headers": [
+      {
+       "name": "X",
+       "value": "y"
+      }
+     ],
+     "comment": "hi",
+     "retry_conf": {
+      "num_retries": 1,
+      "retry_interval_seconds": 1.5
+     }
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c1",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "cron trigger with name: c1 already exists",
+    "path": "$.args",
+    "code": "already-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c2",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true,
+     "replace": true
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "cron trigger with name: c2 does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c2",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "@daily",
+     "include_in_metadata": false
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "bad name",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "*/5 * * * *",
+     "include_in_metadata": true
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "delete_cron_trigger",
+    "args": {
+     "name": "bad name"
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c3",
+     "webhook": "{{SCHED_UNSET_HOOK}}",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Inconsistent object: in cron trigger c3: Value for environment variables not found: SCHED_UNSET_HOOK",
+    "path": "$.args",
+    "code": "invalid-configuration",
+    "internal": [
+     {
+      "definition": {
+       "headers": [],
+       "include_in_metadata": true,
+       "name": "c3",
+       "retry_conf": {
+        "num_retries": 0,
+        "retry_interval_seconds": 10,
+        "timeout_seconds": 60,
+        "tolerance_seconds": 21600
+       },
+       "schedule": "0 0 1 1 *",
+       "webhook": "{{SCHED_UNSET_HOOK}}"
+      },
+      "name": "cron_trigger c3",
+      "reason": "Inconsistent object: in cron trigger c3: Value for environment variables not found: SCHED_UNSET_HOOK",
+      "type": "cron_trigger"
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_cron_triggers",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "cron_triggers": [
+     {
+      "comment": "hi",
+      "headers": [
+       {
+        "name": "X",
+        "value": "y"
+       }
+      ],
+      "include_in_metadata": true,
+      "name": "c1",
+      "payload": {
+       "a": 2,
+       "b": 1
+      },
+      "retry_conf": {
+       "num_retries": 1,
+       "retry_interval_seconds": 1.5,
+       "timeout_seconds": 60,
+       "tolerance_seconds": 21600
+      },
+      "schedule": "0 0 1 1 *",
+      "webhook": "http://127.0.0.1:1/hook"
+     },
+     {
+      "headers": [],
+      "include_in_metadata": false,
+      "name": "c2",
+      "retry_conf": {
+       "num_retries": 0,
+       "retry_interval_seconds": 10,
+       "timeout_seconds": 60,
+       "tolerance_seconds": 21600
+      },
+      "schedule": "0 0 * * *",
+      "webhook": "http://127.0.0.1:1/hook"
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_cron_triggers"
+   },
+   "status": 200,
+   "response": {
+    "cron_triggers": [
+     {
+      "comment": "hi",
+      "headers": [
+       {
+        "name": "X",
+        "value": "y"
+       }
+      ],
+      "include_in_metadata": true,
+      "name": "c1",
+      "payload": {
+       "a": 2,
+       "b": 1
+      },
+      "retry_conf": {
+       "num_retries": 1,
+       "retry_interval_seconds": 1.5,
+       "timeout_seconds": 60,
+       "tolerance_seconds": 21600
+      },
+      "schedule": "0 0 1 1 *",
+      "webhook": "http://127.0.0.1:1/hook"
+     },
+     {
+      "headers": [],
+      "include_in_metadata": false,
+      "name": "c2",
+      "retry_conf": {
+       "num_retries": 0,
+       "retry_interval_seconds": 10,
+       "timeout_seconds": 60,
+       "tolerance_seconds": 21600
+      },
+      "schedule": "0 0 * * *",
+      "webhook": "http://127.0.0.1:1/hook"
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "version": 3,
+    "sources": [
+     {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [],
+      "configuration": {
+       "connection_info": {
+        "database_url": {
+         "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+        },
+        "isolation_level": "read-committed",
+        "pool_settings": {
+         "connection_lifetime": 600,
+         "idle_timeout": 180,
+         "max_connections": 50,
+         "retries": 1
+        },
+        "use_prepared_statements": true
+       }
+      }
+     }
+    ],
+    "cron_triggers": [
+     {
+      "name": "c1",
+      "webhook": "http://127.0.0.1:1/hook",
+      "schedule": "0 0 1 1 *",
+      "include_in_metadata": true,
+      "payload": {
+       "a": 2,
+       "b": 1
+      },
+      "retry_conf": {
+       "num_retries": 1,
+       "retry_interval_seconds": 1.5,
+       "timeout_seconds": 60,
+       "tolerance_seconds": 21600
+      },
+      "headers": [
+       {
+        "name": "X",
+        "value": "y"
+       }
+      ],
+      "comment": "hi"
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "SELECT trigger_name, count(*), min(extract(month FROM scheduled_time AT TIME ZONE 'UTC')), min(extract(day FROM scheduled_time AT TIME ZONE 'UTC')), bool_and(scheduled_time > now()) FROM hdb_catalog.hdb_cron_events GROUP BY 1 ORDER BY 1"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "TuplesOk",
+    "result": [
+     [
+      "trigger_name",
+      "count",
+      "min",
+      "min",
+      "bool_and"
+     ],
+     [
+      "c1",
+      "100",
+      "1",
+      "1",
+      "t"
+     ],
+     [
+      "c2",
+      "100",
+      "1",
+      "1",
+      "t"
+     ]
+    ]
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "UPDATE hdb_catalog.hdb_cron_events e SET id = '20000000-0000-0000-0000-' || lpad(s.n::text, 12, '0'), scheduled_time = '2030-01-01T00:00:00Z'::timestamptz + s.n * interval '1 day', created_at = '2026-01-01T00:00:00.25Z' FROM (SELECT id, row_number() OVER (ORDER BY scheduled_time) AS n FROM hdb_catalog.hdb_cron_events WHERE trigger_name = 'c1') s WHERE e.id = s.id"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_events",
+    "args": {
+     "type": "cron",
+     "trigger_name": "c1",
+     "limit": 2,
+     "offset": 1,
+     "get_rows_count": true
+    }
+   },
+   "status": 200,
+   "response": {
+    "count": 100,
+    "events": [
+     {
+      "created_at": "2026-01-01T00:00:00.25Z",
+      "id": "20000000-0000-0000-0000-000000000002",
+      "next_retry_at": null,
+      "scheduled_time": "2030-01-03T00:00:00Z",
+      "status": "scheduled",
+      "tries": 0,
+      "trigger_name": "c1"
+     },
+     {
+      "created_at": "2026-01-01T00:00:00.25Z",
+      "id": "20000000-0000-0000-0000-000000000003",
+      "next_retry_at": null,
+      "scheduled_time": "2030-01-04T00:00:00Z",
+      "status": "scheduled",
+      "tries": 0,
+      "trigger_name": "c1"
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_events",
+    "args": {
+     "type": "cron",
+     "trigger_name": "c1",
+     "limit": 1,
+     "order_by": [
+      {
+       "column": "scheduled_time",
+       "type": "desc"
+      }
+     ]
+    }
+   },
+   "status": 200,
+   "response": {
+    "events": [
+     {
+      "created_at": "2026-01-01T00:00:00.25Z",
+      "id": "20000000-0000-0000-0000-000000000100",
+      "next_retry_at": null,
+      "scheduled_time": "2030-04-11T00:00:00Z",
+      "status": "scheduled",
+      "tries": 0,
+      "trigger_name": "c1"
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_events",
+    "args": {
+     "type": "cron",
+     "trigger_name": "c1",
+     "status": [
+      "delivered",
+      "error"
+     ],
+     "get_rows_count": true
+    }
+   },
+   "status": 200,
+   "response": {
+    "count": 0,
+    "events": []
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_events",
+    "args": {
+     "type": "cron",
+     "trigger_name": "nope"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "cron trigger with name: nope does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_events",
+    "args": {
+     "type": "cron"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "key \"trigger_name\" not found",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_events",
+    "args": {
+     "type": "cron",
+     "trigger_name": "c1",
+     "limit": 1,
+     "order_by": [
+      {
+       "column": "nope",
+       "type": "asc"
+      }
+     ]
+    }
+   },
+   "status": 500,
+   "response": {
+    "error": "database query error",
+    "path": "$.args",
+    "code": "unexpected",
+    "internal": {
+     "arguments": [],
+     "error": {
+      "description": null,
+      "exec_status": "FatalError",
+      "hint": null,
+      "message": "column \"nope\" does not exist",
+      "status_code": "42703"
+     },
+     "prepared": false,
+     "statement": "WITH \"count_cte\" AS (SELECT  *  FROM \"hdb_catalog\".\"hdb_cron_events\"  WHERE (((\"trigger_name\") = ('c1')) AND ('true'))   ORDER BY nope ASC   ), \"limit_cte\" AS (SELECT  *  FROM \"count_cte\"     LIMIT 1 ) SELECT  coalesce((SELECT  json_agg(row_to_json(limit_cte.*))  FROM \"limit_cte\"      ), '[]' )        "
+    }
+   },
+   "todo": "V2 interpolates order_by into its SQL and reports the statement in internal"
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_events",
+    "args": {
+     "type": "cron",
+     "trigger_name": "c1",
+     "status": [
+      "bogus"
+     ]
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "unexpected status: bogus",
+    "path": "$.args.status[0]",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_events",
+    "args": {
+     "type": "nope"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "parsing Hasura.RQL.Types.ScheduledTrigger.ScheduledEventType failed, expected one of the tags [\"cron\",\"one_off\"], but found tag \"nope\"",
+    "path": "$.args.type",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_events",
+    "args": {}
+   },
+   "status": 400,
+   "response": {
+    "error": "key \"type\" not found",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_scheduled_event",
+    "args": {
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule_at": "2030-05-01T10:00:00Z",
+     "payload": {
+      "z": 1,
+      "a": [
+       1,
+       2
+      ]
+     },
+     "headers": [
+      {
+       "name": "X",
+       "value": "y"
+      }
+     ],
+     "retry_conf": {
+      "num_retries": 2,
+      "timeout_seconds": 5
+     },
+     "comment": "one"
+    }
+   },
+   "status": 200,
+   "response": {
+    "event_id": "3f693e2b-3243-4ba4-8b9f-a5722660d3d8",
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_scheduled_event",
+    "args": {
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule_at": "2030-05-01 12:30:00.5+02:00"
+    }
+   },
+   "status": 200,
+   "response": {
+    "event_id": "34fadf34-c718-42b6-a830-4c435620f3ee",
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_scheduled_event",
+    "args": {
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule_at": "2030-05-01T10:00:00"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "could not parse date: Unexpected end-of-input, expecting timezone",
+    "path": "$.args.schedule_at",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_scheduled_event",
+    "args": {
+     "schedule_at": "2030-05-01T10:00:00Z"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "key \"webhook\" not found",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_scheduled_event",
+    "args": {
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "key \"schedule_at\" not found",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_scheduled_event",
+    "args": {
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule_at": "nope"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "could not parse date: Unexpected ''n', expecting -, +, or a digit",
+    "path": "$.args.schedule_at",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_scheduled_event",
+    "args": {
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule_at": "2030-05-01T10:00:00Z",
+     "retry_conf": {
+      "num_retries": -2
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "num_retries cannot be a negative value",
+    "path": "$.args.retry_conf",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "UPDATE hdb_catalog.hdb_scheduled_events e SET id = '30000000-0000-0000-0000-' || lpad(s.n::text, 12, '0'), created_at = '2026-01-02T00:00:00Z' FROM (SELECT id, row_number() OVER (ORDER BY scheduled_time) AS n FROM hdb_catalog.hdb_scheduled_events) s WHERE e.id = s.id"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_events",
+    "args": {
+     "type": "one_off"
+    }
+   },
+   "status": 200,
+   "response": {
+    "events": [
+     {
+      "comment": "one",
+      "created_at": "2026-01-02T00:00:00Z",
+      "header_conf": [
+       {
+        "name": "X",
+        "value": "y"
+       }
+      ],
+      "id": "30000000-0000-0000-0000-000000000001",
+      "next_retry_at": null,
+      "payload": {
+       "a": [
+        1,
+        2
+       ],
+       "z": 1
+      },
+      "request_transform": null,
+      "response_transform": null,
+      "retry_conf": {
+       "num_retries": 2,
+       "retry_interval_seconds": 10,
+       "timeout_seconds": 5,
+       "tolerance_seconds": 21600
+      },
+      "scheduled_time": "2030-05-01T10:00:00Z",
+      "status": "scheduled",
+      "tries": 0,
+      "webhook_conf": "http://127.0.0.1:1/hook"
+     },
+     {
+      "comment": null,
+      "created_at": "2026-01-02T00:00:00Z",
+      "header_conf": [],
+      "id": "30000000-0000-0000-0000-000000000002",
+      "next_retry_at": null,
+      "payload": null,
+      "request_transform": null,
+      "response_transform": null,
+      "retry_conf": {
+       "num_retries": 0,
+       "retry_interval_seconds": 10,
+       "timeout_seconds": 60,
+       "tolerance_seconds": 21600
+      },
+      "scheduled_time": "2030-05-01T10:30:00.5Z",
+      "status": "scheduled",
+      "tries": 0,
+      "webhook_conf": "http://127.0.0.1:1/hook"
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_events",
+    "args": {
+     "type": "one_off",
+     "get_rows_count": true,
+     "status": [
+      "scheduled"
+     ],
+     "limit": 1,
+     "offset": 1
+    }
+   },
+   "status": 200,
+   "response": {
+    "count": 2,
+    "events": [
+     {
+      "comment": null,
+      "created_at": "2026-01-02T00:00:00Z",
+      "header_conf": [],
+      "id": "30000000-0000-0000-0000-000000000002",
+      "next_retry_at": null,
+      "payload": null,
+      "request_transform": null,
+      "response_transform": null,
+      "retry_conf": {
+       "num_retries": 0,
+       "retry_interval_seconds": 10,
+       "timeout_seconds": 60,
+       "tolerance_seconds": 21600
+      },
+      "scheduled_time": "2030-05-01T10:30:00.5Z",
+      "status": "scheduled",
+      "tries": 0,
+      "webhook_conf": "http://127.0.0.1:1/hook"
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "INSERT INTO hdb_catalog.hdb_scheduled_event_invocation_logs (id, event_id, status, request, response, created_at) VALUES ('40000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', 500,  '{\"version\":\"2\",\"payload\":{\"b\":1,\"a\":2}}', '{\"type\":\"client_error\",\"data\":{\"message\":\"x\"}}', '2026-01-03T00:00:00Z'), ('40000000-0000-0000-0000-000000000002', '30000000-0000-0000-0000-000000000002', NULL, '{\"v\":1}', '{\"v\":2}', '2026-01-04T00:00:00.5Z'); INSERT INTO hdb_catalog.hdb_cron_event_invocation_logs (id, event_id, status, request, response, created_at) VALUES ('50000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 200, '{\"a\":1}', '{\"b\":2}', '2026-01-05T00:00:00Z'), ('50000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000002', 200, '{\"a\":1}', '{\"b\":2}', '2026-01-06T00:00:00Z')"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_event_invocations",
+    "args": {
+     "type": "one_off"
+    }
+   },
+   "status": 200,
+   "response": {
+    "invocations": [
+     {
+      "created_at": "2026-01-04T00:00:00.5Z",
+      "event_id": "30000000-0000-0000-0000-000000000002",
+      "id": "40000000-0000-0000-0000-000000000002",
+      "request": {
+       "v": 1
+      },
+      "response": {
+       "v": 2
+      },
+      "status": null
+     },
+     {
+      "created_at": "2026-01-03T00:00:00Z",
+      "event_id": "30000000-0000-0000-0000-000000000001",
+      "id": "40000000-0000-0000-0000-000000000001",
+      "request": {
+       "payload": {
+        "a": 2,
+        "b": 1
+       },
+       "version": "2"
+      },
+      "response": {
+       "data": {
+        "message": "x"
+       },
+       "type": "client_error"
+      },
+      "status": 500
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_event_invocations",
+    "args": {
+     "type": "one_off",
+     "get_rows_count": true,
+     "limit": 1
+    }
+   },
+   "status": 200,
+   "response": {
+    "count": 2,
+    "invocations": [
+     {
+      "created_at": "2026-01-04T00:00:00.5Z",
+      "event_id": "30000000-0000-0000-0000-000000000002",
+      "id": "40000000-0000-0000-0000-000000000002",
+      "request": {
+       "v": 1
+      },
+      "response": {
+       "v": 2
+      },
+      "status": null
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_event_invocations",
+    "args": {
+     "type": "one_off",
+     "event_id": "30000000-0000-0000-0000-000000000001"
+    }
+   },
+   "status": 200,
+   "response": {
+    "invocations": [
+     {
+      "created_at": "2026-01-03T00:00:00Z",
+      "event_id": "30000000-0000-0000-0000-000000000001",
+      "id": "40000000-0000-0000-0000-000000000001",
+      "request": {
+       "payload": {
+        "a": 2,
+        "b": 1
+       },
+       "version": "2"
+      },
+      "response": {
+       "data": {
+        "message": "x"
+       },
+       "type": "client_error"
+      },
+      "status": 500
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_event_invocations",
+    "args": {
+     "type": "cron",
+     "trigger_name": "c1",
+     "get_rows_count": true
+    }
+   },
+   "status": 200,
+   "response": {
+    "count": 2,
+    "invocations": [
+     {
+      "created_at": "2026-01-06T00:00:00Z",
+      "event_id": "20000000-0000-0000-0000-000000000002",
+      "id": "50000000-0000-0000-0000-000000000002",
+      "request": {
+       "a": 1
+      },
+      "response": {
+       "b": 2
+      },
+      "status": 200
+     },
+     {
+      "created_at": "2026-01-05T00:00:00Z",
+      "event_id": "20000000-0000-0000-0000-000000000001",
+      "id": "50000000-0000-0000-0000-000000000001",
+      "request": {
+       "a": 1
+      },
+      "response": {
+       "b": 2
+      },
+      "status": 200
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_event_invocations",
+    "args": {
+     "type": "cron",
+     "event_id": "20000000-0000-0000-0000-000000000002"
+    }
+   },
+   "status": 200,
+   "response": {
+    "invocations": [
+     {
+      "created_at": "2026-01-06T00:00:00Z",
+      "event_id": "20000000-0000-0000-0000-000000000002",
+      "id": "50000000-0000-0000-0000-000000000002",
+      "request": {
+       "a": 1
+      },
+      "response": {
+       "b": 2
+      },
+      "status": 200
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_event_invocations",
+    "args": {
+     "type": "cron"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "key \"trigger_name\" not found",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_event_invocations",
+    "args": {
+     "type": "cron",
+     "trigger_name": "nope"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "cron trigger with name: nope does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_event_invocations",
+    "args": {}
+   },
+   "status": 400,
+   "response": {
+    "error": "key \"type\" not found",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "delete_scheduled_event",
+    "args": {
+     "type": "one_off",
+     "event_id": "30000000-0000-0000-0000-000000000002"
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "delete_scheduled_event",
+    "args": {
+     "type": "one_off",
+     "event_id": "nope"
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "delete_scheduled_event",
+    "args": {
+     "type": "cron",
+     "event_id": "20000000-0000-0000-0000-000000000001"
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "delete_scheduled_event",
+    "args": {
+     "event_id": "x"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "parsing Hasura.RQL.Types.ScheduledTrigger.DeleteScheduledEvent(DeleteScheduledEvent) failed, key \"type\" not found",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_events",
+    "args": {
+     "type": "one_off",
+     "get_rows_count": true
+    }
+   },
+   "status": 200,
+   "response": {
+    "count": 1,
+    "events": [
+     {
+      "comment": "one",
+      "created_at": "2026-01-02T00:00:00Z",
+      "header_conf": [
+       {
+        "name": "X",
+        "value": "y"
+       }
+      ],
+      "id": "30000000-0000-0000-0000-000000000001",
+      "next_retry_at": null,
+      "payload": {
+       "a": [
+        1,
+        2
+       ],
+       "z": 1
+      },
+      "request_transform": null,
+      "response_transform": null,
+      "retry_conf": {
+       "num_retries": 2,
+       "retry_interval_seconds": 10,
+       "timeout_seconds": 5,
+       "tolerance_seconds": 21600
+      },
+      "scheduled_time": "2030-05-01T10:00:00Z",
+      "status": "scheduled",
+      "tries": 0,
+      "webhook_conf": "http://127.0.0.1:1/hook"
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_scheduled_event_invocations",
+    "args": {
+     "type": "cron",
+     "trigger_name": "c1"
+    }
+   },
+   "status": 200,
+   "response": {
+    "invocations": [
+     {
+      "created_at": "2026-01-06T00:00:00Z",
+      "event_id": "20000000-0000-0000-0000-000000000002",
+      "id": "50000000-0000-0000-0000-000000000002",
+      "request": {
+       "a": 1
+      },
+      "response": {
+       "b": 2
+      },
+      "status": 200
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "delete_cron_trigger",
+    "args": {
+     "name": "nope"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "cron trigger with name: nope does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c1",
+     "webhook": "http://127.0.0.1:1/hook",
+     "schedule": "0 0 2 1 *",
+     "include_in_metadata": true,
+     "replace": true
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "SELECT trigger_name, count(*), min(extract(month FROM scheduled_time AT TIME ZONE 'UTC')), min(extract(day FROM scheduled_time AT TIME ZONE 'UTC')), bool_and(scheduled_time > now()) FROM hdb_catalog.hdb_cron_events GROUP BY 1 ORDER BY 1"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "TuplesOk",
+    "result": [
+     [
+      "trigger_name",
+      "count",
+      "min",
+      "min",
+      "bool_and"
+     ],
+     [
+      "c1",
+      "100",
+      "1",
+      "2",
+      "t"
+     ],
+     [
+      "c2",
+      "100",
+      "1",
+      "1",
+      "t"
+     ]
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_cron_triggers",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "cron_triggers": [
+     {
+      "headers": [],
+      "include_in_metadata": true,
+      "name": "c1",
+      "retry_conf": {
+       "num_retries": 0,
+       "retry_interval_seconds": 10,
+       "timeout_seconds": 60,
+       "tolerance_seconds": 21600
+      },
+      "schedule": "0 0 2 1 *",
+      "webhook": "http://127.0.0.1:1/hook"
+     },
+     {
+      "headers": [],
+      "include_in_metadata": false,
+      "name": "c2",
+      "retry_conf": {
+       "num_retries": 0,
+       "retry_interval_seconds": 10,
+       "timeout_seconds": 60,
+       "tolerance_seconds": 21600
+      },
+      "schedule": "0 0 * * *",
+      "webhook": "http://127.0.0.1:1/hook"
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "delete_cron_trigger",
+    "args": {
+     "name": "c1"
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "SELECT trigger_name, count(*), min(extract(month FROM scheduled_time AT TIME ZONE 'UTC')), min(extract(day FROM scheduled_time AT TIME ZONE 'UTC')), bool_and(scheduled_time > now()) FROM hdb_catalog.hdb_cron_events GROUP BY 1 ORDER BY 1"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "TuplesOk",
+    "result": [
+     [
+      "trigger_name",
+      "count",
+      "min",
+      "min",
+      "bool_and"
+     ],
+     [
+      "c2",
+      "100",
+      "1",
+      "1",
+      "t"
+     ]
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "delete_cron_trigger",
+    "args": {
+     "name": "c2"
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "get_cron_triggers",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "cron_triggers": []
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "version": 3,
+    "sources": [
+     {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [],
+      "configuration": {
+       "connection_info": {
+        "database_url": {
+         "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+        },
+        "isolation_level": "read-committed",
+        "pool_settings": {
+         "connection_lifetime": 600,
+         "idle_timeout": 180,
+         "max_connections": 50,
+         "retries": 1
+        },
+        "use_prepared_statements": true
+       }
+      }
+     }
+    ]
+   }
+  }
+ ]
+}

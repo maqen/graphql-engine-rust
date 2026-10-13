@@ -27,15 +27,16 @@ pub async fn build_engine(config: ServerConfig) -> Result<Arc<Engine>, hge_core:
     let auth = hge_auth::Authenticator::new(config.auth_config())
         .await
         .map_err(|e| hge_core::Error::new(hge_core::Code::InvalidConfiguration, e))?;
-    let store: Arc<dyn MetadataStore> = match config.catalog_url() {
+    let (store, metadata_db): (Arc<dyn MetadataStore>, _) = match config.catalog_url() {
         Some(url) => {
             let catalog = PgCatalog::connect(url)?
                 .with_extensions_schema(&config.metadata_database_extensions_schema);
             let outcome = catalog.init().await?;
             tracing::info!(target: "startup", ?outcome, "metadata catalog ready");
-            Arc::new(catalog)
+            let pool = catalog.pool().clone();
+            (Arc::new(catalog), Some(pool))
         }
-        None => Arc::new(MemoryStore::default()),
+        None => (Arc::new(MemoryStore::default()), None),
     };
     let (metadata, resource_version, origin) = load::load_metadata(&config, store.as_ref()).await?;
     tracing::info!(target: "startup", ?origin, resource_version, "metadata source selected");
@@ -57,6 +58,7 @@ pub async fn build_engine(config: ServerConfig) -> Result<Arc<Engine>, hge_core:
     let state = AppState::new(metadata, prepared, resource_version, options);
     let mut engine = Engine::new(config, auth, store, state);
     engine.action_log = action_log;
+    engine.metadata_db = metadata_db;
     Ok(Arc::new(engine))
 }
 

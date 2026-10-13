@@ -8,6 +8,7 @@
 //! running server.
 
 use hge_core::{Code, InconsistentObject, Session};
+use hge_events::scheduled_admin::{CronEventChange, apply_cron_changes};
 use hge_metadata::Metadata;
 use hge_metadata::store::Invalidations;
 use serde_json::Value;
@@ -61,6 +62,8 @@ pub struct Ctx<'a, R: Runtime> {
     pub reload: Reload,
     pub invalidations: Invalidations,
     pub warnings: Vec<Value>,
+    /// Changes to stored cron events, applied after the metadata is committed.
+    pub cron_changes: Vec<CronEventChange>,
 }
 
 /// A copy of the parts of [`Ctx`] a failed `bulk_keep_going` item rolls back.
@@ -73,6 +76,7 @@ pub struct Snapshot<P> {
     reload: Reload,
     invalidations: Invalidations,
     warnings: usize,
+    cron_changes: usize,
 }
 
 impl<'a, R: Runtime> Ctx<'a, R> {
@@ -114,6 +118,7 @@ impl<'a, R: Runtime> Ctx<'a, R> {
             reload: Reload::Changed,
             invalidations: Invalidations::default(),
             warnings: vec![],
+            cron_changes: vec![],
         })
     }
 
@@ -127,6 +132,7 @@ impl<'a, R: Runtime> Ctx<'a, R> {
             reload: self.reload.clone(),
             invalidations: self.invalidations.clone(),
             warnings: self.warnings.len(),
+            cron_changes: self.cron_changes.len(),
         }
     }
 
@@ -139,6 +145,7 @@ impl<'a, R: Runtime> Ctx<'a, R> {
         self.reload = s.reload;
         self.invalidations = s.invalidations;
         self.warnings.truncate(s.warnings);
+        self.cron_changes.truncate(s.cron_changes);
     }
 
     /// Resolve the working copy and apply `check`. On success it becomes the new baseline.
@@ -317,6 +324,12 @@ impl<'a, R: Runtime> Ctx<'a, R> {
         };
         // Install before anything else can fail or be cancelled: the store already has it.
         self.rt.install(prepared, self.metadata, version);
+        if let (Some(pool), false) = (self.rt.metadata_db(), self.cron_changes.is_empty()) {
+            // On failure the scheduled-event worker tops events up and drops stale ones.
+            if let Err(e) = apply_cron_changes(pool, &self.cron_changes).await {
+                tracing::warn!(target: "metadata", "could not update cron events: {e}");
+            }
+        }
         if let Err(e) = store
             .notify(version, &self.invalidations, self.rt.instance_id())
             .await
