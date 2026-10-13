@@ -8,6 +8,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod admin;
 pub mod catalog;
 pub mod cron;
 pub mod ddl;

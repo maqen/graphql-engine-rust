@@ -37,6 +37,27 @@ them immediately); in-flight deliveries get `HASURA_GRAPHQL_GRACEFUL_SHUTDOWN_TI
 (60 s) and anything still locked after that is unlocked. Events locked by an instance that
 was killed are picked up again after 30 minutes (V2's rule).
 
+## Metadata API
+
+`pg_create_event_trigger`, `pg_delete_event_trigger`, `pg_invoke_event_trigger`,
+`pg_redeliver_event`, `pg_get_event_logs`, `pg_get_event_invocation_logs`,
+`pg_get_event_by_id` and `pause_event_trigger_cleanups` / `resume_event_trigger_cleanups`
+behave like V2 (errors, check order and response shapes are replayed from a V2 recording in
+`crates/hge-server/tests/events_api.rs`). `cleanup_event_trigger_logs` answers with V2's
+enterprise-only error. Creating or deleting a trigger only edits metadata; resolving the new
+metadata installs or drops the SQL triggers and archives a deleted trigger's events.
+
+Differences from V2, on purpose:
+
+* A name is taken when a trigger of that name is in the source's metadata. V2 instead looks
+  for the trigger's SQL functions, so SQL left behind by a failed `create_event_trigger`
+  blocks the name there; here such leftovers are dropped the next time metadata is resolved.
+* A rejected create leaves no SQL trigger behind (V2 keeps the trigger it installed for a
+  definition it then rejects, e.g. one whose `payload` names a missing column).
+
+`run_sql` and manual invocations record `{"x-hasura-role":"admin"}` and a fresh trace context
+as the event's `session_variables` / `trace_context`, like V2.
+
 ## Cron triggers and one-off scheduled events
 
 These live in the metadata database (`hdb_catalog.hdb_cron_events`, `hdb_scheduled_events`

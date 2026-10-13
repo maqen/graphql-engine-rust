@@ -91,6 +91,16 @@ impl TraceIds {
     }
 }
 
+/// A new `hasura.tracecontext` value for events created by an API request (V2 records the
+/// request's trace so the delivery continues it).
+pub fn new_trace_context() -> String {
+    format!(
+        r#"{{"trace_id":"{}","span_id":"{}","sampling_state":"1"}}"#,
+        random_hex(16),
+        random_hex(8)
+    )
+}
+
 fn random_hex(bytes: usize) -> String {
     let mut rng = rand::rng();
     (0..bytes)

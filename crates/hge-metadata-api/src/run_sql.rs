@@ -226,10 +226,27 @@ pub async fn run_plain<R: Runtime>(rt: &R, args: &RunSql) -> ApiResult<Value> {
         .start()
         .await
         .map_err(|e| sql_error(e, "BEGIN"))?;
+    set_session(&tx).await?;
     // Dropping `tx` (on error, or if the request goes away) rolls back.
     let msgs = tx.simple_query(sql).await.map_err(|e| sql_error(e, sql))?;
     tx.commit().await.map_err(|e| sql_error(e, "COMMIT"))?;
     Ok(result_json(&msgs))
+}
+
+/// Like V2, record the admin session and a trace context for event triggers fired by the SQL.
+async fn set_session(tx: &tokio_postgres::Transaction<'_>) -> ApiResult<()> {
+    const SQL: &str = "SELECT set_config('hasura.user', $1, true), \
+                       set_config('hasura.tracecontext', $2, true)";
+    tx.execute(
+        SQL,
+        &[
+            &r#"{"x-hasura-role":"admin"}"#,
+            &hge_events::delivery::new_trace_context(),
+        ],
+    )
+    .await
+    .map(drop)
+    .map_err(|e| sql_error(e, SQL))
 }
 
 fn source_missing(name: &str) -> ApiError {
@@ -257,6 +274,7 @@ pub async fn run_checked<R: Runtime>(ctx: &mut Ctx<'_, R>, args: &RunSql) -> Api
         .start()
         .await
         .map_err(|e| sql_error(e, "BEGIN"))?;
+    set_session(&tx).await?;
     let before = snapshot(&tx, &tracked).await?;
     let msgs = tx
         .simple_query(&args.sql)

@@ -19,24 +19,30 @@ use tracing::{info, warn};
 use crate::config::ServerConfig;
 use crate::state::Engine;
 
-/// An inconsistent event trigger, as V2 reports it.
+/// An inconsistent event trigger, as V2 reports it. `reason` is usually [`in_trigger`].
 fn trigger_issue(
     source: &str,
     table: &hge_core::QualifiedTable,
     trigger: &str,
     definition: &serde_json::Value,
-    msg: &str,
+    reason: String,
 ) -> InconsistentObject {
-    InconsistentObject::table_object(
+    InconsistentObject::new(
         "event_trigger",
-        trigger,
-        source,
-        table,
         format!(
-            "in table \"{}\": in event trigger \"{trigger}\": {msg}",
+            "event_trigger {trigger} in table {} in source {source}",
             table.v2_text()
         ),
-        definition.clone(),
+        reason,
+        serde_json::json!({ "configuration": definition, "table": table }),
+    )
+}
+
+/// A problem found while resolving a trigger, with V2's context prefix.
+fn in_trigger(table: &hge_core::QualifiedTable, trigger: &str, msg: &str) -> String {
+    format!(
+        "in table \"{}\": in event trigger \"{trigger}\": {msg}",
+        table.v2_text()
     )
 }
 
@@ -80,7 +86,7 @@ pub async fn prepare(
                             &entry.table,
                             name,
                             raw,
-                            &e.to_string(),
+                            in_trigger(&entry.table, name, &e.to_string()),
                         ));
                         continue;
                     }
@@ -107,7 +113,7 @@ pub async fn prepare(
                         &entry.table,
                         &conf.name,
                         raw,
-                        &p,
+                        in_trigger(&entry.table, &conf.name, &p),
                     ));
                     continue;
                 }
@@ -136,7 +142,11 @@ pub async fn prepare(
                         &entry.table,
                         &conf.name,
                         raw,
-                        &format!("column \"{missing}\" does not exist"),
+                        // A dependency error in V2, without the trigger context.
+                        format!(
+                            "table \"{}\" has no field named \"{missing}\"",
+                            entry.table.v2_text()
+                        ),
                     ));
                     continue;
                 }
@@ -150,7 +160,7 @@ pub async fn prepare(
                         &entry.table,
                         name,
                         raw,
-                        &e,
+                        in_trigger(&entry.table, name, &e),
                     )),
                 }
             }

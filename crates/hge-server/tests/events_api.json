@@ -1,0 +1,2568 @@
+{
+ "description": "Recorded from hasura/graphql-engine:v2.51.0-ce on a fresh database (event processing paused); replayed in order. Steps marked todo are known differences and must keep failing until fixed.",
+ "steps": [
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "DROP TABLE IF EXISTS ev_t1, ev_t2, ev_untracked CASCADE; CREATE TABLE ev_t1(id serial primary key, c1 int, c2 text); CREATE TABLE ev_t2(id int primary key, v numeric); CREATE TABLE ev_untracked(id int primary key);"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "clear_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "replace_metadata",
+    "args": {
+     "version": 3,
+     "sources": [
+      {
+       "name": "default",
+       "kind": "postgres",
+       "tables": [
+        {
+         "table": {
+          "schema": "public",
+          "name": "ev_t1"
+         }
+        },
+        {
+         "table": {
+          "schema": "public",
+          "name": "ev_t2"
+         }
+        }
+       ],
+       "configuration": {
+        "connection_info": {
+         "database_url": {
+          "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+         },
+         "isolation_level": "read-committed",
+         "use_prepared_statements": false
+        }
+       }
+      }
+     ]
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "bad'name",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "enable_manual": true
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: only alphanumeric and underscore and hyphens allowed for name",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "enable_manual": true
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: event trigger name can be at most 42 characters",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "bad'nameaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: only alphanumeric and underscore and hyphens allowed for name",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: atleast one amongst insert/update/delete/enable_manual spec must be provided",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "enable_manual": false,
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: atleast one amongst insert/update/delete/enable_manual spec must be provided",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: must provide webhook or webhook_from_env",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "webhook_from_env": "X"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: only one of webhook or webhook_from_env should be given",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": []
+     },
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: found empty column specification",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "update": {
+      "columns": "*",
+      "payload": []
+     },
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: found empty payload specification",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "update": {
+      "columns": [
+       "c1"
+      ],
+      "payload": []
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "replace": true
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "event trigger \"t\" does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "x"
+     },
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: only * or [] allowed",
+    "path": "$.args.insert.columns",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: key \"name\" not found",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t",
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: key \"table\" not found",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "headers": [
+      {
+       "name": "a"
+      }
+     ]
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: expecting value or value_from_env keys",
+    "path": "$.args.headers[0]",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "headers": [
+      {
+       "name": "a",
+       "value_from_env": "HASURA_GRAPHQL_X"
+      }
+     ]
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: env variables starting with \"HASURA_GRAPHQL_\" are not allowed in value_from_env: HASURA_GRAPHQL_X",
+    "path": "$.args.headers[0]",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "tk",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "unknown_key": 1
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "retry_conf": {
+      "num_retries": 1
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: parsing Hasura.RQL.Types.EventTrigger.RetryConf(RetryConf) failed, key \"interval_sec\" not found",
+    "path": "$.args.retry_conf",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t",
+     "table": {
+      "schema": "public",
+      "name": "ev_untracked"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "table \"ev_untracked\" does not exist in source: default",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t",
+     "table": "ev_untracked",
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "table \"ev_untracked\" does not exist in source: default",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t",
+     "source": "nope",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "table \"ev_t1\" does not exist in source: nope",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "replace": true
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "event trigger \"t\" does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "update": {
+      "columns": [
+       "nope"
+      ]
+     },
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "column \"nope\" does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "tp",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "update": {
+      "columns": [
+       "c1"
+      ],
+      "payload": [
+       "nope"
+      ]
+     },
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Inconsistent object: table \"ev_t1\" has no field named \"nope\"",
+    "path": "$.args",
+    "code": "invalid-configuration",
+    "internal": [
+     {
+      "definition": {
+       "configuration": {
+        "definition": {
+         "enable_manual": false,
+         "update": {
+          "columns": [
+           "c1"
+          ],
+          "payload": [
+           "nope"
+          ]
+         }
+        },
+        "name": "tp",
+        "retry_conf": {
+         "interval_sec": 10,
+         "num_retries": 0,
+         "timeout_sec": 60
+        },
+        "webhook": "http://127.0.0.1:1/hook"
+       },
+       "table": {
+        "name": "ev_t1",
+        "schema": "public"
+       }
+      },
+      "name": "event_trigger tp in table ev_t1 in source default",
+      "reason": "Inconsistent object: table \"ev_t1\" has no field named \"nope\"",
+      "type": "event_trigger"
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook_from_env": "EV_UNSET_HOOK"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Inconsistent object: in table \"ev_t1\": in event trigger \"t\": environment variable 'EV_UNSET_HOOK' not set",
+    "path": "$.args",
+    "code": "invalid-configuration",
+    "internal": [
+     {
+      "definition": {
+       "configuration": {
+        "definition": {
+         "enable_manual": false,
+         "insert": {
+          "columns": "*"
+         }
+        },
+        "name": "t",
+        "retry_conf": {
+         "interval_sec": 10,
+         "num_retries": 0,
+         "timeout_sec": 60
+        },
+        "webhook_from_env": "EV_UNSET_HOOK"
+       },
+       "table": {
+        "name": "ev_t1",
+        "schema": "public"
+       }
+      },
+      "name": "event_trigger t in table ev_t1 in source default",
+      "reason": "Inconsistent object: in table \"ev_t1\": in event trigger \"t\": environment variable 'EV_UNSET_HOOK' not set",
+      "type": "event_trigger"
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t1",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "update": {
+      "columns": [
+       "c1"
+      ],
+      "payload": [
+       "id",
+       "c1"
+      ]
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "headers": [
+      {
+       "name": "X-A",
+       "value": "b"
+      }
+     ]
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "manual-1",
+     "table": "ev_t2",
+     "enable_manual": true,
+     "delete": {
+      "columns": "*"
+     },
+     "retry_conf": {
+      "num_retries": 2,
+      "interval_sec": 5
+     },
+     "webhook_from_env": "PATH",
+     "cleanup_config": {
+      "schedule": "0 0 * * *",
+      "clear_older_than": 24
+     },
+     "trigger_on_replication": true
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t1",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Event trigger with name \"t1\" already exists",
+    "path": "$.args",
+    "code": "already-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t1",
+     "table": {
+      "schema": "public",
+      "name": "ev_t2"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Event trigger with name \"t1\" already exists",
+    "path": "$.args",
+    "code": "already-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t1",
+     "table": {
+      "schema": "public",
+      "name": "ev_t2"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "replace": true
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "cannot replace table or schema for trigger",
+    "path": "$.args",
+    "code": "not-supported"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "t1",
+     "table": {
+      "schema": "public",
+      "name": "ev_t1"
+     },
+     "insert": {
+      "columns": "*"
+     },
+     "delete": {
+      "columns": "*"
+     },
+     "webhook": "http://127.0.0.1:1/hook",
+     "replace": true
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'hdb_catalog' AND p.proname LIKE 'notify_hasura_%' AND p.proname NOT LIKE '%_tp_%' ORDER BY 1"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "TuplesOk",
+    "result": [
+     [
+      "proname"
+     ],
+     [
+      "notify_hasura_manual-1_DELETE"
+     ],
+     [
+      "notify_hasura_t1_DELETE"
+     ],
+     [
+      "notify_hasura_t1_INSERT"
+     ],
+     [
+      "notify_hasura_tk_INSERT"
+     ]
+    ]
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "SELECT tgname, tgrelid::regclass::text, tgenabled FROM pg_trigger WHERE tgname LIKE 'notify_hasura_%' AND tgname NOT LIKE '%_tp_%' ORDER BY 1"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "TuplesOk",
+    "result": [
+     [
+      "tgname",
+      "tgrelid",
+      "tgenabled"
+     ],
+     [
+      "notify_hasura_manual-1_DELETE",
+      "ev_t2",
+      "A"
+     ],
+     [
+      "notify_hasura_t1_DELETE",
+      "ev_t1",
+      "O"
+     ],
+     [
+      "notify_hasura_t1_INSERT",
+      "ev_t1",
+      "O"
+     ],
+     [
+      "notify_hasura_tk_INSERT",
+      "ev_t1",
+      "O"
+     ]
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "version": 3,
+    "sources": [
+     {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+       {
+        "table": {
+         "name": "ev_t1",
+         "schema": "public"
+        },
+        "event_triggers": [
+         {
+          "name": "t1",
+          "definition": {
+           "delete": {
+            "columns": "*"
+           },
+           "enable_manual": false,
+           "insert": {
+            "columns": "*"
+           }
+          },
+          "retry_conf": {
+           "interval_sec": 10,
+           "num_retries": 0,
+           "timeout_sec": 60
+          },
+          "webhook": "http://127.0.0.1:1/hook"
+         },
+         {
+          "name": "tk",
+          "definition": {
+           "enable_manual": false,
+           "insert": {
+            "columns": "*"
+           }
+          },
+          "retry_conf": {
+           "interval_sec": 10,
+           "num_retries": 0,
+           "timeout_sec": 60
+          },
+          "webhook": "http://127.0.0.1:1/hook"
+         }
+        ]
+       },
+       {
+        "table": {
+         "name": "ev_t2",
+         "schema": "public"
+        },
+        "event_triggers": [
+         {
+          "name": "manual-1",
+          "definition": {
+           "delete": {
+            "columns": "*"
+           },
+           "enable_manual": true
+          },
+          "retry_conf": {
+           "interval_sec": 5,
+           "num_retries": 2
+          },
+          "webhook_from_env": "PATH",
+          "cleanup_config": {
+           "batch_size": 10000,
+           "clean_invocation_logs": false,
+           "clear_older_than": 24,
+           "paused": false,
+           "schedule": "0 0 * * *",
+           "timeout": 60
+          },
+          "trigger_on_replication": true
+         }
+        ]
+       }
+      ],
+      "configuration": {
+       "connection_info": {
+        "database_url": {
+         "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+        },
+        "isolation_level": "read-committed",
+        "use_prepared_statements": false
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_invoke_event_trigger",
+    "args": {
+     "name": "t1",
+     "payload": {
+      "a": 1
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "manual mode is not enabled for event trigger",
+    "path": "$.args",
+    "code": "not-supported"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_invoke_event_trigger",
+    "args": {
+     "name": "nope",
+     "payload": {
+      "a": 1
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "event trigger \"nope\" does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_invoke_event_trigger",
+    "args": {
+     "name": "manual-1"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command invoke_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: key \"payload\" not found",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_invoke_event_trigger",
+    "args": {
+     "name": "manual-1",
+     "source": "nope",
+     "payload": {}
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "event trigger \"manual-1\" does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_invoke_event_trigger",
+    "args": {
+     "name": "manual-1",
+     "payload": {
+      "z": 1,
+      "a": [
+       1,
+       2.5,
+       null,
+       "x"
+      ],
+      "m": {
+       "b": true,
+       "a": false
+      }
+     }
+    }
+   },
+   "status": 200,
+   "response": {
+    "event_id": "ee450ee5-b95c-4a98-b579-b1136947cee7"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "UPDATE hdb_catalog.event_log SET id = '00000000-0000-0000-0000-00000000000a', created_at = '2024-01-02 03:04:05.5' WHERE trigger_name = 'manual-1'"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "INSERT INTO ev_t1(c1, c2) VALUES (1, 'x'); UPDATE ev_t1 SET c2 = 'y'; UPDATE ev_t1 SET c1 = 2; DELETE FROM ev_t1"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "UPDATE hdb_catalog.event_log SET id = '00000000-0000-0000-0000-0000000000' || lpad(n::text, 2, '0'), created_at = '2024-01-01'::timestamp + n * interval '1 minute' FROM (SELECT id AS i, row_number() OVER (ORDER BY created_at, payload->>'op') AS n FROM hdb_catalog.event_log WHERE trigger_name = 't1') s WHERE id = s.i"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "SELECT id, trigger_name, payload->>'op', payload->'data'::text, tries FROM hdb_catalog.event_log WHERE trigger_name <> 'tp' ORDER BY id"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "TuplesOk",
+    "result": [
+     [
+      "id",
+      "trigger_name",
+      "?column?",
+      "?column?",
+      "tries"
+     ],
+     [
+      "00000000-0000-0000-0000-000000000001",
+      "t1",
+      "DELETE",
+      "{\"new\": null, \"old\": {\"c1\": 2, \"c2\": \"y\", \"id\": 1}}",
+      "0"
+     ],
+     [
+      "00000000-0000-0000-0000-000000000002",
+      "t1",
+      "INSERT",
+      "{\"new\": {\"c1\": 1, \"c2\": \"x\", \"id\": 1}, \"old\": null}",
+      "0"
+     ],
+     [
+      "00000000-0000-0000-0000-00000000000a",
+      "manual-1",
+      "MANUAL",
+      "{\"new\": {\"a\": [1, 2.5, null, \"x\"], \"m\": {\"a\": false, \"b\": true}, \"z\": 1}, \"old\": null}",
+      "0"
+     ],
+     [
+      "019cb68c-edb8-433d-9309-de42282c29f5",
+      "tk",
+      "INSERT",
+      "{\"new\": {\"c1\": 1, \"c2\": \"x\", \"id\": 1}, \"old\": null}",
+      "0"
+     ]
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_get_event_logs",
+    "args": {
+     "name": "t1"
+    }
+   },
+   "status": 200,
+   "response": [
+    {
+     "id": "00000000-0000-0000-0000-000000000002",
+     "schema_name": "public",
+     "table_name": "ev_t1",
+     "trigger_name": "t1",
+     "payload": {
+      "data": {
+       "new": {
+        "c1": 1,
+        "c2": "x",
+        "id": 1
+       },
+       "old": null
+      },
+      "op": "INSERT",
+      "session_variables": {
+       "x-hasura-role": "admin"
+      },
+      "trace_context": {
+       "sampling_state": "1",
+       "span_id": "6f710d1689bd5bd8",
+       "trace_id": "bb377c38c112a2111305a19f7b443a81"
+      }
+     },
+     "delivered": false,
+     "error": false,
+     "tries": 0,
+     "created_at": "2024-01-01T00:02:00Z",
+     "locked": null,
+     "next_retry_at": null,
+     "archived": false
+    },
+    {
+     "id": "00000000-0000-0000-0000-000000000001",
+     "schema_name": "public",
+     "table_name": "ev_t1",
+     "trigger_name": "t1",
+     "payload": {
+      "data": {
+       "new": null,
+       "old": {
+        "c1": 2,
+        "c2": "y",
+        "id": 1
+       }
+      },
+      "op": "DELETE",
+      "session_variables": {
+       "x-hasura-role": "admin"
+      },
+      "trace_context": {
+       "sampling_state": "1",
+       "span_id": "6f710d1689bd5bd8",
+       "trace_id": "bb377c38c112a2111305a19f7b443a81"
+      }
+     },
+     "delivered": false,
+     "error": false,
+     "tries": 0,
+     "created_at": "2024-01-01T00:01:00Z",
+     "locked": null,
+     "next_retry_at": null,
+     "archived": false
+    }
+   ]
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_get_event_logs",
+    "args": {
+     "name": "manual-1"
+    }
+   },
+   "status": 200,
+   "response": [
+    {
+     "id": "00000000-0000-0000-0000-00000000000a",
+     "schema_name": "public",
+     "table_name": "ev_t2",
+     "trigger_name": "manual-1",
+     "payload": {
+      "data": {
+       "new": {
+        "a": [
+         1,
+         2.5,
+         null,
+         "x"
+        ],
+        "m": {
+         "a": false,
+         "b": true
+        },
+        "z": 1
+       },
+       "old": null
+      },
+      "op": "MANUAL",
+      "session_variables": {
+       "x-hasura-role": "admin"
+      },
+      "trace_context": {
+       "sampling_state": "1",
+       "span_id": "ea1ec0927e16435d",
+       "trace_id": "77ab20c9f37056b8560c0f89e52f52e6"
+      }
+     },
+     "delivered": false,
+     "error": false,
+     "tries": 0,
+     "created_at": "2024-01-02T03:04:05.5Z",
+     "locked": null,
+     "next_retry_at": null,
+     "archived": false
+    }
+   ]
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_get_event_logs",
+    "args": {
+     "name": "t1",
+     "status": "all"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command get_event_logs.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: event logs status can only be one of the following: processed or pending",
+    "path": "$.args.status",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_get_event_logs",
+    "args": {
+     "name": "t1",
+     "status": "pending",
+     "limit": 1,
+     "offset": 1
+    }
+   },
+   "status": 200,
+   "response": [
+    {
+     "id": "00000000-0000-0000-0000-000000000001",
+     "schema_name": "public",
+     "table_name": "ev_t1",
+     "trigger_name": "t1",
+     "payload": {
+      "data": {
+       "new": null,
+       "old": {
+        "c1": 2,
+        "c2": "y",
+        "id": 1
+       }
+      },
+      "op": "DELETE",
+      "session_variables": {
+       "x-hasura-role": "admin"
+      },
+      "trace_context": {
+       "sampling_state": "1",
+       "span_id": "6f710d1689bd5bd8",
+       "trace_id": "bb377c38c112a2111305a19f7b443a81"
+      }
+     },
+     "delivered": false,
+     "error": false,
+     "tries": 0,
+     "created_at": "2024-01-01T00:01:00Z",
+     "locked": null,
+     "next_retry_at": null,
+     "archived": false
+    }
+   ]
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_get_event_logs",
+    "args": {
+     "name": "nope"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "event trigger \"nope\" does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_get_event_logs",
+    "args": {
+     "name": "t1",
+     "limit": -1
+    }
+   },
+   "status": 500,
+   "response": {
+    "error": "unexpected error while fetching event logs: database query error",
+    "path": "$.args",
+    "code": "unexpected",
+    "internal": {
+     "arguments": [
+      "(Oid 25,Just (\"t1\",Binary))",
+      "(Oid 20,Just (\"\\255\\255\\255\\255\\255\\255\\255\\255\",Binary))",
+      "(Oid 20,Just (\"\\NUL\\NUL\\NUL\\NUL\\NUL\\NUL\\NUL\\NUL\",Binary))"
+     ],
+     "error": {
+      "description": null,
+      "exec_status": "FatalError",
+      "hint": null,
+      "message": "LIMIT must not be negative",
+      "status_code": "2201W"
+     },
+     "prepared": true,
+     "statement": "\n            SELECT id, schema_name, table_name, trigger_name, payload, delivered, error, tries, created_at, locked, next_retry_at, archived\n              FROM hdb_catalog.event_log\n              WHERE trigger_name = $1 \n              ORDER BY created_at DESC LIMIT $2 OFFSET $3;\n            "
+    }
+   },
+   "todo": "V2's internal error carries its own driver's statement and arguments"
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_redeliver_event",
+    "args": {
+     "event_id": "nope"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "event not found",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "UPDATE hdb_catalog.event_log SET delivered = 't', tries = 3, locked = '2024-01-01 00:00:00+00', next_retry_at = '2024-02-01 00:00:00' WHERE id = '00000000-0000-0000-0000-000000000001'"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_redeliver_event",
+    "args": {
+     "event_id": "00000000-0000-0000-0000-000000000001"
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "SELECT delivered, error, tries, locked IS NULL, next_retry_at FROM hdb_catalog.event_log WHERE id = '00000000-0000-0000-0000-000000000001'"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "TuplesOk",
+    "result": [
+     [
+      "delivered",
+      "error",
+      "tries",
+      "?column?",
+      "next_retry_at"
+     ],
+     [
+      "f",
+      "f",
+      "0",
+      "f",
+      "2024-02-01 00:00:00"
+     ]
+    ]
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "UPDATE hdb_catalog.event_log SET locked = now() WHERE id = '00000000-0000-0000-0000-000000000002'"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_redeliver_event",
+    "args": {
+     "event_id": "00000000-0000-0000-0000-000000000002"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "event is already being processed",
+    "path": "$.args",
+    "code": "busy"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "UPDATE hdb_catalog.event_log SET locked = '2024-03-04 05:06:07.25+00', error = 't' WHERE id = '00000000-0000-0000-0000-000000000002'"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_get_event_logs",
+    "args": {
+     "name": "t1",
+     "status": "processed"
+    }
+   },
+   "status": 200,
+   "response": [
+    {
+     "id": "00000000-0000-0000-0000-000000000002",
+     "schema_name": "public",
+     "table_name": "ev_t1",
+     "trigger_name": "t1",
+     "payload": {
+      "data": {
+       "new": {
+        "c1": 1,
+        "c2": "x",
+        "id": 1
+       },
+       "old": null
+      },
+      "op": "INSERT",
+      "session_variables": {
+       "x-hasura-role": "admin"
+      },
+      "trace_context": {
+       "sampling_state": "1",
+       "span_id": "6f710d1689bd5bd8",
+       "trace_id": "bb377c38c112a2111305a19f7b443a81"
+      }
+     },
+     "delivered": false,
+     "error": true,
+     "tries": 0,
+     "created_at": "2024-01-01T00:02:00Z",
+     "locked": "2024-03-04T05:06:07.25Z",
+     "next_retry_at": null,
+     "archived": false
+    }
+   ]
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "INSERT INTO hdb_catalog.event_invocation_logs (id, trigger_name, event_id, status, request, response, created_at) VALUES ('10000000-0000-0000-0000-000000000001', 't1', '00000000-0000-0000-0000-000000000001', 500,  '{\"version\":\"2\",\"payload\":{\"b\":1,\"a\":2},\"headers\":[]}', '{\"type\":\"client_error\",\"data\":{\"message\":\"x\"}}', '2024-01-05 00:00:00'), ('10000000-0000-0000-0000-000000000002', 't1', '00000000-0000-0000-0000-000000000001', NULL,  '{\"version\":\"2\"}', '{\"type\":\"webhook_response\",\"data\":{\"status\":200}}', '2024-01-06 00:00:00.123')"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_get_event_invocation_logs",
+    "args": {
+     "name": "t1"
+    }
+   },
+   "status": 200,
+   "response": [
+    {
+     "id": "10000000-0000-0000-0000-000000000002",
+     "trigger_name": "t1",
+     "event_id": "00000000-0000-0000-0000-000000000001",
+     "http_status": null,
+     "request": {
+      "version": "2"
+     },
+     "response": {
+      "data": {
+       "status": 200
+      },
+      "type": "webhook_response"
+     },
+     "created_at": "2024-01-06T00:00:00.123Z"
+    },
+    {
+     "id": "10000000-0000-0000-0000-000000000001",
+     "trigger_name": "t1",
+     "event_id": "00000000-0000-0000-0000-000000000001",
+     "http_status": 500,
+     "request": {
+      "headers": [],
+      "payload": {
+       "a": 2,
+       "b": 1
+      },
+      "version": "2"
+     },
+     "response": {
+      "data": {
+       "message": "x"
+      },
+      "type": "client_error"
+     },
+     "created_at": "2024-01-05T00:00:00Z"
+    }
+   ]
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_get_event_invocation_logs",
+    "args": {
+     "name": "t1",
+     "limit": 1,
+     "offset": 1
+    }
+   },
+   "status": 200,
+   "response": [
+    {
+     "id": "10000000-0000-0000-0000-000000000001",
+     "trigger_name": "t1",
+     "event_id": "00000000-0000-0000-0000-000000000001",
+     "http_status": 500,
+     "request": {
+      "headers": [],
+      "payload": {
+       "a": 2,
+       "b": 1
+      },
+      "version": "2"
+     },
+     "response": {
+      "data": {
+       "message": "x"
+      },
+      "type": "client_error"
+     },
+     "created_at": "2024-01-05T00:00:00Z"
+    }
+   ]
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_get_event_invocation_logs",
+    "args": {
+     "name": "nope"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "event trigger \"nope\" does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_get_event_by_id",
+    "args": {
+     "event_id": "00000000-0000-0000-0000-000000000001"
+    }
+   },
+   "status": 200,
+   "response": {
+    "event": {
+     "id": "00000000-0000-0000-0000-000000000001",
+     "schema_name": "public",
+     "table_name": "ev_t1",
+     "trigger_name": "t1",
+     "payload": {
+      "data": {
+       "new": null,
+       "old": {
+        "c1": 2,
+        "c2": "y",
+        "id": 1
+       }
+      },
+      "op": "DELETE",
+      "session_variables": {
+       "x-hasura-role": "admin"
+      },
+      "trace_context": {
+       "sampling_state": "1",
+       "span_id": "6f710d1689bd5bd8",
+       "trace_id": "bb377c38c112a2111305a19f7b443a81"
+      }
+     },
+     "delivered": false,
+     "error": false,
+     "tries": 0,
+     "created_at": "2024-01-01T00:01:00Z",
+     "locked": "2024-01-01T00:00:00Z",
+     "next_retry_at": "2024-02-01T00:00:00Z",
+     "archived": false
+    },
+    "invocations": [
+     {
+      "id": "10000000-0000-0000-0000-000000000002",
+      "trigger_name": "t1",
+      "event_id": "00000000-0000-0000-0000-000000000001",
+      "http_status": null,
+      "request": {
+       "version": "2"
+      },
+      "response": {
+       "data": {
+        "status": 200
+       },
+       "type": "webhook_response"
+      },
+      "created_at": "2024-01-06T00:00:00.123Z"
+     },
+     {
+      "id": "10000000-0000-0000-0000-000000000001",
+      "trigger_name": "t1",
+      "event_id": "00000000-0000-0000-0000-000000000001",
+      "http_status": 500,
+      "request": {
+       "headers": [],
+       "payload": {
+        "a": 2,
+        "b": 1
+       },
+       "version": "2"
+      },
+      "response": {
+       "data": {
+        "message": "x"
+       },
+       "type": "client_error"
+      },
+      "created_at": "2024-01-05T00:00:00Z"
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_get_event_by_id",
+    "args": {
+     "event_id": "00000000-0000-0000-0000-000000000001",
+     "invocation_log_limit": 1
+    }
+   },
+   "status": 200,
+   "response": {
+    "event": {
+     "id": "00000000-0000-0000-0000-000000000001",
+     "schema_name": "public",
+     "table_name": "ev_t1",
+     "trigger_name": "t1",
+     "payload": {
+      "data": {
+       "new": null,
+       "old": {
+        "c1": 2,
+        "c2": "y",
+        "id": 1
+       }
+      },
+      "op": "DELETE",
+      "session_variables": {
+       "x-hasura-role": "admin"
+      },
+      "trace_context": {
+       "sampling_state": "1",
+       "span_id": "6f710d1689bd5bd8",
+       "trace_id": "bb377c38c112a2111305a19f7b443a81"
+      }
+     },
+     "delivered": false,
+     "error": false,
+     "tries": 0,
+     "created_at": "2024-01-01T00:01:00Z",
+     "locked": "2024-01-01T00:00:00Z",
+     "next_retry_at": "2024-02-01T00:00:00Z",
+     "archived": false
+    },
+    "invocations": [
+     {
+      "id": "10000000-0000-0000-0000-000000000002",
+      "trigger_name": "t1",
+      "event_id": "00000000-0000-0000-0000-000000000001",
+      "http_status": null,
+      "request": {
+       "version": "2"
+      },
+      "response": {
+       "data": {
+        "status": 200
+       },
+       "type": "webhook_response"
+      },
+      "created_at": "2024-01-06T00:00:00.123Z"
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_get_event_by_id",
+    "args": {
+     "event_id": "nope"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "event id nope does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_get_event_by_id",
+    "args": {}
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command get_event_by_id.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: key \"event_id\" not found",
+    "path": "$.args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "cleanup_event_trigger_logs",
+    "args": {
+     "event_trigger_name": "t1",
+     "clear_older_than": 1
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "Event log cleanup feature is enterprise edition only",
+    "path": "$.args",
+    "code": "not-supported"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pause_event_trigger_cleanups",
+    "args": {
+     "event_triggers": {
+      "sources": "*"
+     }
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pause_event_trigger_cleanups",
+    "args": {
+     "event_triggers": [
+      {
+       "event_triggers": [
+        "t1"
+       ]
+      }
+     ]
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "cleanup config does not exist for t1",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pause_event_trigger_cleanups",
+    "args": {
+     "event_triggers": [
+      {
+       "source_name": "nope",
+       "event_triggers": [
+        "t1"
+       ]
+      }
+     ]
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "source with name nope does not exists",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "version": 3,
+    "sources": [
+     {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+       {
+        "table": {
+         "name": "ev_t1",
+         "schema": "public"
+        },
+        "event_triggers": [
+         {
+          "name": "t1",
+          "definition": {
+           "delete": {
+            "columns": "*"
+           },
+           "enable_manual": false,
+           "insert": {
+            "columns": "*"
+           }
+          },
+          "retry_conf": {
+           "interval_sec": 10,
+           "num_retries": 0,
+           "timeout_sec": 60
+          },
+          "webhook": "http://127.0.0.1:1/hook"
+         },
+         {
+          "name": "tk",
+          "definition": {
+           "enable_manual": false,
+           "insert": {
+            "columns": "*"
+           }
+          },
+          "retry_conf": {
+           "interval_sec": 10,
+           "num_retries": 0,
+           "timeout_sec": 60
+          },
+          "webhook": "http://127.0.0.1:1/hook"
+         }
+        ]
+       },
+       {
+        "table": {
+         "name": "ev_t2",
+         "schema": "public"
+        },
+        "event_triggers": [
+         {
+          "name": "manual-1",
+          "definition": {
+           "delete": {
+            "columns": "*"
+           },
+           "enable_manual": true
+          },
+          "retry_conf": {
+           "interval_sec": 5,
+           "num_retries": 2
+          },
+          "webhook_from_env": "PATH",
+          "cleanup_config": {
+           "batch_size": 10000,
+           "clean_invocation_logs": false,
+           "clear_older_than": 24,
+           "paused": true,
+           "schedule": "0 0 * * *",
+           "timeout": 60
+          },
+          "trigger_on_replication": true
+         }
+        ]
+       }
+      ],
+      "configuration": {
+       "connection_info": {
+        "database_url": {
+         "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+        },
+        "isolation_level": "read-committed",
+        "use_prepared_statements": false
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "resume_event_trigger_cleanups",
+    "args": {
+     "event_triggers": [
+      {
+       "event_triggers": [
+        "manual-1"
+       ]
+      }
+     ]
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "resume_event_trigger_cleanups",
+    "args": {
+     "event_triggers": {
+      "sources": [
+       "default"
+      ]
+     }
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pause_event_trigger_cleanups",
+    "args": {
+     "event_triggers": {
+      "sources": [
+       "nope"
+      ]
+     }
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "source with name nope does not exists",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "version": 3,
+    "sources": [
+     {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+       {
+        "table": {
+         "name": "ev_t1",
+         "schema": "public"
+        },
+        "event_triggers": [
+         {
+          "name": "t1",
+          "definition": {
+           "delete": {
+            "columns": "*"
+           },
+           "enable_manual": false,
+           "insert": {
+            "columns": "*"
+           }
+          },
+          "retry_conf": {
+           "interval_sec": 10,
+           "num_retries": 0,
+           "timeout_sec": 60
+          },
+          "webhook": "http://127.0.0.1:1/hook"
+         },
+         {
+          "name": "tk",
+          "definition": {
+           "enable_manual": false,
+           "insert": {
+            "columns": "*"
+           }
+          },
+          "retry_conf": {
+           "interval_sec": 10,
+           "num_retries": 0,
+           "timeout_sec": 60
+          },
+          "webhook": "http://127.0.0.1:1/hook"
+         }
+        ]
+       },
+       {
+        "table": {
+         "name": "ev_t2",
+         "schema": "public"
+        },
+        "event_triggers": [
+         {
+          "name": "manual-1",
+          "definition": {
+           "delete": {
+            "columns": "*"
+           },
+           "enable_manual": true
+          },
+          "retry_conf": {
+           "interval_sec": 5,
+           "num_retries": 2
+          },
+          "webhook_from_env": "PATH",
+          "cleanup_config": {
+           "batch_size": 10000,
+           "clean_invocation_logs": false,
+           "clear_older_than": 24,
+           "paused": false,
+           "schedule": "0 0 * * *",
+           "timeout": 60
+          },
+          "trigger_on_replication": true
+         }
+        ]
+       }
+      ],
+      "configuration": {
+       "connection_info": {
+        "database_url": {
+         "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+        },
+        "isolation_level": "read-committed",
+        "use_prepared_statements": false
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_delete_event_trigger",
+    "args": {
+     "name": "nope"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "event trigger \"nope\" does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_delete_event_trigger",
+    "args": {
+     "name": "t1"
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_delete_event_trigger",
+    "args": {
+     "name": "t1"
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "event trigger \"t1\" does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "SELECT trigger_name, archived, count(*) FROM hdb_catalog.event_log WHERE trigger_name <> 'tp' GROUP BY 1, 2 ORDER BY 1, 2"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "TuplesOk",
+    "result": [
+     [
+      "trigger_name",
+      "archived",
+      "count"
+     ],
+     [
+      "manual-1",
+      "f",
+      "1"
+     ],
+     [
+      "t1",
+      "t",
+      "2"
+     ],
+     [
+      "tk",
+      "f",
+      "1"
+     ]
+    ]
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'hdb_catalog' AND p.proname LIKE 'notify_hasura_%' AND p.proname NOT LIKE '%_tp_%' ORDER BY 1"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "TuplesOk",
+    "result": [
+     [
+      "proname"
+     ],
+     [
+      "notify_hasura_manual-1_DELETE"
+     ],
+     [
+      "notify_hasura_tk_INSERT"
+     ]
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_get_event_by_id",
+    "args": {
+     "event_id": "00000000-0000-0000-0000-000000000003",
+     "invocation_log_limit": 0
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "event id 00000000-0000-0000-0000-000000000003 does not exist",
+    "path": "$.args",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "bulk",
+    "args": [
+     {
+      "type": "pg_create_event_trigger",
+      "args": {
+       "name": "t2",
+       "table": {
+        "schema": "public",
+        "name": "ev_t1"
+       },
+       "insert": {
+        "columns": "*"
+       },
+       "webhook": "http://127.0.0.1:1/hook"
+      }
+     },
+     {
+      "type": "pg_create_event_trigger",
+      "args": {
+       "name": "t3",
+       "table": {
+        "schema": "public",
+        "name": "ev_t1"
+       }
+      }
+     }
+    ]
+   },
+   "status": 400,
+   "response": {
+    "error": "Error when parsing command create_event_trigger.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: atleast one amongst insert/update/delete/enable_manual spec must be provided",
+    "path": "$.args[1].args",
+    "code": "parse-failed"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "bulk",
+    "args": [
+     {
+      "type": "pg_create_event_trigger",
+      "args": {
+       "name": "t2",
+       "table": {
+        "schema": "public",
+        "name": "ev_t1"
+       },
+       "insert": {
+        "columns": "*"
+       },
+       "webhook": "http://127.0.0.1:1/hook"
+      }
+     },
+     {
+      "type": "pg_create_event_trigger",
+      "args": {
+       "name": "t2",
+       "table": {
+        "schema": "public",
+        "name": "ev_t2"
+       },
+       "insert": {
+        "columns": "*"
+       },
+       "webhook": "http://127.0.0.1:1/hook"
+      }
+     }
+    ]
+   },
+   "status": 400,
+   "response": {
+    "error": "Event trigger with name \"t2\" already exists",
+    "path": "$.args[1].args",
+    "code": "already-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "version": 3,
+    "sources": [
+     {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+       {
+        "table": {
+         "name": "ev_t1",
+         "schema": "public"
+        },
+        "event_triggers": [
+         {
+          "name": "tk",
+          "definition": {
+           "enable_manual": false,
+           "insert": {
+            "columns": "*"
+           }
+          },
+          "retry_conf": {
+           "interval_sec": 10,
+           "num_retries": 0,
+           "timeout_sec": 60
+          },
+          "webhook": "http://127.0.0.1:1/hook"
+         }
+        ]
+       },
+       {
+        "table": {
+         "name": "ev_t2",
+         "schema": "public"
+        },
+        "event_triggers": [
+         {
+          "name": "manual-1",
+          "definition": {
+           "delete": {
+            "columns": "*"
+           },
+           "enable_manual": true
+          },
+          "retry_conf": {
+           "interval_sec": 5,
+           "num_retries": 2
+          },
+          "webhook_from_env": "PATH",
+          "cleanup_config": {
+           "batch_size": 10000,
+           "clean_invocation_logs": false,
+           "clear_older_than": 24,
+           "paused": false,
+           "schedule": "0 0 * * *",
+           "timeout": 60
+          },
+          "trigger_on_replication": true
+         }
+        ]
+       }
+      ],
+      "configuration": {
+       "connection_info": {
+        "database_url": {
+         "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+        },
+        "isolation_level": "read-committed",
+        "use_prepared_statements": false
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_delete_event_trigger",
+    "args": {
+     "name": "manual-1"
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "export_metadata",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "version": 3,
+    "sources": [
+     {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+       {
+        "table": {
+         "name": "ev_t1",
+         "schema": "public"
+        },
+        "event_triggers": [
+         {
+          "name": "tk",
+          "definition": {
+           "enable_manual": false,
+           "insert": {
+            "columns": "*"
+           }
+          },
+          "retry_conf": {
+           "interval_sec": 10,
+           "num_retries": 0,
+           "timeout_sec": 60
+          },
+          "webhook": "http://127.0.0.1:1/hook"
+         }
+        ]
+       },
+       {
+        "table": {
+         "name": "ev_t2",
+         "schema": "public"
+        }
+       }
+      ],
+      "configuration": {
+       "connection_info": {
+        "database_url": {
+         "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+        },
+        "isolation_level": "read-committed",
+        "use_prepared_statements": false
+       }
+      }
+     }
+    ]
+   }
+  }
+ ]
+}
