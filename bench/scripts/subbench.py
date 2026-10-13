@@ -316,6 +316,15 @@ def lat_summary(lats, expected):
             "samples": len(lats), "missed": expected - len(lats)}
 
 
+def parse_cpuset(spec: str) -> set[int]:
+    """Docker cpuset syntax: "0,1", "0-3", "0-1,4"."""
+    cpus = set()
+    for part in filter(None, (p.strip() for p in spec.split(","))):
+        lo, _, hi = part.partition("-")
+        cpus.update(range(int(lo), int(hi or lo) + 1))
+    return cpus
+
+
 def median_mem(cid, seconds):
     with StatsSampler(cid) as s:
         time.sleep(seconds)
@@ -344,7 +353,7 @@ def run_one(engine, db, n, args, compose):
 
     specs = [("live", i) for i in range(n)] + [("stream", i) for i in range(args.stream_subscribers)]
     all_cpus = set(range(os.cpu_count()))
-    engine_cpus = {int(c) for c in ENGINE_CPUSET.replace("-", ",").split(",") if c}
+    engine_cpus = parse_cpuset(ENGINE_CPUSET)
     client_cpus = (all_cpus - engine_cpus) or all_cpus
     writes, streams = {}, {}
     t0 = time.monotonic()
@@ -468,7 +477,7 @@ def write_summary(path: Path, result: dict):
 
 
 def main():
-    engine_cores = len([c for c in ENGINE_CPUSET.replace("-", ",").split(",") if c])
+    engine_cores = len(parse_cpuset(ENGINE_CPUSET))
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--engine", action="append", required=True, help="name=url[@compose-service]")
     ap.add_argument("--db", action="append", default=[], help="name=database (default: the engine name)")

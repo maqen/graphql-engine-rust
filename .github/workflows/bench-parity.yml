@@ -7,7 +7,8 @@ name: bench-parity
 # image and checks the responses still match the recorded goldens in
 # bench/expected (guards the harness itself), then, once the repo has a
 # Dockerfile, runs the same suite against our Rust engine and publishes the
-# parity report. The Rust job is informational until the engine catches up.
+# parity report. The Rust job fails on a regression: a case that fails without
+# being listed in bench/parity-known-failures.txt, or a listed case that passes.
 
 on:
   pull_request:

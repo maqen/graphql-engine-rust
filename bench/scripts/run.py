@@ -28,6 +28,7 @@ import os
 import platform
 import shutil
 import statistics
+import socket
 import subprocess
 import sys
 import threading
@@ -134,8 +135,13 @@ def container_url(container: str, port: int = 8080) -> str | None:
     hop, burns host CPU and falls over at a few thousand sockets."""
     p = subprocess.run(["docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
                         container], capture_output=True, text=True)
-    ips = p.stdout.split() if p.returncode == 0 else []
-    return f"http://{ips[0]}:{port}" if ips else None
+    for ip in p.stdout.split() if p.returncode == 0 else []:
+        try:  # unreachable from here on Docker Desktop or from another netns
+            socket.create_connection((ip, port), timeout=2).close()
+            return f"http://{ip}:{port}"
+        except OSError:
+            continue
+    return None
 
 
 def image_info(container: str) -> dict:

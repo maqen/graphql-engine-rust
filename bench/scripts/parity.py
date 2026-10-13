@@ -284,9 +284,8 @@ def main():
             if line:
                 known.add(line)
 
-        unknown = known - {label for label, _ in rows}
-        if unknown and not args.only:
-            sys.exit(f"{args.known_failures} lists cases that do not exist: {', '.join(sorted(unknown))}")
+    # Checked after the report is written, so CI still publishes it.
+    unknown = sorted(known - {label for label, _ in rows}) if not (args.only or args.no_events) else []
 
     def verdict(label, diffs):
         if label in known:
@@ -309,6 +308,8 @@ def main():
             print(f"  REGRESSION: {label} fails and is not in {args.known_failures}")
         for label in flipped:
             print(f"  NOW PASSING: delete {label} from {args.known_failures} in this PR")
+        for label in unknown:
+            print(f"  UNKNOWN CASE: {label} is listed in {args.known_failures} but not in the suite")
 
     if args.report:
         lines = [
@@ -327,7 +328,7 @@ def main():
         Path(args.report).write_text("\n".join(lines) + "\n")
 
     if known:
-        return 1 if new_failures or flipped else 0
+        return 1 if new_failures or flipped or unknown else 0
     return 1 if failures else 0
 
 

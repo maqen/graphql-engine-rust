@@ -66,7 +66,7 @@ python3 scripts/run.py \
 ```
 
 CI (`rust-engine-parity`) runs the golden check with
-`--known-failures parity-known-failures.txt`: cases listed there are reported
+`--known-failures bench/parity-known-failures.txt`: cases listed there are reported
 as known gaps, and the job fails only when an unlisted case fails (a
 regression) or a listed case starts passing. A PR that fixes a listed case
 deletes its line in the same PR.
