@@ -37,6 +37,21 @@ them immediately); in-flight deliveries get `HASURA_GRAPHQL_GRACEFUL_SHUTDOWN_TI
 (60 s) and anything still locked after that is unlocked. Events locked by an instance that
 was killed are picked up again after 30 minutes (V2's rule).
 
+## Cron triggers and one-off scheduled events
+
+These live in the metadata database (`hdb_catalog.hdb_cron_events`,
+`hdb_scheduled_events` and their invocation logs; the tables are created if missing, with
+V2's definitions). Every instance that processes events runs:
+
+* a generator (every minute) that keeps 100 upcoming events per cron trigger, using V2's
+  cron syntax (5 fields, UTC), and drops future events of removed triggers or of a changed
+  schedule when metadata changes;
+* a delivery loop (every 10 s) that locks due events with `FOR UPDATE SKIP LOCKED`, marks
+  events older than their `tolerance_seconds` as `dead`, and delivers the rest with V2's
+  payload, headers, retries and invocation logs. Locks older than 35 minutes are released.
+
+The same Cloud Run advice applies: the instances that deliver need CPU between requests.
+
 ## Cloud Run
 
 Cloud Run's default "CPU only allocated during requests" throttles background work between

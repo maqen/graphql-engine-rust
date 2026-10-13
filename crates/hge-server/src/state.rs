@@ -29,6 +29,8 @@ pub struct AppState {
     pub event_triggers: Arc<hge_events::EventTriggers>,
     /// Connected sources and catalogs, reused by the next metadata change.
     pub prepared: Prepared,
+    /// Resolved cron triggers of this metadata version.
+    pub scheduled_triggers: Arc<hge_events::scheduled::ScheduledTriggers>,
     /// Roles named anywhere in metadata; every other role sees the same empty schema.
     known_roles: HashSet<RoleName>,
     /// `graphql_schema_introspection.disabled_for_roles`
@@ -99,6 +101,7 @@ impl AppState {
                 .collect(),
             inconsistencies: prepared.inconsistencies.clone(),
             event_triggers: prepared.event_triggers.clone(),
+            scheduled_triggers: prepared.scheduled_triggers.clone(),
             prepared,
             options,
             schemas: RwLock::new(HashMap::new()),
