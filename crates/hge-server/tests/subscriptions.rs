@@ -656,6 +656,21 @@ async fn restrictions(server: &Server) {
     );
     assert_eq!(recv(&mut ws).await, json!({"type": "complete", "id": "8"}));
 
+    // Aggregates are live queries too.
+    send(
+        &mut ws,
+        start(
+            "9",
+            "subscription { message_aggregate { aggregate { count } } }".to_owned(),
+        ),
+    )
+    .await;
+    let msg = recv(&mut ws).await;
+    assert!(
+        msg["payload"]["data"]["message_aggregate"]["aggregate"]["count"].is_u64(),
+        "{msg}"
+    );
+
     // Upgrades are only served on the GraphQL endpoints.
     for path in ["/v2/graphql", "/healthz", "/v1/metadata"] {
         let req = format!("ws://{}{path}", server.addr)
