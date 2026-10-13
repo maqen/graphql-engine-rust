@@ -114,7 +114,7 @@ pub fn apply(
                     if !a.columns.contains_key(attnum) {
                         dependents.extend(column_dependents(&src.tables, &rels, &b.table, old));
                     } else if a.column_types.get(attnum) != b.column_types.get(attnum) {
-                        let deps = column_dependents(&src.tables, &rels, &b.table, old);
+                        let deps = typed_column_dependents(&src.tables, &rels, &b.table, old);
                         if !deps.is_empty() {
                             retyped.push((b.table.clone(), old.clone(), deps));
                         }
@@ -306,12 +306,13 @@ impl Rels {
 }
 
 /// Visit every column key of a boolean expression on `table`, following relationships and
-/// `_exists` into other tables. `f(table, column)` returns a new name to rename the key.
+/// `_exists` into other tables. `f(table, column, operators)` returns a new name to rename
+/// the key.
 fn visit_bool_exp(
     exp: &mut Value,
     table: &QualifiedTable,
     rels: &Rels,
-    f: &mut dyn FnMut(&QualifiedTable, &str) -> Option<String>,
+    f: &mut dyn FnMut(&QualifiedTable, &str, &Value) -> Option<String>,
 ) {
     let Value::Object(obj) = exp else {
         return;
@@ -345,7 +346,7 @@ fn visit_bool_exp(
                     visit_bool_exp(&mut v, remote, rels, f);
                     k
                 }
-                None => f(table, &k).unwrap_or(k),
+                None => f(table, &k, &v).unwrap_or(k),
             },
         };
         obj.insert(key, v);
@@ -361,11 +362,74 @@ fn bool_exp_mentions(
     column: &str,
 ) -> bool {
     let mut found = false;
-    visit_bool_exp(&mut exp.clone(), context, rels, &mut |t, c| {
+    visit_bool_exp(&mut exp.clone(), context, rels, &mut |t, c, _| {
         found |= t == table && c == column;
         None
     });
     found
+}
+
+/// Does a boolean expression on `context` depend on the type of `column` of `table`? Like
+/// V2's `DROnType`: the column is compared with a static value (not a session variable, not
+/// `_is_null`), or is the right-hand side of a column comparison (`_ceq` etc.).
+fn bool_exp_types(
+    exp: &Value,
+    context: &QualifiedTable,
+    rels: &Rels,
+    table: &QualifiedTable,
+    column: &str,
+) -> bool {
+    let mut found = false;
+    visit_bool_exp(&mut exp.clone(), context, rels, &mut |t, c, ops| {
+        if t != table {
+            return None;
+        }
+        let Value::Object(ops) = ops else {
+            found |= c == column && is_static(ops);
+            return None;
+        };
+        for (op, v) in ops {
+            if is_column_op(op) {
+                // `"other"` or `["$", "other"]` (the root table, which we treat alike).
+                let rhs = match v {
+                    Value::Array(path) => path.last(),
+                    v => Some(v),
+                };
+                found |= rhs.and_then(Value::as_str) == Some(column);
+            } else if c == column && op != "_is_null" && is_static(v) {
+                found = true;
+            }
+        }
+        None
+    });
+    found
+}
+
+/// `_ceq`, `_cgt`, … compare with another column.
+fn is_column_op(op: &str) -> bool {
+    matches!(
+        op,
+        "_ceq"
+            | "_cne"
+            | "_cneq"
+            | "_cgt"
+            | "_clt"
+            | "_cgte"
+            | "_clte"
+            | "$ceq"
+            | "$cne"
+            | "$cneq"
+            | "$cgt"
+            | "$clt"
+            | "$cgte"
+            | "$clte"
+    )
+}
+
+/// A literal rather than a session variable reference.
+fn is_static(v: &Value) -> bool {
+    !v.as_str()
+        .is_some_and(hge_core::session::is_session_variable)
 }
 
 fn rename_in_bool_exp(
@@ -376,7 +440,7 @@ fn rename_in_bool_exp(
     old: &str,
     new: &str,
 ) {
-    visit_bool_exp(exp, context, rels, &mut |t, c| {
+    visit_bool_exp(exp, context, rels, &mut |t, c, _| {
         (t == table && c == old).then(|| new.to_owned())
     });
 }
@@ -417,6 +481,53 @@ fn rename_columns(cols: &mut Columns, old: &str, new: &str) {
             *c = new.to_owned();
         }
     }
+}
+
+/// Permissions that depend on the type of `column` of `table`: boolean expressions that
+/// compare it with a static value, and static presets. Column lists, session variables and
+/// relationships don't care about the type (V2's `DROnType` dependencies).
+fn typed_column_dependents(
+    tables: &[TableEntry],
+    rels: &Rels,
+    table: &QualifiedTable,
+    column: &str,
+) -> Vec<Dependent> {
+    let mut out = vec![];
+    for t in tables {
+        let own = t.table == *table;
+        let exp = |e: &Value| bool_exp_types(e, &t.table, rels, table, column);
+        let preset =
+            |set: &indexmap::IndexMap<String, Value>| own && set.get(column).is_some_and(is_static);
+        let perm = |role: &str, kind: &'static str| Dependent::Permission {
+            table: t.table.clone(),
+            role: role.to_owned(),
+            kind,
+        };
+        for p in &t.select_permissions {
+            if exp(&p.permission.filter) {
+                out.push(perm(&p.role, "select"));
+            }
+        }
+        for p in &t.insert_permissions {
+            if preset(&p.permission.set) || exp(&p.permission.check) {
+                out.push(perm(&p.role, "insert"));
+            }
+        }
+        for p in &t.update_permissions {
+            if preset(&p.permission.set)
+                || exp(&p.permission.filter)
+                || p.permission.check.as_ref().is_some_and(exp)
+            {
+                out.push(perm(&p.role, "update"));
+            }
+        }
+        for p in &t.delete_permissions {
+            if exp(&p.permission.filter) {
+                out.push(perm(&p.role, "delete"));
+            }
+        }
+    }
+    out
 }
 
 /// Permissions and relationships that use `column` of `table`.
@@ -800,7 +911,7 @@ mod tests {
             "sources": [{"name": "default", "configuration": {}, "tables": [
                 {"table": "author",
                  "array_relationships": [{"name": "articles", "using": {"foreign_key_constraint_on": {"table": "article", "column": "author_id"}}}],
-                 "select_permissions": [{"role": "user", "permission": {"columns": ["id", "name"], "filter": {"_and": [{"id": {"_eq": "X-Hasura-User-Id"}}]}}}]},
+                 "select_permissions": [{"role": "user", "permission": {"columns": ["id", "name"], "filter": {"_and": [{"id": {"_eq": "X-Hasura-User-Id"}}, {"name": {"_ne": "x"}}]}}}]},
                 {"table": "article",
                  "object_relationships": [{"name": "author", "using": {"foreign_key_constraint_on": "author_id"}}]}
             ]}]
@@ -857,23 +968,63 @@ mod tests {
             snap(1, "author", &[(1, "id"), (2, "name")]),
             snap(2, "article", &[(1, "id"), (2, "author_id")]),
         ];
-        let mut author = snap(1, "author", &[(1, "id"), (2, "name")]);
-        author.column_types.insert(1, "text".into());
-        let after = [author, before[1].clone()];
-        let err = apply(&mut md(), "default", &before, &after, false).unwrap_err();
+        let retype = |attnum: i16| {
+            let mut author = snap(1, "author", &[(1, "id"), (2, "name")]);
+            author.column_types.insert(attnum, "text".into());
+            [author, before[1].clone()]
+        };
+        // `name` is compared with a static value.
+        let err = apply(&mut md(), "default", &before, &retype(2), false).unwrap_err();
         assert_eq!(
             err.error.message,
-            "cannot change type of column \"id\" in table \"author\" because of the following dependencies: permission author.user.select in source \"default\""
+            "cannot change type of column \"name\" in table \"author\" because of the following dependencies: permission author.user.select in source \"default\""
         );
-        // Unused columns may change freely.
-        let mut author = snap(1, "author", &[(1, "id"), (2, "name")]);
-        author.column_types.insert(2, "varchar".into());
-        let after = [author, before[1].clone()];
-        let mut m = md();
-        m.sources[0].tables[0].select_permissions[0]
-            .permission
-            .columns = Columns::List(vec!["id".into()]);
-        apply(&mut m, "default", &before, &after, false).unwrap();
+        // `id` is only compared with a session variable, listed in `columns` and used by
+        // relationships: none of these depend on its type.
+        apply(&mut md(), "default", &before, &retype(1), false).unwrap();
+    }
+
+    #[test]
+    fn type_dependencies_follow_v2() {
+        let m = hge_metadata::from_json(json!({
+            "version": 3,
+            "sources": [{"name": "default", "configuration": {}, "tables": [
+                {"table": "p"},
+                {"table": "t",
+                 "object_relationships": [{"name": "par", "using": {"foreign_key_constraint_on": "p"}}],
+                 "select_permissions": [{"role": "u", "permission": {"columns": ["id"],
+                    "filter": {"_and": [{"c": {"_in": [1, 2]}}, {"d": {"_ceq": "e"}},
+                                        {"n": {"_is_null": false}}, {"par": {"s": {"_eq": 5}}}]}}}],
+                 "insert_permissions": [{"role": "u", "permission": {"columns": ["id"], "check": {},
+                    "set": {"f": "x-hasura-user-id", "g": "5"}}}]}
+            ]}]
+        }))
+        .unwrap();
+        let tables = &m.sources[0].tables;
+        let before = [
+            snap(1, "p", &[(1, "id"), (2, "s")]),
+            snap(2, "t", &[(1, "p")]),
+        ];
+        let mut before = before;
+        before[1].foreign_keys = vec![(1, vec![1])];
+        let rels = Rels::new(tables, &before);
+        let deps = |table: &str, column: &str| {
+            typed_column_dependents(tables, &rels, &QualifiedTable::public(table), column)
+                .iter()
+                .map(|d| d.report("default"))
+                .collect::<Vec<_>>()
+        };
+        let select = vec!["permission t.u.select in source \"default\"".to_owned()];
+        let insert = vec!["permission t.u.insert in source \"default\"".to_owned()];
+        // Checked against v2.51.0-ce.
+        assert_eq!(deps("t", "c"), select);
+        assert_eq!(deps("t", "d"), Vec::<String>::new());
+        assert_eq!(deps("t", "e"), select);
+        assert_eq!(deps("t", "n"), Vec::<String>::new());
+        assert_eq!(deps("p", "s"), select);
+        assert_eq!(deps("t", "f"), Vec::<String>::new());
+        assert_eq!(deps("t", "g"), insert);
+        assert_eq!(deps("t", "id"), Vec::<String>::new());
     }
 
     #[test]
@@ -915,7 +1066,7 @@ mod tests {
         );
         assert_eq!(
             perm.filter,
-            json!({"_and": [{"uid": {"_eq": "X-Hasura-User-Id"}}]})
+            json!({"_and": [{"uid": {"_eq": "X-Hasura-User-Id"}}, {"name": {"_ne": "x"}}]})
         );
         let ArrayRelUsing::ForeignKey {
             foreign_key_constraint_on,

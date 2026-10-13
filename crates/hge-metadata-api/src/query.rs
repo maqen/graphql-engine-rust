@@ -1,6 +1,6 @@
 //! `POST /v2/query` (the schema API): `run_sql`, `bulk`, `concurrent_bulk` and JSON DML.
 
-use hge_core::Code;
+use hge_core::{Code, Session};
 use serde_json::Value;
 
 use crate::api::json_kind;
@@ -106,14 +106,14 @@ impl Query {
 }
 
 /// Handle a `/v2/query` body (the caller has checked the admin role).
-pub async fn handle_query<R: Runtime>(rt: &R, body: &[u8]) -> ApiResponse {
-    match handle(rt, body).await {
+pub async fn handle_query<R: Runtime>(rt: &R, session: &Session, body: &[u8]) -> ApiResponse {
+    match handle(rt, session, body).await {
         Ok(v) => ApiResponse::ok(v),
         Err(e) => e.to_response(),
     }
 }
 
-async fn handle<R: Runtime>(rt: &R, body: &[u8]) -> ApiResult<Value> {
+async fn handle<R: Runtime>(rt: &R, session: &Session, body: &[u8]) -> ApiResult<Value> {
     let value: Value = serde_json::from_slice(body)
         .map_err(|e| ApiError::bad(Code::InvalidJson, format!("Error in $: {e}")))?;
     let query = Query::parse(&value, "$")?;
@@ -133,11 +133,11 @@ async fn handle<R: Runtime>(rt: &R, body: &[u8]) -> ApiResult<Value> {
         ));
     }
     if !query.modifies_schema() {
-        return run_plain(rt, &query, "$").await;
+        return run_plain(rt, session, &query, "$").await;
     }
     // Schema changes go through the metadata pipeline; the metadata is written once at the
     // end, and only if every query succeeded.
-    let mut ctx = Ctx::begin(rt, true).await?;
+    let mut ctx = Ctx::begin(rt, session, true).await?;
     match run_checked(&mut ctx, &query, "$").await {
         Ok(result) => {
             ctx.commit().await?;
@@ -150,23 +150,27 @@ async fn handle<R: Runtime>(rt: &R, body: &[u8]) -> ApiResult<Value> {
     }
 }
 
-async fn run_plain<R: Runtime>(rt: &R, query: &Query, path: &str) -> ApiResult<Value> {
+async fn run_plain<R: Runtime>(
+    rt: &R,
+    session: &Session,
+    query: &Query,
+    path: &str,
+) -> ApiResult<Value> {
     match query {
-        Query::RunSql(args) => run_sql::run_plain(rt, args)
+        Query::RunSql(args) => run_sql::run_plain(rt, session, args)
             .await
             .map_err(|e| e.with_path(path)),
         Query::Bulk(items) => {
             let mut out = Vec::with_capacity(items.len());
             for (i, item) in items.iter().enumerate() {
-                out.push(Box::pin(run_plain(rt, item, &format!("$[{i}]"))).await?);
+                out.push(Box::pin(run_plain(rt, session, item, &format!("$[{i}]"))).await?);
             }
             Ok(Value::Array(out))
         }
         Query::ConcurrentBulk(items) => {
-            let futures = items
-                .iter()
-                .enumerate()
-                .map(|(i, item)| async move { run_plain(rt, item, &format!("$[{i}]")).await });
+            let futures = items.iter().enumerate().map(|(i, item)| async move {
+                run_plain(rt, session, item, &format!("$[{i}]")).await
+            });
             let results = futures::future::join_all(futures).await;
             results
                 .into_iter()
@@ -197,7 +201,7 @@ async fn run_checked<R: Runtime>(
             }
             Ok(Value::Array(out))
         }
-        other => run_plain(ctx.rt, other, path).await,
+        other => run_plain(ctx.rt, ctx.session, other, path).await,
     }
 }
 

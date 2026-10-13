@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 
 use deadpool_postgres::GenericClient;
-use hge_core::{Code, QualifiedTable};
+use hge_core::{Code, QualifiedTable, Session};
 use hge_postgres::introspect;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -201,7 +201,7 @@ pub fn split_statements(sql: &str) -> Vec<String> {
 }
 
 /// Run `run_sql` without touching metadata.
-pub async fn run_plain<R: Runtime>(rt: &R, args: &RunSql) -> ApiResult<Value> {
+pub async fn run_plain<R: Runtime>(rt: &R, session: &Session, args: &RunSql) -> ApiResult<Value> {
     let source = rt
         .source(None, &args.source)
         .ok_or_else(|| source_missing(&args.source))?;
@@ -228,21 +228,22 @@ pub async fn run_plain<R: Runtime>(rt: &R, args: &RunSql) -> ApiResult<Value> {
         .start()
         .await
         .map_err(|e| sql_error(e, "BEGIN"))?;
-    set_session(&tx).await?;
+    set_session(&tx, session).await?;
     // Dropping `tx` (on error, or if the request goes away) rolls back.
     let msgs = tx.simple_query(sql).await.map_err(|e| sql_error(e, sql))?;
     tx.commit().await.map_err(|e| sql_error(e, "COMMIT"))?;
     Ok(result_json(&msgs))
 }
 
-/// Like V2, record the admin session and a trace context for event triggers fired by the SQL.
-async fn set_session(tx: &tokio_postgres::Transaction<'_>) -> ApiResult<()> {
+/// Like V2, record the caller's session and a trace context for event triggers fired by the
+/// SQL.
+async fn set_session(tx: &tokio_postgres::Transaction<'_>, session: &Session) -> ApiResult<()> {
     const SQL: &str = "SELECT set_config('hasura.user', $1, true), \
                        set_config('hasura.tracecontext', $2, true)";
     tx.execute(
         SQL,
         &[
-            &r#"{"x-hasura-role":"admin"}"#,
+            &session.variables.to_sorted_json_string(),
             &hge_events::delivery::new_trace_context(),
         ],
     )
@@ -276,7 +277,7 @@ pub async fn run_checked<R: Runtime>(ctx: &mut Ctx<'_, R>, args: &RunSql) -> Api
         .start()
         .await
         .map_err(|e| sql_error(e, "BEGIN"))?;
-    set_session(&tx).await?;
+    set_session(&tx, ctx.session).await?;
     let before = snapshot(&tx, &tracked).await?;
     let msgs = tx
         .simple_query(&args.sql)

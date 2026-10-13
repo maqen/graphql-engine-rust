@@ -70,6 +70,13 @@ impl SessionVariables {
                 .collect(),
         )
     }
+
+    /// The variables as V2 records them (`hasura.user`, an event's `session_variables`): a
+    /// JSON object with sorted keys.
+    pub fn to_sorted_json_string(&self) -> String {
+        let sorted: std::collections::BTreeMap<&str, &str> = self.iter().collect();
+        serde_json::to_string(&sorted).unwrap_or_default()
+    }
 }
 
 /// `true` if a header / claim name is a session variable (`x-hasura-` prefix).
@@ -108,6 +115,18 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sorted_json_matches_v2() {
+        let mut vars = SessionVariables::new();
+        vars.insert("X-Hasura-ZZ", "1");
+        vars.insert("x-hasura-role", "admin");
+        vars.insert("x-hasura-aa", "2");
+        assert_eq!(
+            vars.to_sorted_json_string(),
+            r#"{"x-hasura-aa":"2","x-hasura-role":"admin","x-hasura-zz":"1"}"#
+        );
+    }
 
     #[test]
     fn session_vars_are_case_insensitive() {

@@ -7,7 +7,7 @@
 //! optimistic `resource_version` check), announced to other instances, and swapped into the
 //! running server.
 
-use hge_core::{Code, InconsistentObject};
+use hge_core::{Code, InconsistentObject, Session};
 use hge_metadata::Metadata;
 use hge_metadata::store::Invalidations;
 use serde_json::Value;
@@ -42,6 +42,8 @@ impl Check {
 
 pub struct Ctx<'a, R: Runtime> {
     pub rt: &'a R,
+    /// The caller (an admin), recorded with events and SQL the request causes.
+    pub session: &'a Session,
     _guard: Option<MutexGuard<'a, ()>>,
     /// The working copy.
     pub metadata: Metadata,
@@ -76,7 +78,7 @@ pub struct Snapshot<P> {
 impl<'a, R: Runtime> Ctx<'a, R> {
     /// Start a request: take the lock (for requests that may write) and read the stored
     /// metadata, falling back to the installed metadata if nothing is stored.
-    pub async fn begin(rt: &'a R, lock: bool) -> ApiResult<Self> {
+    pub async fn begin(rt: &'a R, session: &'a Session, lock: bool) -> ApiResult<Self> {
         let guard = if lock { Some(rt.lock().await) } else { None };
         let installed = rt.installed();
         let (metadata, resource_version) = match rt.store().fetch().await? {
@@ -101,6 +103,7 @@ impl<'a, R: Runtime> Ctx<'a, R> {
         };
         Ok(Ctx {
             rt,
+            session,
             _guard: guard,
             metadata,
             resource_version,
