@@ -218,6 +218,9 @@ async fn websockets() {
     })
     .await;
     init_timeout(&server).await;
+
+    let server = start(&url, |c| c.websocket.queue_size = 0).await;
+    overflow(&server).await;
 }
 
 /// `T_aggregate` is a subscription root field too, multiplexed like the others.
@@ -609,6 +612,108 @@ async fn restrictions(server: &Server) {
         recv(&mut ws).await,
         data("4", "data", json!({"message": [{"id": 2}]}))
     );
+
+    // One root field, unless the operation has V2's `@_multiple_top_level_fields`.
+    let two = "{ a: message(where: {id: {_eq: 1}}) { id } b: message_by_pk(id: 2) { id } }";
+    let start =
+        |id: &str, query: String| json!({"id": id, "type": "start", "payload": {"query": query}});
+    send(&mut ws, start("5", format!("subscription {two}"))).await;
+    assert_eq!(
+        recv(&mut ws).await["payload"]["errors"][0]["message"],
+        "subscriptions must select one top level field"
+    );
+    assert_eq!(recv(&mut ws).await, json!({"type": "complete", "id": "5"}));
+    send(
+        &mut ws,
+        start(
+            "6",
+            format!("subscription @_multiple_top_level_fields {two}"),
+        ),
+    )
+    .await;
+    assert_eq!(
+        recv(&mut ws).await,
+        data("6", "data", json!({"a": [{"id": 1}], "b": {"id": 2}}))
+    );
+    let mixed = "subscription @_multiple_top_level_fields { message { id } message_feed(batch_size: 1, cursor: {initial_value: {id: 0}}) { id } }";
+    send(&mut ws, start("7", mixed.to_owned())).await;
+    assert_eq!(
+        recv(&mut ws).await["payload"]["errors"][0]["message"],
+        "streaming and livequery subscriptions cannot be executed in the same subscription"
+    );
+    assert_eq!(recv(&mut ws).await, json!({"type": "complete", "id": "7"}));
+    send(
+        &mut ws,
+        start(
+            "8",
+            "query @_multiple_top_level_fields { message { id } }".to_owned(),
+        ),
+    )
+    .await;
+    assert_eq!(
+        recv(&mut ws).await["payload"]["errors"][0]["message"],
+        "directive '_multiple_top_level_fields' is not allowed on a query"
+    );
+    assert_eq!(recv(&mut ws).await, json!({"type": "complete", "id": "8"}));
+
+    // Aggregates are live queries too.
+    send(
+        &mut ws,
+        start(
+            "9",
+            "subscription { message_aggregate { aggregate { count } } }".to_owned(),
+        ),
+    )
+    .await;
+    let msg = recv(&mut ws).await;
+    assert!(
+        msg["payload"]["data"]["message_aggregate"]["aggregate"]["count"].is_u64(),
+        "{msg}"
+    );
+
+    // Upgrades are only served on the GraphQL endpoints.
+    for path in ["/v2/graphql", "/healthz", "/v1/metadata"] {
+        let req = format!("ws://{}{path}", server.addr)
+            .into_client_request()
+            .unwrap();
+        match tokio_tungstenite::connect_async(req).await {
+            Err(tokio_tungstenite::tungstenite::Error::Http(resp)) => {
+                assert_eq!(resp.status(), 404, "{path}");
+                let body: Value = serde_json::from_slice(resp.body().as_deref().unwrap()).unwrap();
+                assert_eq!(body["extensions"]["code"], "not-found");
+            }
+            other => panic!("expected a 404 on {path}, got {other:?}"),
+        }
+    }
+}
+
+/// With no room in the send queue, every result overflows.
+async fn overflow(server: &Server) {
+    let mut ws = server.connect(None).await;
+    init(&mut ws, admin()).await;
+    let sub =
+        "subscription { message_feed(batch_size: 1, cursor: {initial_value: {id: 0}}) { id } }";
+    send(
+        &mut ws,
+        json!({"id": "1", "type": "start", "payload": {"query": sub}}),
+    )
+    .await;
+    let err = recv(&mut ws).await;
+    assert_eq!(
+        err["payload"]["errors"][0],
+        json!({
+            "message": "This operation's result could not be delivered because the connection's send queue was at capacity, so it has been stopped. Please retry, using this cursor as the initial_value to resume from exactly where results were lost: {\"id\":\"0\"}.",
+            "extensions": {"path": "$", "code": "unexpected", "resume_cursor": {"id": "0"}}
+        })
+    );
+    assert_eq!(recv(&mut ws).await, json!({"type": "complete", "id": "1"}));
+    send(&mut ws, json!({"id": "2", "type": "start", "payload": {"query": "subscription { message_by_pk(id: 1) { id } }"}})).await;
+    assert_eq!(
+        recv(&mut ws).await["payload"]["errors"][0]["extensions"],
+        json!({"path": "$", "code": "unexpected"})
+    );
+    assert_eq!(recv(&mut ws).await, json!({"type": "complete", "id": "2"}));
+    quiet(&mut ws).await;
 }
 
 async fn auth_failures(server: &Server) {

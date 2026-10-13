@@ -44,9 +44,9 @@ pub fn lower(rs: &RoleSchema, op: &NormalizedOperation<'_>) -> Result<Operation,
                 FieldKind::SelectStream(table) => {
                     RootField::Database(Box::new(DatabaseRootField {
                         source: table.source.clone(),
-                        query: QueryRoot::Stream(crate::subscription::lower_stream(
+                        query: QueryRoot::Stream(Box::new(crate::subscription::lower_stream(
                             &lw, table, field,
-                        )?),
+                        )?)),
                     }))
                 }
                 FieldKind::Mutation(m) => crate::mutation::lower::root_field(&lw, m, field)?,
@@ -72,6 +72,7 @@ pub fn lower(rs: &RoleSchema, op: &NormalizedOperation<'_>) -> Result<Operation,
     Ok(Operation {
         kind: op.kind,
         root_fields,
+        multiple_top_level_fields: op.multiple_top_level_fields,
     })
 }
 

@@ -68,7 +68,7 @@ impl SourceExecutor for Numbers {
 struct Sink(mpsc::UnboundedSender<String>);
 
 impl Subscriber for Sink {
-    fn on_data(&self, fields: &[Option<String>]) {
+    fn on_data(&self, fields: &[Option<String>], _cursor: Option<&str>) {
         let _ = self.0.send(fields[0].clone().unwrap_or_default());
     }
 
@@ -235,6 +235,42 @@ async fn streams_advance_their_cursor() {
     assert_eq!(next(&mut ra).await, "[7]");
     assert_eq!(next(&mut rb).await, "[7]");
     quiet(&mut ra).await;
+}
+
+/// Records the cursor each result was fetched from.
+struct CursorSink(mpsc::UnboundedSender<String>);
+
+impl Subscriber for CursorSink {
+    fn on_data(&self, fields: &[Option<String>], cursor: Option<&str>) {
+        let fields = fields[0].as_deref().unwrap_or_default();
+        let _ = self.0.send(format!("{fields} from {cursor:?}"));
+    }
+
+    fn on_error(&self, error: &Error) {
+        let _ = self.0.send(format!("error: {error}"));
+    }
+}
+
+/// Each batch carries the cursor it was fetched from (the one to resume from if it is
+/// lost); live results carry none.
+#[tokio::test]
+async fn results_carry_the_cursor_they_were_fetched_from() {
+    let db = Arc::new(Numbers::default());
+    *db.rows.lock().unwrap() = vec![1, 2, 3];
+    let reg = registry();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let _h = reg
+        .subscribe(db.clone(), stream(0, 2), Arc::new(CursorSink(tx)))
+        .await
+        .unwrap();
+    assert_eq!(next(&mut rx).await, r#"[1,2] from Some("0")"#);
+    assert_eq!(next(&mut rx).await, r#"[3] from Some("2")"#);
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let _h = reg
+        .subscribe(db.clone(), live(1), Arc::new(CursorSink(tx)))
+        .await
+        .unwrap();
+    assert_eq!(next(&mut rx).await, "[2,3] from None");
 }
 
 /// [`Numbers`] whose second execution (the first poll) is slow.

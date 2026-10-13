@@ -239,13 +239,15 @@ mod tests {
             batch_size: 2,
             cursor: StreamCursor {
                 column: "id".to_owned(),
+                field: "id".to_owned(),
                 ty: int4(),
                 direction: OrderDirection::Desc,
                 initial_value: Value::literal("10", int4()),
                 redact: None,
             },
         };
-        let q = translate_multiplexed(&[&QueryRoot::Stream(stream)], &Session::admin()).unwrap();
+        let q = translate_multiplexed(&[&QueryRoot::Stream(Box::new(stream))], &Session::admin())
+            .unwrap();
         assert_eq!(q.cursor, Some(0));
         assert_eq!(
             q.variables,

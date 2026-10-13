@@ -41,6 +41,7 @@ pub fn router(engine: Arc<Engine>) -> Router {
             .route("/v1/query", axum::routing::post(crate::v1_query::handler));
     }
     let mut router = router
+        .layer(axum::middleware::from_fn(ws::reject_other_paths))
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
         .layer(compression());
     if !engine.config.disable_cors {

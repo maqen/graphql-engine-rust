@@ -59,6 +59,8 @@ pub struct NormalizedOperation<'s> {
     pub kind: OperationKind,
     pub root_type: &'s str,
     pub fields: Vec<SelectedField<'s>>,
+    /// The operation carries `@_multiple_top_level_fields` (subscriptions only).
+    pub multiple_top_level_fields: bool,
 }
 
 /// Select the operation, coerce variables, and normalise its selection set.
@@ -80,6 +82,7 @@ pub fn normalize<'s>(
             None => return Err(Error::validation("no subscriptions exist")),
         },
     };
+    let multiple_top_level_fields = operation_directives(op)?;
     let vars = coerce_variables(schema, op, variables)?;
     let cx = Context {
         schema,
@@ -94,8 +97,33 @@ pub fn normalize<'s>(
         kind,
         root_type,
         fields,
+        multiple_top_level_fields,
     })
 }
+
+/// Check the operation's directives; returns whether `@_multiple_top_level_fields` is present.
+fn operation_directives(op: &OperationDefinition) -> Result<bool, Error> {
+    let mut multiple = false;
+    for d in &op.directives {
+        if d.node.name.node.as_str() == MULTIPLE_TOP_LEVEL_FIELDS {
+            if op.ty != OperationType::Subscription {
+                let on = match op.ty {
+                    OperationType::Query => "a query",
+                    _ => "a mutation",
+                };
+                return Err(Error::validation(format!(
+                    "directive '{MULTIPLE_TOP_LEVEL_FIELDS}' is not allowed on {on}"
+                ))
+                .with_path("$"));
+            }
+            multiple = true;
+        }
+    }
+    Ok(multiple)
+}
+
+/// V2's hidden, test-only subscription directive.
+const MULTIPLE_TOP_LEVEL_FIELDS: &str = "_multiple_top_level_fields";
 
 fn select_operation<'d>(
     doc: &'d ExecutableDocument,
@@ -398,6 +426,12 @@ impl<'s, 'd> Context<'s, 'd> {
                 "skip" => true,
                 "include" => false,
                 "cached" => continue,
+                MULTIPLE_TOP_LEVEL_FIELDS => {
+                    return Err(Error::validation(format!(
+                        "directive '{MULTIPLE_TOP_LEVEL_FIELDS}' is not allowed on a field"
+                    ))
+                    .with_path(path.to_owned()));
+                }
                 other => {
                     return Err(Error::validation(format!(
                         "directive '{other}' is not defined in the schema"

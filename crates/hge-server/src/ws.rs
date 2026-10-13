@@ -140,6 +140,33 @@ impl<S: Send + Sync> FromRequestParts<S> for MaybeUpgrade {
     }
 }
 
+/// Middleware: a WebSocket upgrade on a path that does not serve websockets gets V2's 404,
+/// whatever route (if any) the path has. V2 checks the path before any HTTP routing.
+pub async fn reject_other_paths(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let is_upgrade = req
+        .headers()
+        .get(header::UPGRADE)
+        .is_some_and(|v| v.as_bytes().eq_ignore_ascii_case(b"websocket"));
+    // The relay endpoints are not implemented yet; their upgrades fall through to a 404.
+    let served = matches!(
+        req.uri().path(),
+        "/v1/graphql" | "/v1alpha1/graphql" | "/v1/relay" | "/v1beta1/relay"
+    );
+    if !is_upgrade || served {
+        return next.run(req).await;
+    }
+    {
+        let body = serde_json::json!({
+            "message": "only '/v1/graphql', '/v1alpha1/graphql', '/v1/relay' and '/v1beta1/relay' are supported on websockets",
+            "extensions": { "path": "$", "code": "not-found" },
+        });
+        (StatusCode::NOT_FOUND, axum::Json(body)).into_response()
+    }
+}
+
 /// Accept (or refuse) a WebSocket upgrade.
 pub fn upgrade(
     engine: Arc<Engine>,
@@ -224,9 +251,9 @@ fn origin_matches(pattern: &str, origin: &str) -> bool {
 enum Event {
     /// Close the connection (server-initiated).
     Close(u16, String),
-    /// A subscription's results could not be queued: stop it.
-    /// A subscription's results overflowed the send queue: (operation id, generation).
-    Overflow(String, u64),
+    /// A subscription's results overflowed the send queue: (operation id, generation, the
+    /// cursor to resume a stream from).
+    Overflow(String, u64, Option<Json>),
 }
 
 /// Frames for the writer.
@@ -406,7 +433,7 @@ impl Connection {
                 },
                 Some(event) = events_rx.recv() => match event {
                     Event::Close(code, reason) => conn.close(code, reason),
-                    Event::Overflow(op, generation) => conn.on_overflow(&op, generation),
+                    Event::Overflow(op, generation, cursor) => conn.on_overflow(&op, generation, cursor),
                 },
                 () = &mut init_deadline, if matches!(conn.state, ConnState::NotInitialised) && !conn.closing => {
                     let code = match protocol {
@@ -655,6 +682,10 @@ impl Connection {
             .get(source)
             .ok_or_else(|| Error::unexpected(format!("source \"{source}\" is not available")))?
             .clone();
+        let cursor_field = match fields.as_slice() {
+            [QueryRoot::Stream(s)] => Some(s.cursor.field.clone()),
+            _ => None,
+        };
         let query = executor.multiplexed_query(&fields, session)?;
         let registry = if query.cursor.is_some() {
             &self.engine.ws.streaming
@@ -664,6 +695,7 @@ impl Connection {
         let sink = Arc::new(OperationSink {
             id: id.to_owned(),
             generation,
+            cursor_field,
             protocol: self.protocol,
             out: self.out.clone(),
             events: self.events.clone(),
@@ -674,14 +706,17 @@ impl Connection {
     }
 
     /// `generation` tells the overflowed subscription apart from a later one reusing its id.
-    fn on_overflow(&mut self, id: &str, generation: u64) {
+    fn on_overflow(&mut self, id: &str, generation: u64, resume_cursor: Option<Json>) {
         if self
             .subscriptions
             .get(id)
             .is_some_and(|(g, _)| *g == generation)
         {
             self.subscriptions.remove(id);
-            let e = Error::unexpected(OVERFLOW_MESSAGE);
+            let e = match resume_cursor {
+                None => Error::unexpected(OVERFLOW_MESSAGE),
+                Some(cursor) => stream_overflow_error(cursor),
+            };
             let error = error_json(&e, self.endpoint);
             self.out
                 .control(error_message(self.protocol, self.endpoint, id, error));
@@ -763,24 +798,18 @@ impl Layout {
 
 /// Check V2's subscription restrictions (spec 09 §5) and collect the database root fields.
 fn subscription_fields(op: &hge_ir::Operation) -> Result<(&str, Vec<&QueryRoot>, Layout), Error> {
-    if op.root_fields.len() != 1 {
+    if op.root_fields.len() != 1 && !op.multiple_top_level_fields {
         return Err(Error::validation(
             "subscriptions must select one top level field",
         ));
     }
-    let mut source = None;
+    let mut sources = vec![];
     let mut fields = vec![];
     let mut layout = vec![];
     for (alias, rf) in &op.root_fields {
         match rf {
             RootField::Database(db) => {
-                if source.is_some_and(|s| s != &*db.source) {
-                    return Err(Error::new(
-                        Code::NotSupported,
-                        "all fields of a subscription must be from the same source",
-                    ));
-                }
-                source = Some(&*db.source);
+                sources.push(&*db.source);
                 layout.push(alias.clone());
                 fields.push(&db.query);
             }
@@ -799,14 +828,51 @@ fn subscription_fields(op: &hge_ir::Operation) -> Result<(&str, Vec<&QueryRoot>,
             }
         }
     }
-    let source = source.ok_or_else(|| Error::validation("no subscriptions exist"))?;
+    let streams = fields
+        .iter()
+        .filter(|f| matches!(f, QueryRoot::Stream(_)))
+        .count();
+    if streams > 0 && streams < fields.len() {
+        return Err(Error::new(
+            Code::NotSupported,
+            "streaming and livequery subscriptions cannot be executed in the same subscription",
+        ));
+    }
+    if streams > 1 {
+        return Err(Error::new(
+            Code::NotSupported,
+            "exactly one root field is allowed for streaming subscriptions",
+        ));
+    }
+    let source = *sources
+        .first()
+        .ok_or_else(|| Error::validation("no subscriptions exist"))?;
+    if sources.iter().any(|s| *s != source) {
+        return Err(Error::new(
+            Code::NotSupported,
+            "all fields of a subscription must be from the same source",
+        ));
+    }
     Ok((source, fields, Layout(layout)))
+}
+
+/// The overflow error of a stream: it says which cursor to resume from (spec 09 §1.6).
+fn stream_overflow_error(cursor: Json) -> Error {
+    let message = format!(
+        "{}, using this cursor as the initial_value to resume from exactly where results were lost: {cursor}.",
+        OVERFLOW_MESSAGE.trim_end_matches('.')
+    );
+    let extensions =
+        serde_json::json!({ "path": "$", "code": "unexpected", "resume_cursor": cursor });
+    Error::unexpected(message).with_extensions(extensions)
 }
 
 /// Delivers a subscription's results to its connection.
 struct OperationSink {
     id: String,
     generation: u64,
+    /// Streams: the GraphQL name of the cursor column.
+    cursor_field: Option<String>,
     protocol: Protocol,
     out: Outbox,
     events: mpsc::UnboundedSender<Event>,
@@ -815,15 +881,22 @@ struct OperationSink {
 }
 
 impl Subscriber for OperationSink {
-    fn on_data(&self, fields: &[Option<String>]) {
+    fn on_data(&self, fields: &[Option<String>], cursor: Option<&str>) {
         if self.overflowed.load(Ordering::Relaxed) {
             return;
         }
         let msg = self.protocol.data(&self.id, &self.layout.render(fields));
         if !self.out.data(msg) && !self.overflowed.swap(true, Ordering::SeqCst) {
-            let _ = self
-                .events
-                .send(Event::Overflow(self.id.clone(), self.generation));
+            let resume_cursor = self.cursor_field.as_ref().map(|field| {
+                let mut c = serde_json::Map::new();
+                c.insert(field.clone(), cursor.map_or(Json::Null, Json::from));
+                Json::Object(c)
+            });
+            let _ = self.events.send(Event::Overflow(
+                self.id.clone(),
+                self.generation,
+                resume_cursor,
+            ));
         }
     }
 
