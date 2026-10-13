@@ -1,0 +1,126 @@
+{
+ "version": 3,
+ "sources": [
+  {
+   "name": "default",
+   "kind": "postgres",
+   "tables": [
+    {
+     "table": {
+      "name": "user",
+      "schema": "public"
+     },
+     "select_permissions": [
+      {
+       "role": "user",
+       "permission": {
+        "columns": "*",
+        "filter": {}
+       }
+      }
+     ]
+    }
+   ],
+   "configuration": {
+    "connection_info": {
+     "database_url": {
+      "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+     },
+     "isolation_level": "read-committed",
+     "use_prepared_statements": false
+    }
+   }
+  }
+ ],
+ "query_collections": [
+  {
+   "name": "collection_1",
+   "definition": {
+    "queries": [
+     {
+      "name": "query_1",
+      "query": "query {\n  user{\n    id\n    name\n    company\n  }\n}\n"
+     },
+     {
+      "name": "query_2",
+      "query": "query ($id: Int!){\n  user_by_pk(id: $id){\n    id\n    __typename\n    name\n    company\n  }\n}\n"
+     },
+     {
+      "name": "query_3",
+      "query": "fragment userDetails on user {\n  id\n  name\n  company\n}\nquery {\n  user{\n    ...userDetails\n  }\n}\n"
+     }
+    ]
+   },
+   "comment": "First query collection"
+  },
+  {
+   "name": "collection_2",
+   "definition": {
+    "queries": [
+     {
+      "name": "role_query",
+      "query": "query { user { id } }"
+     }
+    ]
+   }
+  },
+  {
+   "name": "collection_3",
+   "definition": {
+    "queries": [
+     {
+      "name": "names",
+      "query": "query names { user { name } }"
+     }
+    ]
+   }
+  }
+ ],
+ "allowlist": [
+  {
+   "collection": "collection_1",
+   "scope": {
+    "global": true
+   }
+  },
+  {
+   "collection": "collection_2",
+   "scope": {
+    "global": false,
+    "roles": [
+     "user"
+    ]
+   }
+  }
+ ],
+ "rest_endpoints": [
+  {
+   "name": "allowed",
+   "url": "allowed",
+   "methods": [
+    "GET"
+   ],
+   "comment": null,
+   "definition": {
+    "query": {
+     "collection_name": "collection_1",
+     "query_name": "query_1"
+    }
+   }
+  },
+  {
+   "name": "blocked",
+   "url": "blocked",
+   "methods": [
+    "GET"
+   ],
+   "comment": null,
+   "definition": {
+    "query": {
+     "collection_name": "collection_3",
+     "query_name": "names"
+    }
+   }
+  }
+ ]
+}

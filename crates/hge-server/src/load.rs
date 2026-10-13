@@ -203,6 +203,8 @@ pub struct Prepared {
     pub action_registry: Arc<ActionRegistry>,
     /// RESTified endpoints (`/api/rest/*`).
     pub rest: Arc<hge_rest::RestEndpoints>,
+    /// The allowlist, when `HASURA_GRAPHQL_ENABLE_ALLOWLIST` is set.
+    pub allowlist: Option<Arc<hge_rest::allowlist::Allowlist>>,
     pub inconsistencies: Vec<InconsistentObject>,
 }
 
@@ -325,6 +327,9 @@ pub async fn prepare(
     inconsistencies.extend(rest_issues);
     Prepared {
         rest: Arc::new(rest),
+        allowlist: config
+            .enable_allowlist
+            .then(|| Arc::new(hge_rest::allowlist::Allowlist::build(metadata))),
         sources,
         tables: Arc::new(tables),
         event_triggers: Arc::new(event_triggers),

@@ -1006,6 +1006,7 @@ name = "hge-rest"
 version = "0.1.0"
 dependencies = [
  "async-graphql-parser",
+ "async-graphql-value",
  "hge-core",
  "hge-metadata",
  "serde_json",
@@ -1031,6 +1032,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arc-swap",
+ "async-graphql-parser",
  "async-trait",
  "axum",
  "base64 0.22.1",

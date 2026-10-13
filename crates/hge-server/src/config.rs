@@ -73,6 +73,8 @@ pub struct ServerConfig {
     /// Values that take precedence over the process environment for `{{VAR}}` and
     /// `value_from_env` lookups in action metadata (tests, embedding).
     pub env_overrides: HashMap<String, String>,
+    /// `HASURA_GRAPHQL_ENABLE_ALLOWLIST`
+    pub enable_allowlist: bool,
     /// WebSockets and subscriptions (`HASURA_GRAPHQL_WEBSOCKET_*`, `..._MULTIPLEXED_*`).
     pub websocket: WebSocketConfig,
 }
@@ -114,6 +116,7 @@ impl Default for ServerConfig {
             async_actions_fetch_batch_size: 10,
             metadata_database_extensions_schema: "public".to_owned(),
             env_overrides: HashMap::new(),
+            enable_allowlist: false,
             websocket: WebSocketConfig::default(),
         }
     }

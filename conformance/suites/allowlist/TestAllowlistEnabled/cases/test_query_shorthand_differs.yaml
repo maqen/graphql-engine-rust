@@ -1,0 +1,17 @@
+upstream:
+  file: test_allowlist_queries.py
+  by_hand: true
+steps:
+- description: The shorthand form of an allowlisted typed query is a different query
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: '{ user { id name company } }'
+  response:
+    errors:
+    - extensions:
+        path: $
+        code: validation-failed
+      message: query is not allowed

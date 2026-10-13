@@ -73,19 +73,22 @@ async fn run(
 ) -> Result<(String, Vec<String>), Error> {
     let state = engine.state.load_full();
     // The raw path keeps percent-escapes, so an encoded `/` stays inside its segment.
-    let path = uri.path().strip_prefix("/api/rest/").unwrap_or_default();
+    let path = uri.path().strip_prefix("/api/rest").unwrap_or_default();
     let (endpoint, path_vars) = state
         .prepared
         .rest
         .lookup(RequestMethod::parse(method.as_str()), path)?;
     let query = parse_query_string(uri.query().unwrap_or_default());
     // Only a JSON object body contributes variables; anything else is ignored.
-    let body = serde_json::from_slice::<serde_json::Value>(body).ok();
+    let body = (!body.is_empty())
+        .then(|| serde_json::from_slice::<serde_json::Value>(body).ok())
+        .flatten();
     let variables = endpoint.variables(
         &query,
         body.as_ref().and_then(|b| b.as_object()),
         &path_vars,
     )?;
+    crate::policies::check_allowlist(&state, session, &endpoint.document, &endpoint.query)?;
     let rs = state.role_schema(&session.role, session.backend_only);
     let op = hge_schema::plan(&rs, &endpoint.document, None, &variables)?;
     let (body, cookies) =

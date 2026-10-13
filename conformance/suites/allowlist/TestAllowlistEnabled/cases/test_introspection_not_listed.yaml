@@ -1,0 +1,17 @@
+upstream:
+  file: test_allowlist_queries.py
+  by_hand: true
+steps:
+- description: Introspection must be allowlisted too
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: query { __schema { queryType { name } } }
+  response:
+    errors:
+    - extensions:
+        path: $
+        code: validation-failed
+      message: query is not allowed
