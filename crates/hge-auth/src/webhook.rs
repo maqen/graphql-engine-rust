@@ -151,12 +151,49 @@ impl Webhook {
         result
     }
 
+    fn method(&self) -> &'static str {
+        match self.config.mode {
+            HookMode::Get => "GET",
+            HookMode::Post => "POST",
+        }
+    }
+
+    /// A V2 `webhook-log` (`Hasura.Server.Logging.WebHookLog`):
+    /// `{"status_code","url","method","http_error","response","message"}`.
+    fn log(
+        &self,
+        level: tracing::Level,
+        status: Option<u16>,
+        http_error: Option<Value>,
+        response: Option<&[u8]>,
+        message: Option<&str>,
+    ) {
+        let detail = || {
+            serde_json::json!({
+            "status_code": status,
+            "url": self.config.url,
+            "method": self.method(),
+            "http_error": http_error,
+            "response": response.map(String::from_utf8_lossy),
+            "message": message,
+            })
+        };
+        // Built only when the log is enabled.
+        match level {
+            tracing::Level::ERROR => tracing::error!(target: "webhook-log", detail = %detail()),
+            tracing::Level::WARN => tracing::warn!(target: "webhook-log", detail = %detail()),
+            _ => tracing::info!(target: "webhook-log", detail = %detail()),
+        }
+    }
+
     async fn call(&self, request: reqwest::RequestBuilder) -> Result<Authenticated, AuthError> {
-        let failed = |e: &dyn std::fmt::Display| {
-            tracing::error!(target: "webhook-log", url = %self.config.url, error = %e, "auth webhook request failed");
+        // V2's `logAndThrow`: an http-client exception, reading the body included.
+        let failed = |e: reqwest::Error| {
+            let http_error = crate::http_exception::to_json(&e, self.method(), &self.config.url);
+            self.log(tracing::Level::ERROR, None, Some(http_error), None, None);
             AuthError::internal("webhook authentication request failed")
         };
-        let resp = request.send().await.map_err(|e| failed(&e))?;
+        let resp = request.send().await.map_err(failed)?;
         let status = resp.status();
         let set_cookies: Vec<HeaderValue> = resp
             .headers()
@@ -164,18 +201,40 @@ impl Webhook {
             .iter()
             .cloned()
             .collect();
-        let body = resp.bytes().await.map_err(|e| failed(&e))?;
+        let body = resp.bytes().await.map_err(failed)?;
+        let log_error =
+            |status| self.log(tracing::Level::ERROR, Some(status), None, Some(&body), None);
         match status.as_u16() {
             200 => {
-                let mut auth = parse_response(&body)?;
+                let (mut auth, obj) = match parse_response(&body) {
+                    Ok(parsed) => parsed,
+                    Err(Rejected::Decode(e)) => {
+                        log_error(200);
+                        return Err(e);
+                    }
+                    Err(Rejected::Session(e)) => return Err(e),
+                };
+                self.log(tracing::Level::INFO, Some(200), None, None, None);
+                auth.expires_at = expiry(&obj, SystemTime::now(), |message| {
+                    self.log(
+                        tracing::Level::WARN,
+                        Some(200),
+                        None,
+                        Some(&body),
+                        Some(message),
+                    )
+                });
                 auth.set_cookies = set_cookies;
                 Ok(auth)
             }
-            401 => Err(AuthError::unauthorized(
-                "Authentication hook unauthorized this request",
-            )),
+            401 => {
+                log_error(401);
+                Err(AuthError::unauthorized(
+                    "Authentication hook unauthorized this request",
+                ))
+            }
             other => {
-                tracing::error!(target: "webhook-log", url = %self.config.url, status = other, "auth webhook returned an unexpected status");
+                log_error(other);
                 Err(AuthError::internal(
                     "Invalid response from authorization hook",
                 ))
@@ -184,13 +243,19 @@ impl Webhook {
     }
 }
 
+/// Why a 200 answer was refused: V2 logs a body it cannot decode, not a bad session.
+enum Rejected {
+    Decode(AuthError),
+    Session(AuthError),
+}
+
 /// A 200 body: an object of strings. `x-hasura-*` keys are the session; the role is
-/// required; `Cache-Control` / `Expires` keys (case-sensitive) give the expiry.
-fn parse_response(body: &[u8]) -> Result<Authenticated, AuthError> {
+/// required. The expiry is left to [`expiry`].
+fn parse_response(body: &[u8]) -> Result<(Authenticated, Map<String, Value>), Rejected> {
     let invalid = |detail: String| {
-        AuthError::internal(format!(
+        Rejected::Decode(AuthError::internal(format!(
             "Invalid response from authorization hook: {detail}"
-        ))
+        )))
     };
     let value: Value =
         serde_json::from_slice(body).map_err(|e| invalid(format!("Error in $: {e}")))?;
@@ -217,35 +282,37 @@ fn parse_response(body: &[u8]) -> Result<Authenticated, AuthError> {
         .filter(|r| !r.is_empty())
         .map(RoleName::new)
         .ok_or_else(|| {
-            AuthError::bad_request(
+            Rejected::Session(AuthError::bad_request(
                 Code::InvalidParams,
                 format!("\"{ROLE_HEADER}\" not found in session variables"),
-            )
+            ))
         })?;
-    let expires_at = expiry(&obj, SystemTime::now());
-    Ok(Authenticated {
+    let auth = Authenticated {
         session: crate::make_session(role, vars, false),
-        expires_at,
+        expires_at: None,
         set_cookies: vec![],
-    })
+    };
+    Ok((auth, obj))
 }
 
-fn expiry(obj: &Map<String, Value>, now: SystemTime) -> Option<SystemTime> {
+/// V2's webhook expiry: `Cache-Control` (keys are case-sensitive) through `parseMaxAge`,
+/// else `Expires`. Each parse failure is passed to `warn` with V2's text, and the next
+/// source is tried.
+fn expiry(
+    obj: &Map<String, Value>,
+    now: SystemTime,
+    mut warn: impl FnMut(&str),
+) -> Option<SystemTime> {
     if let Some(cc) = obj.get("Cache-Control").and_then(Value::as_str) {
-        match cache_control::parse(cc) {
-            Ok(cc) => {
-                if let Some(age) = cc.max_age {
-                    return Some(cache_control::add_secs(now, age));
-                }
-            }
-            Err(e) => {
-                tracing::warn!(target: "webhook-log", error = %e, "invalid Cache-Control from auth webhook")
-            }
+        match cache_control::parse(cc).map(|cc| cc.max_age.or(cc.s_max_age)) {
+            Ok(Some(age)) => return Some(cache_control::add_secs(now, age)),
+            Ok(None) => warn("could not find max-age/s-maxage"),
+            Err(e) => warn(&e),
         }
     }
     let expires = obj.get("Expires").and_then(Value::as_str)?;
     cache_control::parse_http_date(expires)
-        .inspect_err(|e| tracing::warn!(target: "webhook-log", error = %e, "invalid Expires from auth webhook"))
+        .inspect_err(|_| warn("Value of Expires header is not a valid timestamp"))
         .ok()
 }
 
@@ -273,13 +340,17 @@ mod tests {
 
     #[test]
     fn responses() {
-        let ok = parse_response(br#"{"X-Hasura-Role":"user","X-Hasura-User-Id":"1","other":"x","Cache-Control":"max-age=600"}"#).unwrap();
+        let parse = |body: &[u8]| parse_response(body).map(|(auth, _)| auth);
+        let ok = parse(br#"{"X-Hasura-Role":"user","X-Hasura-User-Id":"1","other":"x"}"#)
+            .ok()
+            .unwrap();
         assert_eq!(ok.session.role.as_str(), "user");
         assert_eq!(ok.session.variables.get("x-hasura-user-id"), Some("1"));
         assert_eq!(ok.session.variables.get("other"), None);
-        assert!(ok.expires_at.is_some());
 
-        let err = parse_response(br#"{"X-Hasura-User-Id":"1"}"#).unwrap_err();
+        let Err(Rejected::Session(err)) = parse(br#"{"X-Hasura-User-Id":"1"}"#) else {
+            panic!("a missing role is a session error")
+        };
         assert_eq!(err.status, http::StatusCode::BAD_REQUEST);
         assert_eq!(err.error.code, Code::InvalidParams);
         assert_eq!(
@@ -287,17 +358,43 @@ mod tests {
             "\"x-hasura-role\" not found in session variables"
         );
 
-        let err = parse_response(br#"{"X-Hasura-Role":"user","X-Hasura-User-Id":1}"#).unwrap_err();
+        let Err(Rejected::Decode(err)) = parse(br#"{"X-Hasura-Role":"user","X-Hasura-User-Id":1}"#)
+        else {
+            panic!("a non-string value is a decode error")
+        };
         assert_eq!(err.status, http::StatusCode::INTERNAL_SERVER_ERROR);
         assert!(
             err.error
                 .message
                 .starts_with("Invalid response from authorization hook: ")
         );
+    }
 
-        let t =
-            parse_response(br#"{"X-Hasura-Role":"u","Expires":"Wed, 21 Oct 2015 07:28:00 GMT"}"#)
-                .unwrap();
-        assert!(t.expires_at.is_some());
+    #[test]
+    fn expiries() {
+        let now = SystemTime::UNIX_EPOCH;
+        let at = |body: Value| {
+            let mut warnings = vec![];
+            let t = expiry(body.as_object().unwrap(), now, |w| {
+                warnings.push(w.to_owned())
+            });
+            (t, warnings)
+        };
+        let (t, w) = at(serde_json::json!({"Cache-Control": "max-age=600"}));
+        assert_eq!(t, Some(now + std::time::Duration::from_secs(600)));
+        assert!(w.is_empty());
+        let (t, w) = at(serde_json::json!({"Expires": "Wed, 21 Oct 2015 07:28:00 GMT"}));
+        assert!(t.is_some() && w.is_empty());
+        let (t, w) = at(serde_json::json!({"Cache-Control": "public", "Expires": "nope"}));
+        assert_eq!(t, None);
+        assert_eq!(
+            w,
+            [
+                "could not find max-age/s-maxage",
+                "Value of Expires header is not a valid timestamp"
+            ]
+        );
+        let (_, w) = at(serde_json::json!({"Cache-Control": "max-age=x"}));
+        assert_eq!(w, ["could not parse max-age/s-maxage value"]);
     }
 }

@@ -285,7 +285,11 @@ pub fn parse_jwk_set(body: &[u8]) -> Result<KeySet, String> {
         }
         match parse_jwk(jwk) {
             Ok(key) => out.push(key),
-            Err(e) => tracing::warn!(target: "jwk-refresh-log", error = %e, "skipping JWK"),
+            // Not in V2, whose parser fails the whole set; logged in its `JwkRefreshLog` shape.
+            Err(e) => tracing::warn!(
+                target: "jwk-refresh-log",
+                detail = %serde_json::json!({"message": format!("Skipping JWK: {e}"), "error": null})
+            ),
         }
     }
     Ok(KeySet(out))

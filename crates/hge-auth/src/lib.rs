@@ -9,6 +9,7 @@ mod admin;
 mod cache_control;
 mod config;
 mod der;
+mod http_exception;
 pub mod jsonpath;
 pub mod jwt;
 mod webhook;

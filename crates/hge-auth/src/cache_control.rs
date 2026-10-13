@@ -27,7 +27,8 @@ pub(crate) fn parse(value: &str) -> Result<CacheControl, String> {
         };
         let seconds = || {
             arg.and_then(|a| a.parse::<u64>().ok())
-                .ok_or_else(|| format!("invalid {name} value in Cache-Control: {value}"))
+                // V2's `findMaxAge` error text.
+                .ok_or_else(|| "could not parse max-age/s-maxage value".to_owned())
         };
         match name.to_ascii_lowercase().as_str() {
             "max-age" => cc.max_age = Some(seconds()?),
