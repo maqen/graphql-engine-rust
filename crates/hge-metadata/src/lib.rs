@@ -3,6 +3,7 @@
 //! * [`from_json`] — the `export_metadata` / `hdb_catalog.hdb_metadata` JSON document.
 //! * [`load_dir`] — a Hasura CLI `metadata/` directory.
 
+pub mod actions;
 mod actions_sdl;
 pub mod dir;
 pub mod export;

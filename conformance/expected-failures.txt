@@ -2,7 +2,6 @@
 # A listed case that starts passing fails CI until it is removed from this list;
 # a case missing from this list that fails is a regression.
 # Regenerate with: hge-conformance ... --write-expected-failures
-actions/TestActionIntrospection/test_output_types
 actions/TestFunctionReturnTypeIntrospection/test_function_return_type
 allowlist/TestAllowlistQueries/test_update_query
 events/TestEventCreateAndDelete/test_create_illegal_name_err

@@ -4,12 +4,13 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use hge_actions::{ActionRegistry, HandlerConfig, ProcessEnv};
 use hge_core::{Code, Error, InconsistentObject, QualifiedTable, SourceCatalog};
 use hge_metadata::store::MetadataStore;
 use hge_metadata::{Metadata, PgConnectionInfo, Source, SourceConfiguration, UrlConfig, load_dir};
 use hge_metadata_api::Reload;
 use hge_postgres::{IsolationLevel, PgSource, PoolConfig};
-use hge_schema::{SchemaOptions, Tables, resolve_tables};
+use hge_schema::{ResolvedActions, SchemaOptions, Tables, resolve_actions, resolve_tables};
 use serde_json::json;
 use tracing::{info, warn};
 
@@ -185,6 +186,8 @@ pub struct Prepared {
     pub event_triggers: Arc<hge_events::EventTriggers>,
     /// Resolved cron triggers.
     pub scheduled_triggers: Arc<hge_events::scheduled::ScheduledTriggers>,
+    pub actions: Arc<ResolvedActions>,
+    pub action_registry: Arc<ActionRegistry>,
     pub inconsistencies: Vec<InconsistentObject>,
 }
 
@@ -295,11 +298,16 @@ pub async fn prepare(
     inconsistencies.extend(event_issues);
     let (scheduled_triggers, cron_issues) = crate::scheduled::prepare(metadata);
     inconsistencies.extend(cron_issues);
+    let (mut actions, action_issues) = resolve_actions(metadata, &tables);
+    inconsistencies.extend(action_issues);
+    let registry = action_registry(metadata, &mut actions, config, &mut inconsistencies);
     Prepared {
         sources,
         tables: Arc::new(tables),
         event_triggers: Arc::new(event_triggers),
         scheduled_triggers: Arc::new(scheduled_triggers),
+        actions: Arc::new(actions),
+        action_registry: Arc::new(registry),
         inconsistencies,
     }
 }
@@ -323,4 +331,34 @@ pub fn schema_options(config: &ServerConfig) -> SchemaOptions {
         stringify_numeric_types: config.stringify_numeric_types,
         dangerously_collapse_booleans: config.v1_boolean_null_collapse,
     }
+}
+
+/// Handler configuration for the resolved actions; actions whose handler cannot be resolved
+/// are dropped from the schema as inconsistent.
+fn action_registry(
+    metadata: &Metadata,
+    actions: &mut hge_schema::ResolvedActions,
+    config: &ServerConfig,
+    inconsistencies: &mut Vec<InconsistentObject>,
+) -> ActionRegistry {
+    let outputs = actions
+        .actions
+        .values()
+        .map(|a| (a.name.clone(), a.output.clone()))
+        .collect();
+    let env: Arc<dyn hge_actions::Environment> = Arc::new(hge_actions::env::Overrides {
+        values: config.env_overrides.clone(),
+        fallback: ProcessEnv,
+    });
+    let handler_config = HandlerConfig {
+        user_agent: format!("hasura-graphql-engine/{}", crate::routes::VERSION),
+        configured_header_precedence: config.configured_header_precedence,
+        ..HandlerConfig::default()
+    };
+    let built = ActionRegistry::build(metadata, &outputs, env, handler_config);
+    for name in &built.failed {
+        actions.actions.shift_remove(name);
+    }
+    inconsistencies.extend(built.inconsistencies);
+    built.registry
 }

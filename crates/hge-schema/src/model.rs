@@ -8,6 +8,7 @@ use std::sync::Arc;
 use hge_core::ColumnType;
 use indexmap::IndexMap;
 
+use crate::actions::{ActionInfo, ActionRelInfo, AsyncResultField};
 use crate::tables::{RelationshipInfo, TableInfo};
 
 #[derive(Debug, Clone)]
@@ -185,6 +186,17 @@ pub enum FieldKind {
     NoQueriesAvailable,
     /// Mutation root fields and `t_mutation_response` fields.
     Mutation(crate::mutation::MutationField),
+    /// An action root field: a query action, a synchronous mutation, or the mutation of an
+    /// asynchronous action (which returns the action id).
+    Action(Arc<ActionInfo>),
+    /// `<action>(id: uuid!)`: the result of an asynchronous action.
+    AsyncActionQuery(Arc<ActionInfo>),
+    /// A scalar, enum or nested-object field of a custom object type.
+    CustomObjectField,
+    /// A relationship from a custom object type to a table.
+    ActionRelationship(Arc<ActionRelInfo>),
+    /// A field of the result object of an asynchronous action.
+    AsyncActionResult(AsyncResultField),
 }
 
 #[derive(Debug, Clone)]

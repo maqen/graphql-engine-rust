@@ -5,7 +5,8 @@ use std::fmt::Write;
 use std::sync::Arc;
 
 use hge_core::{Code, Error, Session};
-use hge_ir::{Mutation, Operation, QueryRoot, RootField, SourceExecutor};
+use hge_ir::{Mutation, Operation, OperationKind, QueryRoot, RootField, SourceExecutor};
+use http::HeaderMap;
 use serde::Deserialize;
 use serde_json::{Map, Value as Json};
 
@@ -33,34 +34,65 @@ pub enum GraphQLBody {
     Batch(Vec<GraphQLRequest>),
 }
 
+/// A response body plus headers to add to the HTTP response.
+#[derive(Debug, Default)]
+pub struct GraphQLResponse {
+    pub body: String,
+    /// `Set-Cookie` values from mutation action handlers.
+    pub set_cookies: Vec<String>,
+}
+
 /// Execute a request body and return the response body.
-pub async fn execute_body(engine: &Engine, session: &Session, body: GraphQLBody) -> String {
+pub async fn execute_body(
+    engine: &Engine,
+    session: &Session,
+    headers: &HeaderMap,
+    body: GraphQLBody,
+) -> GraphQLResponse {
     let state = engine.state.load_full();
     match body {
-        GraphQLBody::Single(req) => execute_one(engine, &state, session, req).await,
+        GraphQLBody::Single(req) => {
+            let (body, set_cookies) = execute_one(engine, &state, session, headers, req).await;
+            GraphQLResponse { body, set_cookies }
+        }
+        // No response headers are forwarded for batched requests.
         GraphQLBody::Batch(reqs) => {
             let mut out = String::from("[");
             for (i, req) in reqs.into_iter().enumerate() {
                 if i > 0 {
                     out.push(',');
                 }
-                out.push_str(&execute_one(engine, &state, session, req).await);
+                out.push_str(&execute_one(engine, &state, session, headers, req).await.0);
             }
             out.push(']');
-            out
+            GraphQLResponse {
+                body: out,
+                set_cookies: vec![],
+            }
         }
     }
 }
 
+/// The response body, plus `Set-Cookie` values (only for a successful response).
 async fn execute_one(
     engine: &Engine,
     state: &Arc<AppState>,
     session: &Session,
+    headers: &HeaderMap,
     req: GraphQLRequest,
-) -> String {
-    match run(state, session, req).await {
-        Ok(body) => body,
-        Err(e) => error_body(&e, include_internal(engine, session)),
+) -> (String, Vec<String>) {
+    match run(state, session, headers, req).await {
+        Ok(out) => out,
+        Err(e) => (error_body(&e, include_internal(engine, session)), vec![]),
+    }
+}
+
+/// The engine's sources, for action relationships.
+struct StateSources<'a>(&'a AppState);
+
+impl hge_actions::Sources for StateSources<'_> {
+    fn executor(&self, source: &str) -> Option<&dyn SourceExecutor> {
+        source_executor(self.0, source).ok()
     }
 }
 
@@ -73,7 +105,12 @@ pub fn error_body(e: &Error, include_internal: bool) -> String {
     body.to_string()
 }
 
-async fn run(state: &AppState, session: &Session, req: GraphQLRequest) -> Result<String, Error> {
+async fn run(
+    state: &AppState,
+    session: &Session,
+    client_headers: &HeaderMap,
+    req: GraphQLRequest,
+) -> Result<(String, Vec<String>), Error> {
     let query = req.query.as_deref().ok_or_else(|| {
         Error::new(Code::BadRequest, "the key 'query' was not present").with_path("$")
     })?;
@@ -94,38 +131,18 @@ async fn run(state: &AppState, session: &Session, req: GraphQLRequest) -> Result
         ));
     }
 
-    // Group database root fields by source; one round trip per source.
-    let mut by_source: HashMap<&str, Vec<(usize, &QueryRoot)>> = HashMap::new();
-    for (i, (_, rf)) in op.root_fields.iter().enumerate() {
-        if let RootField::Database(db) = rf {
-            by_source
-                .entry(&db.source)
-                .or_default()
-                .push((i, &db.query));
-        }
-    }
-    let mut results: Vec<Option<String>> = vec![None; op.root_fields.len()];
-    run_mutations(state, session, &op, &mut results).await?;
-    let futures = by_source.into_iter().map(|(source, fields)| async move {
-        let executor = state
-            .sources
-            .get(source)
-            .ok_or_else(|| Error::unexpected(format!("source \"{source}\" is not available")))?;
-        let roots: Vec<&QueryRoot> = fields.iter().map(|(_, q)| *q).collect();
-        let out = executor.execute_query(&roots, session).await?;
-        Ok::<_, Error>(
-            fields
-                .into_iter()
-                .map(|(i, _)| i)
-                .zip(out)
-                .collect::<Vec<_>>(),
-        )
-    });
-    for res in futures::future::join_all(futures).await {
-        for (i, json) in res? {
-            results[i] = Some(json);
-        }
-    }
+    let ctx = hge_actions::RequestContext {
+        session,
+        client_headers,
+        query: Some(query),
+    };
+    let sources = StateSources(state);
+    let mut set_cookies = vec![];
+    let results = if op.kind == OperationKind::Mutation {
+        run_mutations(state, session, &op, &ctx, &sources, &mut set_cookies).await?
+    } else {
+        run_concurrently(state, session, &op.root_fields, &ctx, &sources).await?
+    };
 
     let mut body =
         String::with_capacity(64 + results.iter().flatten().map(String::len).sum::<usize>());
@@ -137,57 +154,134 @@ async fn run(state: &AppState, session: &Session, req: GraphQLRequest) -> Result
         write!(body, "{}:", Json::String(alias.clone())).expect("write to string");
         match rf {
             RootField::Static(v) => body.push_str(&v.to_string()),
-            RootField::Database(_) | RootField::Mutation(_) => {
+            RootField::Database(_) | RootField::Mutation(_) | RootField::Action(_) => {
                 body.push_str(results[i].as_deref().unwrap_or("null"));
             }
         }
     }
     body.push_str("}}");
-    Ok(body)
+    Ok((body, set_cookies))
 }
 
-/// Run the mutation root fields of `op` in order. Like V2, when every root field is a
-/// mutation on the same source they share one transaction (a failure rolls back all of them);
-/// otherwise each runs in its own transaction.
+fn source_executor<'a>(state: &'a AppState, source: &str) -> Result<&'a dyn SourceExecutor, Error> {
+    state
+        .sources
+        .get(source)
+        .map(|s| s.as_ref() as &dyn SourceExecutor)
+        .ok_or_else(|| Error::unexpected(format!("source \"{source}\" is not available")))
+}
+
+/// Query root fields: database fields grouped into one round trip per source, and actions,
+/// all concurrently. Query actions' `Set-Cookie` headers are discarded.
+async fn run_concurrently(
+    state: &AppState,
+    session: &Session,
+    root_fields: &[(String, RootField)],
+    ctx: &hge_actions::RequestContext<'_>,
+    sources: &StateSources<'_>,
+) -> Result<Vec<Option<String>>, Error> {
+    let mut by_source: HashMap<&str, Vec<(usize, &QueryRoot)>> = HashMap::new();
+    for (i, (_, rf)) in root_fields.iter().enumerate() {
+        if let RootField::Database(db) = rf {
+            by_source
+                .entry(&db.source)
+                .or_default()
+                .push((i, &db.query));
+        }
+    }
+    let mut results: Vec<Option<String>> = vec![None; root_fields.len()];
+    let futures = by_source.into_iter().map(|(source, fields)| async move {
+        let executor = source_executor(state, source)?;
+        let roots: Vec<&QueryRoot> = fields.iter().map(|(_, q)| *q).collect();
+        let out = executor.execute_query(&roots, session).await?;
+        Ok::<_, Error>(
+            fields
+                .into_iter()
+                .map(|(i, _)| i)
+                .zip(out)
+                .collect::<Vec<_>>(),
+        )
+    });
+    let action_futures = root_fields
+        .iter()
+        .enumerate()
+        .filter_map(|(i, (_, rf))| match rf {
+            RootField::Action(a) => Some((i, a)),
+            _ => None,
+        })
+        .map(|(i, a)| async move {
+            hge_actions::execute(&state.action_registry, a, ctx, sources)
+                .await
+                .map(|r| (i, r.value))
+        });
+    let (db_results, action_results) = futures::future::join(
+        futures::future::join_all(futures),
+        futures::future::join_all(action_futures),
+    )
+    .await;
+    for res in db_results {
+        for (i, json) in res? {
+            results[i] = Some(json);
+        }
+    }
+    for res in action_results {
+        let (i, value) = res?;
+        results[i] = Some(value.to_string());
+    }
+    Ok(results)
+}
+
+/// Run the root fields of a mutation operation in order; the first error stops the
+/// operation (spec 03 §1). Like V2, when every root field is a database mutation on the same
+/// source they share one transaction (a failure rolls back all of them); otherwise each runs
+/// on its own. Action handlers' `Set-Cookie` headers are collected into `set_cookies`.
 async fn run_mutations(
     state: &AppState,
     session: &Session,
     op: &Operation,
-    results: &mut [Option<String>],
-) -> Result<(), Error> {
-    let fields: Vec<(usize, &str, &Mutation)> = op
+    ctx: &hge_actions::RequestContext<'_>,
+    sources: &StateSources<'_>,
+    set_cookies: &mut Vec<String>,
+) -> Result<Vec<Option<String>>, Error> {
+    let mut results: Vec<Option<String>> = vec![None; op.root_fields.len()];
+    let mutations: Vec<(&str, &Mutation)> = op
         .root_fields
         .iter()
-        .enumerate()
-        .filter_map(|(i, (_, rf))| match rf {
-            RootField::Mutation(m) => Some((i, &*m.source, &m.mutation)),
+        .filter_map(|(_, rf)| match rf {
+            RootField::Mutation(m) => Some((&*m.source, &m.mutation)),
             _ => None,
         })
         .collect();
-    let Some(&(_, first_source, _)) = fields.first() else {
-        return Ok(());
-    };
-    let executor = |source: &str| {
-        state
-            .sources
-            .get(source)
-            .ok_or_else(|| Error::unexpected(format!("source \"{source}\" is not available")))
-    };
-    let one_transaction = fields.len() == op.root_fields.len()
-        && fields.iter().all(|(_, source, _)| *source == first_source);
-    if one_transaction {
-        let mutations: Vec<&Mutation> = fields.iter().map(|(_, _, m)| *m).collect();
-        let out = executor(first_source)?
-            .execute_mutations(&mutations, session)
+    if let Some(&(first_source, _)) = mutations.first()
+        && mutations.len() == op.root_fields.len()
+        && mutations.iter().all(|(source, _)| *source == first_source)
+    {
+        let batch: Vec<&Mutation> = mutations.iter().map(|(_, m)| *m).collect();
+        let out = source_executor(state, first_source)?
+            .execute_mutations(&batch, session)
             .await?;
-        for ((i, _, _), json) in fields.iter().zip(out) {
-            results[*i] = Some(json);
+        for (slot, json) in results.iter_mut().zip(out) {
+            *slot = Some(json);
         }
-    } else {
-        for (i, source, m) in fields {
-            let mut out = executor(source)?.execute_mutations(&[m], session).await?;
-            results[i] = out.pop();
-        }
+        return Ok(results);
     }
-    Ok(())
+    for (slot, (_, rf)) in results.iter_mut().zip(&op.root_fields) {
+        *slot = match rf {
+            RootField::Static(_) => None,
+            RootField::Database(db) => source_executor(state, &db.source)?
+                .execute_query(&[&db.query], session)
+                .await?
+                .pop(),
+            RootField::Mutation(m) => source_executor(state, &m.source)?
+                .execute_mutations(&[&m.mutation], session)
+                .await?
+                .pop(),
+            RootField::Action(a) => {
+                let r = hge_actions::execute(&state.action_registry, a, ctx, sources).await?;
+                set_cookies.extend(r.set_cookies);
+                Some(r.value.to_string())
+            }
+        };
+    }
+    Ok(results)
 }

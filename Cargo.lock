@@ -849,6 +849,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
+name = "hge-actions"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "futures",
+ "hge-core",
+ "hge-ir",
+ "hge-metadata",
+ "http",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "hge-auth"
 version = "0.1.0"
 dependencies = [
@@ -1009,6 +1026,7 @@ dependencies = [
  "axum",
  "bytes",
  "futures",
+ "hge-actions",
  "hge-auth",
  "hge-core",
  "hge-events",

@@ -5,6 +5,7 @@
 //! names are database names (not GraphQL aliases, except for output keys), values carry their
 //! database type, and permission filters are already merged in.
 
+pub mod action;
 pub mod backend;
 pub mod mutation;
 pub mod permissions;
@@ -13,6 +14,7 @@ pub mod value;
 
 use std::sync::Arc;
 
+pub use action::{ActionCall, ActionRootField};
 pub use backend::{BoxFuture, SourceExecutor};
 pub use mutation::*;
 pub use permissions::*;
@@ -43,6 +45,8 @@ pub enum RootField {
     Database(Box<DatabaseRootField>),
     /// A mutation against a database source.
     Mutation(Box<MutationRootField>),
+    /// An action (HTTP handler call).
+    Action(Box<ActionRootField>),
 }
 
 /// A root field executed by a source's backend.

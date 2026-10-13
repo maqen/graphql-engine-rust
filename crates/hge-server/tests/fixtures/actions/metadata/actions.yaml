@@ -1,0 +1,71 @@
+actions:
+  - name: echo
+    definition:
+      kind: ""
+      handler: '{{ACTION_BASE_URL}}/echo'
+      forward_client_headers: true
+      headers:
+        - name: X-Static
+          value: static-{{STATIC_PART}}
+        - name: X-From-Env
+          value_from_env: SECRET_HEADER
+    comment: Echo the payload and headers back
+  - name: authorInfo
+    definition:
+      kind: ""
+      handler: '{{ACTION_BASE_URL}}/author'
+    permissions:
+      - role: public
+      - role: user
+  - name: authorInfos
+    definition:
+      kind: ""
+      handler: '{{ACTION_BASE_URL}}/authors'
+  - name: respond
+    definition:
+      kind: ""
+      handler: '{{ACTION_BASE_URL}}/respond'
+    permissions:
+      - role: user
+  - name: respondScalar
+    definition:
+      kind: ""
+      handler: '{{ACTION_BASE_URL}}/respond'
+    permissions:
+      - role: user
+  - name: slow
+    definition:
+      kind: ""
+      handler: '{{ACTION_BASE_URL}}/slow'
+      timeout: 1
+    permissions:
+      - role: user
+  - name: login
+    definition:
+      kind: synchronous
+      handler: '{{ACTION_BASE_URL}}/login'
+    permissions:
+      - role: public
+custom_types:
+  enums:
+    - name: Color
+  input_objects:
+    - name: EchoInput
+  objects:
+    - name: AuthorInfo
+      relationships:
+        - name: author
+          type: object
+          remote_table:
+            schema: public
+            name: author
+          field_mapping:
+            authorId: id
+        - name: articles
+          type: array
+          remote_table: article
+          field_mapping:
+            authorId: author_id
+    - name: Address
+    - name: LoginOutput
+  scalars: []

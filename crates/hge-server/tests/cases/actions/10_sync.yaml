@@ -1,0 +1,115 @@
+cases:
+  - description: payload (sorted keys, omitted vs null args), forwarded and configured headers
+    headers:
+      authorization: Bearer t
+      x-hasura-admin-secret: ignored
+      user-agent: test-client
+    query:
+      query: '{ echo(arg: {name: "n", tags: ["a", null]}, flag: null, color: RED) }'
+    response:
+      data:
+        echo:
+          payload:
+            action: { name: echo }
+            input: { arg: { name: n, tags: [a, null] }, color: RED, flag: null }
+            request_query: '{ echo(arg: {name: "n", tags: ["a", null]}, flag: null, color: RED) }'
+            session_variables: { x-hasura-role: admin }
+          headers:
+            - [authorization, Bearer t]
+            - [content-type, application/json]
+            - [user-agent, hasura-graphql-engine/v2.48.0-rs.0.1.0]
+            - [x-forwarded-user-agent, test-client]
+            - [x-from-env, s3cret]
+            - [x-static, static-part]
+
+  - description: variables feed the input; custom scalar arguments accept any JSON
+    query:
+      query: 'query ($a: EchoInput!, $x: json) { echo(arg: $a, extra: $x) }'
+      variables: { a: { name: v, nested: { name: inner } }, x: { any: [1, true] } }
+    response:
+      data:
+        echo:
+          payload:
+            action: { name: echo }
+            input: { arg: { name: v, nested: { name: inner } }, extra: { any: [1, true] } }
+            request_query: 'query ($a: EchoInput!, $x: json) { echo(arg: $a, extra: $x) }'
+            session_variables: { x-hasura-role: admin }
+          headers:
+            - [content-type, application/json]
+            - [user-agent, hasura-graphql-engine/v2.48.0-rs.0.1.0]
+            - [x-from-env, s3cret]
+            - [x-static, static-part]
+
+  - description: object output with typename, nested object and table relationships
+    query:
+      query: |
+        { authorInfo(id: 1) { __typename label authorId address { city } author { id name } articles(order_by: {id: asc}) { title } } }
+    response:
+      data:
+        authorInfo:
+          __typename: AuthorInfo
+          label: author 1
+          authorId: 1
+          address: { city: Oslo }
+          author: { id: 1, name: Alice }
+          articles: [{ title: Rust in production }, { title: Draft notes }]
+
+  - description: list output; relationship works without selecting the join field
+    query:
+      query: '{ authorInfos(ids: [2, 1, 2]) { label author { name } } }'
+    response:
+      data:
+        authorInfos:
+          - { label: author 2, author: { name: Bob } }
+          - { label: author 1, author: { name: Alice } }
+          - { label: author 2, author: { name: Bob } }
+
+  - description: no matching row gives a null object relationship and an empty array relationship
+    query:
+      query: '{ authorInfo(id: 99) { authorId author { id } articles { id } } }'
+    response:
+      data:
+        authorInfo: { authorId: 99, author: null, articles: [] }
+
+  - description: aliases on root, scalar, nested and relationship fields
+    query:
+      query: '{ a: authorInfo(id: 2) { l: label addr: address { c: city } who: author { n: name } } }'
+    response:
+      data:
+        a: { l: author 2, addr: { c: Oslo }, who: { n: Bob } }
+
+  - description: actions and table fields in one query
+    query:
+      query: '{ authorInfo(id: 2) { label } author(where: {id: {_eq: 1}}) { name } }'
+    response:
+      data:
+        authorInfo: { label: author 2 }
+        author: [{ name: Alice }]
+
+  - description: mutation action forwards Set-Cookie
+    query:
+      query: 'mutation { login(username: "ann", password: "secret") { token } }'
+    response:
+      data:
+        login: { token: token-ann }
+    response_headers:
+      set-cookie: ['session=abc; Path=/', theme=dark]
+
+  - description: a failing mutation action stops the operation and forwards no Set-Cookie
+    query:
+      query: 'mutation { a: login(username: "ann", password: "secret") { token } b: login(username: "bob", password: "wrong") { token } }'
+    response:
+      errors:
+        - extensions: { path: '$', code: invalid-credentials }
+          message: invalid credentials
+    response_headers:
+      set-cookie: []
+
+  - description: batched requests never forward Set-Cookie
+    query:
+      - query: 'mutation { login(username: "ann", password: "secret") { token } }'
+    response:
+      - data:
+          login: { token: token-ann }
+    response_headers:
+      set-cookie: []

@@ -1,0 +1,50 @@
+cases:
+  - description: a role with permission sees the action; relationships follow table permissions
+    headers: { x-hasura-role: public }
+    query:
+      query: '{ authorInfo(id: 1) { label author { name } } }'
+    response:
+      data:
+        authorInfo: { label: author 1, author: { name: Alice } }
+
+  - description: relationship rows follow the role's row filter (the draft article is hidden)
+    headers: { x-hasura-role: public }
+    query:
+      query: '{ authorInfo(id: 1) { articles { id } } }'
+    response:
+      data: { authorInfo: { articles: [{ id: 1 }] } }
+
+  - description: relationship to a table the role cannot select is not in the schema
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ authorInfo(id: 1) { articles { id } } }'
+    response:
+      errors:
+        - extensions: { path: '$.selectionSet.authorInfo.selectionSet.articles', code: validation-failed }
+          message: "field 'articles' not found in type: 'AuthorInfo'"
+
+  - description: an action without permission for the role is not in the schema
+    headers: { x-hasura-role: public }
+    query:
+      query: '{ authorInfos(ids: [1]) { label } }'
+    response:
+      errors:
+        - extensions: { path: '$.selectionSet.authorInfos', code: validation-failed }
+          message: "field 'authorInfos' not found in type: 'query_root'"
+
+  - description: session variables of the role are sent to the handler
+    headers: { x-hasura-role: user, x-hasura-user-id: '7' }
+    query:
+      query: '{ respond(status: 200, body: {authorId: 3, label: x}) { authorId label } }'
+    response:
+      data:
+        respond: { authorId: 3, label: x }
+
+  - description: a role without mutation actions has no mutation root
+    headers: { x-hasura-role: user }
+    query:
+      query: 'mutation { login(username: "a", password: "b") { token } }'
+    response:
+      errors:
+        - extensions: { path: '$', code: validation-failed }
+          message: no mutations exist

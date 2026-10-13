@@ -157,6 +157,9 @@ struct ServeArgs {
         default_value = "1000"
     )]
     schema_sync_poll_interval: f64,
+    /// Configured action headers take precedence over forwarded client headers.
+    #[arg(long, env = "HASURA_GRAPHQL_CONFIGURED_HEADER_PRECEDENCE", value_parser = parse_bool, default_value = "false")]
+    configured_header_precedence: bool,
 
     /// Accepted for compatibility; the console is not served.
     #[arg(long, env = "HASURA_GRAPHQL_ENABLE_CONSOLE", value_parser = parse_bool, default_value = "false")]
@@ -312,6 +315,8 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
                 "HASURA_GRAPHQL_SCHEMA_SYNC_POLL_INTERVAL: Only expecting a non negative numeric"
             )
         },
+        configured_header_precedence: args.configured_header_precedence,
+        ..ServerConfig::default()
     })
 }
 

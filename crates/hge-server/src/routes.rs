@@ -155,7 +155,7 @@ async fn post(engine: &Engine, headers: &HeaderMap, body: &[u8], endpoint: Endpo
     };
     let parsed: Result<GraphQLBody, _> = serde_json::from_slice(body);
     let resp = match parsed {
-        Ok(body) => run(engine, &auth.session, body, rid).await,
+        Ok(body) => run(engine, &auth.session, headers, body, rid).await,
         Err(e) => {
             let err = Error::new(Code::InvalidJson, format!("Error in $: {e}"));
             json_response(StatusCode::OK, graphql::error_body(&err, false), Some(rid))
@@ -208,7 +208,14 @@ async fn graphql_get(
         operation_name: params.operation_name,
         read_only: true,
     };
-    let resp = run(&engine, &auth.session, GraphQLBody::Single(req), rid).await;
+    let resp = run(
+        &engine,
+        &auth.session,
+        &headers,
+        GraphQLBody::Single(req),
+        rid,
+    )
+    .await;
     with_cookies(resp, auth.set_cookies)
 }
 
@@ -252,9 +259,22 @@ fn with_cookies(mut resp: Response, cookies: Vec<HeaderValue>) -> Response {
     resp
 }
 
-async fn run(engine: &Engine, session: &Session, body: GraphQLBody, rid: String) -> Response {
-    let out = graphql::execute_body(engine, session, body).await;
-    json_response(StatusCode::OK, out, Some(rid))
+async fn run(
+    engine: &Engine,
+    session: &Session,
+    headers: &HeaderMap,
+    body: GraphQLBody,
+    rid: String,
+) -> Response {
+    let out = graphql::execute_body(engine, session, headers, body).await;
+    let mut resp = json_response(StatusCode::OK, out.body, Some(rid));
+    // Action handlers' `Set-Cookie` headers (mutations only, spec 06 §8.6).
+    for cookie in out.set_cookies {
+        if let Ok(v) = HeaderValue::from_str(&cookie) {
+            resp.headers_mut().append(header::SET_COOKIE, v);
+        }
+    }
+    resp
 }
 
 /// Admin-only APIs (`/v1/metadata`, `/v2/query`): resolve the session and insist on `admin`.

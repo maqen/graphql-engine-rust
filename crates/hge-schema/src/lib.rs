@@ -4,6 +4,7 @@
 //! [`build_role_schema`] (once per role) → per request: [`parse_query`] → [`plan`]
 //! (validate, normalise, lower to IR).
 
+pub mod actions;
 pub mod build;
 pub mod geojson;
 pub mod introspection;
@@ -23,6 +24,7 @@ use hge_ir::Operation;
 use hge_metadata::Metadata;
 use serde_json::{Map, Value as Json};
 
+pub use actions::{ResolvedActions, resolve_actions};
 pub use build::{RoleSchema, SchemaOptions, build_role_schema};
 pub use tables::{TableInfo, Tables};
 

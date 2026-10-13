@@ -1,0 +1,42 @@
+type Query {
+  echo(arg: EchoInput, flag: Boolean, color: Color, extra: json): json
+
+  authorInfo(id: Int!): AuthorInfo
+
+  authorInfos(ids: [Int!]!): [AuthorInfo!]!
+
+  respond(status: Int!, body: json): AuthorInfo
+
+  respondScalar(body: json): [String!]
+
+  slow: String
+}
+
+type Mutation {
+  login(username: String!, password: String!): LoginOutput!
+}
+
+input EchoInput {
+  name: String!
+  nested: EchoInput
+  tags: [String]
+}
+
+enum Color {
+  RED
+  GREEN
+}
+
+type AuthorInfo {
+  authorId: Int
+  label: String!
+  address: Address
+}
+
+type Address {
+  city: String
+}
+
+type LoginOutput {
+  token: String!
+}

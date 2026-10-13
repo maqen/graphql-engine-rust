@@ -41,6 +41,10 @@ pub fn lower(rs: &RoleSchema, op: &NormalizedOperation<'_>) -> Result<Operation,
                     query: QueryRoot::SelectOne(lw.select_by_pk(table, field)?),
                 })),
                 FieldKind::Mutation(m) => crate::mutation::lower::root_field(&lw, m, field)?,
+                FieldKind::Action(action) => crate::actions::lower_action(rs, action, field)?,
+                FieldKind::AsyncActionQuery(action) => {
+                    crate::actions::lower_async_query(rs, action, field)?
+                }
                 other => {
                     return Err(Error::unexpected(format!(
                         "unexpected root field kind {other:?}"
@@ -54,6 +58,17 @@ pub fn lower(rs: &RoleSchema, op: &NormalizedOperation<'_>) -> Result<Operation,
         kind: op.kind,
         root_fields,
     })
+}
+
+/// Lower the selection on a table reached from outside a table (e.g. an action
+/// relationship), with the role's permissions.
+pub(crate) fn table_select(
+    rs: &RoleSchema,
+    table: &TableInfo,
+    field: &SelectedField<'_>,
+    with_args: bool,
+) -> Result<Select, Error> {
+    Lowerer { rs }.select(table, field, with_args)
 }
 
 pub(crate) struct Lowerer<'a> {

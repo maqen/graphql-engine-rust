@@ -44,6 +44,16 @@ impl InconsistentObject {
         Self::new("source", format!("source {source}"), reason, definition)
     }
 
+    /// An action (`definition` is its metadata).
+    pub fn action(name: &str, reason: impl Into<String>, definition: Value) -> Self {
+        Self::new("action", format!("action {name}"), reason, definition)
+    }
+
+    /// The custom types (`definition` is the `custom_types` metadata).
+    pub fn custom_types(reason: impl Into<String>, definition: Value) -> Self {
+        Self::new("custom_types", "custom_types", reason, definition)
+    }
+
     /// A tracked table. `definition` is usually the table's name object.
     pub fn table(
         source: &str,

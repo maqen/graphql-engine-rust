@@ -26,6 +26,7 @@ hge-postgres = { path = "crates/hge-postgres" }
 hge-auth = { path = "crates/hge-auth" }
 hge-server = { path = "crates/hge-server" }
 hge-events = { path = "crates/hge-events" }
+hge-actions = { path = "crates/hge-actions" }
 
 # external crates
 anyhow = "1"
