@@ -12,6 +12,8 @@ pub struct ServerConfig {
     pub metadata_database_url: Option<String>,
     /// `HASURA_GRAPHQL_METADATA_DIR` (as used by the `cli-migrations` image).
     pub metadata_dir: Option<PathBuf>,
+    /// `HASURA_GRAPHQL_MIGRATIONS_DIR`: applied on boot (as the `cli-migrations` image does).
+    pub migrations_dir: Option<PathBuf>,
     /// `HASURA_GRAPHQL_ADMIN_SECRET` (+ `HASURA_GRAPHQL_ADMIN_SECRETS`).
     pub admin_secrets: Vec<String>,
     /// `HASURA_GRAPHQL_UNAUTHORIZED_ROLE`
@@ -46,6 +48,7 @@ impl Default for ServerConfig {
             database_url: None,
             metadata_database_url: None,
             metadata_dir: None,
+            migrations_dir: None,
             admin_secrets: vec![],
             unauthorized_role: None,
             dev_mode: false,

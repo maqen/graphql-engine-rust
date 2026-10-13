@@ -61,10 +61,10 @@ pub fn load_dir_json(dir: &Path) -> Result<Json, LoadError> {
     root.insert("sources".into(), null_to_empty_array(sources));
 
     for (file, key) in SIMPLE_FILES {
-        if let Some(value) = read_optional(&dir.join(file))? {
-            if !is_empty(&value) {
-                root.insert((*key).into(), value);
-            }
+        if let Some(value) = read_optional(&dir.join(file))?
+            && !is_empty(&value)
+        {
+            root.insert((*key).into(), value);
         }
     }
 

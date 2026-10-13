@@ -48,9 +48,9 @@ pub fn resolve_tables(
 
 /// Parse a GraphQL query document.
 pub fn parse_query(query: &str) -> Result<ExecutableDocument, Error> {
-    async_graphql_parser::parse_query(query).map_err(|e| {
-        Error::validation(format!("not a valid graphql query: {e}")).with_path("$.query")
-    })
+    // V2 gives no parser details in the response.
+    async_graphql_parser::parse_query(query)
+        .map_err(|_| Error::validation("not a valid graphql query").with_path("$.query"))
 }
 
 /// Validate a request against the role's schema and lower it to IR.

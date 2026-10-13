@@ -1,0 +1,4 @@
+# Pinned so local builds, CI and the Docker image use the same compiler and clippy.
+[toolchain]
+channel = "1.97"
+components = ["rustfmt", "clippy"]

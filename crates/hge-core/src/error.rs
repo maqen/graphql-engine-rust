@@ -142,7 +142,7 @@ impl Error {
         if include_internal && let Some(internal) = &self.internal {
             ext.insert("internal".into(), (**internal).clone());
         }
-        json!({ "extensions": ext, "message": self.message })
+        json!({ "message": self.message, "extensions": ext })
     }
 
     /// The error body used by the non-GraphQL APIs (`/v1/metadata`, `/v2/query`).

@@ -69,6 +69,10 @@ struct ServeArgs {
     #[arg(long, env = "HASURA_GRAPHQL_METADATA_DIR")]
     metadata_dir: Option<PathBuf>,
 
+    /// Apply a Hasura CLI migrations directory on boot (like the `cli-migrations` image).
+    #[arg(long, env = "HASURA_GRAPHQL_MIGRATIONS_DIR")]
+    migrations_dir: Option<PathBuf>,
+
     #[arg(long, env = "HASURA_GRAPHQL_ADMIN_SECRET", hide_env_values = true)]
     admin_secret: Option<String>,
 
@@ -163,6 +167,7 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
         database_url: cli.database_url.clone(),
         metadata_database_url: cli.metadata_database_url.clone(),
         metadata_dir: args.metadata_dir.clone(),
+        migrations_dir: args.migrations_dir.clone(),
         admin_secrets,
         unauthorized_role: args.unauthorized_role.clone(),
         dev_mode: args.dev_mode,
@@ -202,9 +207,13 @@ fn main() -> anyhow::Result<()> {
                 .enable_all()
                 .build()?;
             runtime.block_on(async move {
-                let engine = hge_server::build_engine(config)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                let engine =
+                    hge_server::build_engine(config)
+                        .await
+                        .map_err(|e| match &e.internal {
+                            Some(internal) => anyhow::anyhow!("{e} ({internal})"),
+                            None => anyhow::anyhow!("{e}"),
+                        })?;
                 hge_server::serve(engine).await?;
                 Ok(())
             })

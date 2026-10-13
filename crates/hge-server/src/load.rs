@@ -134,6 +134,12 @@ fn pool_config(info: &PgConnectionInfo, config: &ServerConfig) -> PoolConfig {
     }
 }
 
+/// The resolved connection URL of a Postgres source.
+pub fn source_url(source: &Source, config: &ServerConfig) -> Result<String, String> {
+    let info = connection_info(source).ok_or("missing connection_info")?;
+    resolve_url(&info.database_url, config)
+}
+
 fn connection_info(source: &Source) -> Option<&PgConnectionInfo> {
     let SourceConfiguration {
         connection_info, ..

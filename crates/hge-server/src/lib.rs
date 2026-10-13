@@ -3,6 +3,7 @@
 pub mod config;
 pub mod graphql;
 pub mod load;
+pub mod migrations;
 pub mod routes;
 pub mod state;
 
@@ -15,6 +16,9 @@ pub use state::{AppState, Engine};
 pub async fn build_engine(config: ServerConfig) -> Result<Arc<Engine>, hge_core::Error> {
     let (metadata, origin) = load::load_metadata(&config).await?;
     tracing::info!(target: "startup", ?origin, "metadata source selected");
+    if let Some(dir) = &config.migrations_dir {
+        migrations::apply(dir, &metadata, &config).await?;
+    }
     let state = load::build_state(metadata, &config).await;
     Ok(Arc::new(Engine::new(config, state)))
 }

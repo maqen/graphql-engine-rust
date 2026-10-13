@@ -136,7 +136,7 @@ cases:
     response:
       errors:
         - extensions: { path: "$.query", code: validation-failed }
-          message: "not a valid graphql query:  --> 1:15\n  |\n1 | { author { id \n  |               ^---\n  |\n  = expected selection_set, selection, directive, or arguments"
+          message: not a valid graphql query
 
   - description: introspection root
     query:

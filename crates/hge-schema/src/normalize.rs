@@ -163,7 +163,7 @@ fn coerce_variables(
                     return Err(Error::validation(format!(
                         "expecting a value for non-nullable variable: \"{name}\""
                     ))
-                    .with_path(path));
+                    .with_path("$"));
                 }
                 None => None,
             },

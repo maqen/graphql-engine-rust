@@ -11,7 +11,9 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use hge_core::{Code, Error};
 use serde::Deserialize;
+use tower_http::CompressionLevel;
 use tower_http::compression::CompressionLayer;
+use tower_http::compression::predicate::SizeAbove;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use crate::graphql::{self, GraphQLBody, GraphQLRequest};
@@ -30,11 +32,19 @@ pub fn router(engine: Arc<Engine>) -> Router {
     }
     let mut router = router
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
-        .layer(CompressionLayer::new());
+        .layer(compression());
     if !engine.config.disable_cors {
         router = router.layer(cors(&engine.config.cors_domain));
     }
     router.with_state(engine)
+}
+
+/// gzip like V2: skipped below 700 bytes when the client also accepts identity,
+/// fast compression level (V2 uses level 1, or 6 above 20kB).
+fn compression() -> CompressionLayer<SizeAbove> {
+    CompressionLayer::new()
+        .quality(CompressionLevel::Fastest)
+        .compress_when(SizeAbove::new(700))
 }
 
 fn cors(domain: &str) -> CorsLayer {
