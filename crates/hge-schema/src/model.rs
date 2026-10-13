@@ -17,6 +17,8 @@ pub struct Schema {
     pub mutation_type: Option<String>,
     pub subscription_type: Option<String>,
     pub directives: Vec<DirectiveDef>,
+    /// `__schema` / `__type` allowed (metadata `graphql_schema_introspection`).
+    pub introspection_enabled: bool,
 }
 
 impl Schema {

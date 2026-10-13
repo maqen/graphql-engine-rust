@@ -43,6 +43,7 @@ pub fn resolve_tables(
             )),
         }
     }
+    tables::drop_conflicting(&mut tables, &mut inconsistencies);
     (tables, inconsistencies)
 }
 

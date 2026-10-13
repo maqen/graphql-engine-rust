@@ -20,6 +20,12 @@ pub struct Translator<'s> {
     next_alias: usize,
 }
 
+/// Postgres truncates longer identifiers (NAMEDATALEN - 1).
+const MAX_IDENTIFIER_LEN: usize = 63;
+
+/// `json_build_object` takes at most 100 arguments.
+const MAX_JSON_BUILD_PAIRS: usize = 50;
+
 /// How a nested select is joined to its parent row: `(parent alias, [(parent col, child col)])`.
 pub type Join<'a> = Option<(&'a str, &'a [(String, String)])>;
 
@@ -161,10 +167,16 @@ impl<'s> Translator<'s> {
             }
         }
         if let Some(l) = limit {
-            self.b.push(&format!(" LIMIT {l}"));
+            // Bound, not inlined: every distinct limit would otherwise be a new statement in
+            // each connection's prepared-statement cache.
+            self.b.push(" LIMIT ");
+            self.b
+                .param(Some(l.to_string()), &ColumnType::builtin("int8"));
         }
         if let Some(o) = args.offset {
-            self.b.push(&format!(" OFFSET {o}"));
+            self.b.push(" OFFSET ");
+            self.b
+                .param(Some(o.to_string()), &ColumnType::builtin("int8"));
         }
         Ok(())
     }
@@ -200,8 +212,32 @@ impl<'s> Translator<'s> {
     }
 
     /// The JSON object for one row of `alias`. `row_to_json` keeps key order, has no
-    /// argument limit, and produces compact output (as V2 does).
+    /// argument limit, and produces compact output. Postgres truncates identifiers to 63
+    /// bytes, so objects with longer keys use `json_build_object` with literal keys.
     fn row_json(&mut self, sel: &Select, alias: &str) -> Result<(), Error> {
+        if sel
+            .fields
+            .iter()
+            .any(|(key, _)| key.len() > MAX_IDENTIFIER_LEN)
+        {
+            if sel.fields.len() > MAX_JSON_BUILD_PAIRS {
+                return Err(Error::validation(format!(
+                    "a selection with more than {MAX_JSON_BUILD_PAIRS} fields cannot use \
+                     aliases longer than {MAX_IDENTIFIER_LEN} bytes"
+                )));
+            }
+            self.b.push("json_build_object(");
+            for (i, (key, field)) in sel.fields.iter().enumerate() {
+                if i > 0 {
+                    self.b.push(", ");
+                }
+                self.b.string_literal(key);
+                self.b.push(", ");
+                self.field(field, alias)?;
+            }
+            self.b.push(")");
+            return Ok(());
+        }
         let e = self.fresh("_e");
         self.b
             .push("row_to_json((SELECT ")
@@ -287,7 +323,8 @@ impl<'s> Translator<'s> {
 }
 
 fn order_key(i: usize) -> String {
-    format!("__o{i}")
+    // Lives next to the table's own columns in the base query; keep it unlikely to clash.
+    format!("__hge_order_{i}")
 }
 
 fn push_direction(b: &mut SqlBuilder, ob: &OrderBy) {

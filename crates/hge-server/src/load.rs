@@ -37,13 +37,23 @@ pub async fn load_metadata(config: &ServerConfig) -> Result<(Metadata, MetadataO
                 ..PoolConfig::default()
             },
         )?;
-        let stored = catalog
+        // A missing table fails at parse time, so check for it in its own statement.
+        let exists = catalog
             .query_text(
-                "SELECT CASE WHEN to_regclass('hdb_catalog.hdb_metadata') IS NULL THEN NULL \
-                 ELSE (SELECT metadata::text FROM hdb_catalog.hdb_metadata WHERE id = 1) END",
+                "SELECT (to_regclass('hdb_catalog.hdb_metadata') IS NOT NULL)::text",
                 &[],
             )
             .await?;
+        let stored = if exists.as_deref() == Some("true") {
+            catalog
+                .query_text(
+                    "SELECT metadata::text FROM hdb_catalog.hdb_metadata WHERE id = 1",
+                    &[],
+                )
+                .await?
+        } else {
+            None
+        };
         if let Some(text) = stored {
             let value: serde_json::Value = serde_json::from_str(&text)
                 .map_err(|e| Error::unexpected(format!("invalid stored metadata: {e}")))?;

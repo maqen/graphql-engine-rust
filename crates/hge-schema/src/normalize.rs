@@ -4,6 +4,7 @@
 //! with the same response key merged, arguments coerced to JSON values (variables
 //! substituted). Lowering and introspection work on this tree only.
 
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
@@ -84,10 +85,11 @@ pub fn normalize<'s>(
         schema,
         fragments: &doc.fragments,
         variables: vars,
+        budget: Cell::new(MAX_SELECTIONS),
     };
     let mut visiting = HashSet::new();
     let fields =
-        cx.collect_and_normalize(root_type, &[&op.selection_set.node], "$", &mut visiting)?;
+        cx.collect_and_normalize(root_type, &[&op.selection_set.node], "$", 0, &mut visiting)?;
     Ok(NormalizedOperation {
         kind,
         root_type,
@@ -173,10 +175,20 @@ fn coerce_variables(
     Ok(out)
 }
 
+/// Deepest selection set nesting accepted (fragments can nest deeper than the parser
+/// allows, and every level is a recursion here, in lowering and in SQL generation).
+const MAX_DEPTH: usize = 100;
+
+/// Selections visited per request, counting each fragment expansion. Repeated fragment
+/// spreads grow exponentially with query size; this bounds the work.
+const MAX_SELECTIONS: usize = 20_000;
+
 struct Context<'s, 'd> {
     schema: &'s Schema,
     fragments: &'d HashMap<Name, Positioned<FragmentDefinition>>,
     variables: Variables,
+    /// Selections left before the query is rejected as too large.
+    budget: Cell<usize>,
 }
 
 impl<'s, 'd> Context<'s, 'd> {
@@ -187,8 +199,15 @@ impl<'s, 'd> Context<'s, 'd> {
         type_name: &'s str,
         selection_sets: &[&'d SelectionSet],
         path: &str,
+        depth: usize,
         visiting: &mut HashSet<String>,
     ) -> Result<Vec<SelectedField<'s>>, Error> {
+        if depth > MAX_DEPTH {
+            return Err(Error::validation(format!(
+                "the query exceeds the maximum depth of {MAX_DEPTH}"
+            ))
+            .with_path(path.to_owned()));
+        }
         let mut grouped: IndexMap<String, Vec<&'d async_graphql_parser::types::Field>> =
             IndexMap::new();
         for set in selection_sets {
@@ -220,7 +239,7 @@ impl<'s, 'd> Context<'s, 'd> {
             let def = object
                 .and_then(|o| o.fields.get(name))
                 .or_else(|| {
-                    (type_name == self.schema.query_type)
+                    (type_name == self.schema.query_type && self.schema.introspection_enabled)
                         .then(|| meta_fields().get(name))
                         .flatten()
                 })
@@ -255,7 +274,7 @@ impl<'s, 'd> Context<'s, 'd> {
                     );
                 }
                 let base_name: &'s str = base_def.name();
-                self.collect_and_normalize(base_name, &sets, &field_path, visiting)?
+                self.collect_and_normalize(base_name, &sets, &field_path, depth + 1, visiting)?
             };
             out.push(SelectedField {
                 alias: key,
@@ -278,6 +297,13 @@ impl<'s, 'd> Context<'s, 'd> {
         path: &str,
     ) -> Result<(), Error> {
         for sel in &set.items {
+            let left = self.budget.get().checked_sub(1).ok_or_else(|| {
+                Error::validation(format!(
+                    "the query exceeds the maximum of {MAX_SELECTIONS} selections"
+                ))
+                .with_path(path.to_owned())
+            })?;
+            self.budget.set(left);
             if !self.should_include(sel.node.directives(), path)? {
                 continue;
             }

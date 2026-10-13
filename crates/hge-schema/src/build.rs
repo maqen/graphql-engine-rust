@@ -61,6 +61,7 @@ pub fn build_role_schema(
             mutation_type: None,
             subscription_type: None,
             directives: introspection::standard_directives(),
+            introspection_enabled: true,
         },
         tables,
         access: &access,

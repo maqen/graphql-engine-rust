@@ -7,6 +7,7 @@ use hge_core::{Code, Error, QualifiedTable, Session, SourceCatalog};
 use hge_ir::{BoxFuture, QueryRoot, SourceExecutor};
 use serde_json::json;
 use tokio_postgres::types::{ToSql, Type};
+use tokio_postgres_rustls::MakeRustlsConnect;
 
 use crate::introspect;
 use crate::param::TextParam;
@@ -17,13 +18,17 @@ pub struct PgSource {
     pub name: Arc<str>,
     pool: Pool,
     use_prepared_statements: bool,
+    /// For cancelling queries whose request went away.
+    tls: MakeRustlsConnect,
 }
 
 impl PgSource {
     pub fn connect(name: &str, url: &str, config: &PoolConfig) -> Result<Self, Error> {
+        let (pool, tls) = connect_pool(url, config)?;
         Ok(PgSource {
             name: Arc::from(name),
-            pool: connect_pool(url, config)?,
+            pool,
+            tls,
             use_prepared_statements: config.use_prepared_statements,
         })
     }
@@ -75,18 +80,31 @@ impl PgSource {
         let params: Vec<TextParam<'_>> = params.iter().map(|p| TextParam(*p)).collect();
         let refs: Vec<&(dyn ToSql + Sync)> =
             params.iter().map(|p| p as &(dyn ToSql + Sync)).collect();
-        let rows = if self.use_prepared_statements {
+        let prepared = self.use_prepared_statements;
+        // If this future is dropped mid-query (client disconnected), cancel the query in
+        // Postgres instead of letting it run to completion.
+        let mut guard = CancelOnDrop {
+            client: Some(client),
+            tls: &self.tls,
+        };
+        let client = guard.client.as_ref().expect("set above");
+        let rows = if prepared {
+            // The cache never evicts; start over rather than grow without bound.
+            if client.statement_cache.size() >= MAX_CACHED_STATEMENTS {
+                client.statement_cache.clear();
+            }
             let stmt = client
                 .prepare_cached(sql)
                 .await
-                .map_err(|e| pg_error(e, sql))?;
+                .map_err(|e| pg_error_with(e, sql, prepared))?;
             client.query(&stmt, &refs).await
         } else {
             let typed: Vec<(&(dyn ToSql + Sync), Type)> =
                 refs.iter().map(|p| (*p, Type::TEXT)).collect();
             client.query_typed(sql, &typed).await
         }
-        .map_err(|e| pg_error(e, sql))?;
+        .map_err(|e| pg_error_with(e, sql, prepared))?;
+        guard.disarm();
         let Some(row) = rows.into_iter().next() else {
             return Ok(None);
         };
@@ -94,7 +112,7 @@ impl PgSource {
         for i in 0..row.len() {
             out.push(
                 row.try_get::<_, Option<String>>(i)
-                    .map_err(|e| pg_error(e, sql))?,
+                    .map_err(|e| pg_error_with(e, sql, prepared))?,
             );
         }
         Ok(Some(out))
@@ -132,7 +150,46 @@ impl SourceExecutor for PgSource {
 }
 
 /// Map a driver error to a V2-style error (`data-exception`, `constraint-violation`, …).
+/// Holds a pooled client during a query. Dropped before [`CancelOnDrop::disarm`] (the
+/// request future was dropped), it detaches the connection from the pool, so nothing else
+/// can be running on it, and cancels the query on the server.
+struct CancelOnDrop<'a> {
+    client: Option<Object>,
+    tls: &'a MakeRustlsConnect,
+}
+
+impl CancelOnDrop<'_> {
+    fn disarm(&mut self) {
+        // Dropping the object returns it to the pool.
+        self.client = None;
+    }
+}
+
+impl Drop for CancelOnDrop<'_> {
+    fn drop(&mut self) {
+        if let Some(client) = self.client.take()
+            && let Ok(rt) = tokio::runtime::Handle::try_current()
+        {
+            let token = client.cancel_token();
+            let tls = self.tls.clone();
+            let detached = Object::take(client);
+            rt.spawn(async move {
+                let _ = token.cancel_query(tls).await;
+                drop(detached);
+            });
+        }
+    }
+}
+
+/// Per-connection prepared statements kept before the cache is reset.
+const MAX_CACHED_STATEMENTS: usize = 1024;
+
 pub fn pg_error(e: tokio_postgres::Error, sql: &str) -> Error {
+    pg_error_with(e, sql, false)
+}
+
+/// [`pg_error`] for a statement that was (or was not) prepared.
+pub fn pg_error_with(e: tokio_postgres::Error, sql: &str, prepared: bool) -> Error {
     match e.as_db_error() {
         Some(db) => {
             let state = db.code().code();
@@ -149,7 +206,7 @@ pub fn pg_error(e: tokio_postgres::Error, sql: &str) -> Error {
             };
             Error::new(code, message).with_internal(json!({
                 "statement": sql,
-                "prepared": true,
+                "prepared": prepared,
                 "error": {
                     "exec_status": "FatalError",
                     "hint": db.hint(),

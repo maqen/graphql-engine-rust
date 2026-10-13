@@ -1,6 +1,6 @@
 //! Immutable application state, rebuilt on metadata changes and swapped atomically.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use arc_swap::ArcSwap;
@@ -12,8 +12,6 @@ use hge_schema::{RoleSchema, SchemaOptions, Tables, build_role_schema};
 
 use crate::config::ServerConfig;
 
-const MAX_CACHED_ROLES: usize = 1024;
-
 /// Everything derived from one metadata version.
 pub struct AppState {
     pub metadata: Arc<Metadata>,
@@ -21,7 +19,50 @@ pub struct AppState {
     pub sources: HashMap<String, Arc<PgSource>>,
     pub inconsistencies: Vec<String>,
     pub options: SchemaOptions,
-    schemas: RwLock<HashMap<RoleName, Arc<RoleSchema>>>,
+    /// Roles named anywhere in metadata; every other role sees the same empty schema.
+    known_roles: HashSet<RoleName>,
+    /// `graphql_schema_introspection.disabled_for_roles`
+    introspection_disabled: HashSet<RoleName>,
+    /// Built on first use. Keys are known roles (bounded by metadata) or `None` for all
+    /// unknown roles, so request headers cannot grow this map.
+    schemas: RwLock<HashMap<Option<RoleName>, Arc<RoleSchema>>>,
+}
+
+fn known_roles(metadata: &Metadata) -> HashSet<RoleName> {
+    let mut roles = HashSet::new();
+    for source in &metadata.sources {
+        for t in &source.tables {
+            let names = t
+                .select_permissions
+                .iter()
+                .map(|p| &p.role)
+                .chain(t.insert_permissions.iter().map(|p| &p.role))
+                .chain(t.update_permissions.iter().map(|p| &p.role))
+                .chain(t.delete_permissions.iter().map(|p| &p.role));
+            roles.extend(names.map(RoleName::new));
+        }
+    }
+    for r in &metadata.inherited_roles {
+        roles.insert(RoleName::new(&r.role_name));
+    }
+    roles.insert(RoleName::admin());
+    roles
+}
+
+fn introspection_disabled(metadata: &Metadata) -> HashSet<RoleName> {
+    metadata
+        .graphql_schema_introspection
+        .as_ref()
+        .and_then(|v| v.get("disabled_for_roles"))
+        .and_then(|v| v.as_array())
+        .map(|roles| {
+            roles
+                .iter()
+                .filter_map(|r| r.as_str())
+                .map(RoleName::new)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 impl AppState {
@@ -33,6 +74,8 @@ impl AppState {
         options: SchemaOptions,
     ) -> Self {
         let state = AppState {
+            known_roles: known_roles(&metadata),
+            introspection_disabled: introspection_disabled(&metadata),
             metadata: Arc::new(metadata),
             tables: Arc::new(tables),
             sources,
@@ -47,16 +90,17 @@ impl AppState {
 
     /// The schema for a role, built on first use and cached for this metadata version.
     pub fn role_schema(&self, role: &RoleName) -> Arc<RoleSchema> {
-        if let Some(s) = self.schemas.read().expect("lock").get(role) {
+        let key = self.known_roles.contains(role).then(|| role.clone());
+        if let Some(s) = self.schemas.read().expect("lock").get(&key) {
             return s.clone();
         }
-        let built = Arc::new(build_role_schema(&self.tables, role, &self.options));
+        // Unknown roles have no permissions; build for a name no permission can use.
+        let build_as = key.clone().unwrap_or_else(|| RoleName::new(""));
+        let mut built = build_role_schema(&self.tables, &build_as, &self.options);
+        built.schema.introspection_enabled = !self.introspection_disabled.contains(&build_as);
+        let built = Arc::new(built);
         let mut schemas = self.schemas.write().expect("lock");
-        // Roles come from request headers/tokens; bound the cache so it cannot grow forever.
-        if schemas.len() >= MAX_CACHED_ROLES && !schemas.contains_key(role) {
-            return built;
-        }
-        schemas.entry(role.clone()).or_insert(built).clone()
+        schemas.entry(key).or_insert(built).clone()
     }
 }
 

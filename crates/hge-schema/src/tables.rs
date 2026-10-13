@@ -1,7 +1,7 @@
 //! Resolved information about tracked tables: metadata joined with the database catalog,
 //! independent of any role.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use hge_core::{ColumnType, QualifiedTable, SourceCatalog, TableCatalog};
@@ -365,4 +365,108 @@ fn manual(cfg: &ManualRelConfig) -> (QualifiedTable, Vec<(String, String)>) {
             .map(|(l, r)| (l.clone(), r.clone()))
             .collect(),
     )
+}
+
+/// Names the schema itself defines; a table may not generate any of them.
+const RESERVED_TYPE_NAMES: &[&str] = &[
+    "Boolean",
+    "Float",
+    "Int",
+    "String",
+    "ID",
+    "order_by",
+    "query_root",
+    "mutation_root",
+    "subscription_root",
+    "cursor_ordering",
+];
+
+/// Suffixes of the per-table types V2 generates (the bare table type has no suffix).
+const TYPE_SUFFIXES: &[&str] = &[
+    "",
+    "_bool_exp",
+    "_order_by",
+    "_select_column",
+    "_aggregate",
+    "_aggregate_fields",
+    "_aggregate_order_by",
+    "_mutation_response",
+    "_insert_input",
+    "_set_input",
+    "_pk_columns_input",
+    "_on_conflict",
+    "_constraint",
+    "_update_column",
+    "_stream_cursor_input",
+];
+
+/// Drop tables whose generated GraphQL names clash with an earlier table's (or with the
+/// schema's own names), or whose fields clash among themselves, as V2 reports such metadata
+/// inconsistent. Without this a later table would silently reuse an earlier table's types,
+/// exposing columns through the wrong permissions.
+pub fn drop_conflicting(tables: &mut Tables, inconsistencies: &mut Vec<String>) {
+    let mut types: HashMap<String, String> = RESERVED_TYPE_NAMES
+        .iter()
+        .map(|n| ((*n).to_owned(), "the schema".to_owned()))
+        .collect();
+    let mut roots: HashMap<String, String> = HashMap::new();
+    let mut kept = Vec::with_capacity(tables.ordered.len());
+    for table in std::mem::take(&mut tables.ordered) {
+        let owner = format!("table \"{}\" in source \"{}\"", table.name, table.source);
+        let type_names: Vec<String> = TYPE_SUFFIXES
+            .iter()
+            .map(|s| format!("{}{s}", table.gql_name))
+            .collect();
+        let rf = &table.root_fields;
+        let root_names = [&rf.select, &rf.select_by_pk, &rf.select_aggregate];
+        let mut problem = None;
+        if let Some(n) = type_names.iter().find(|n| types.contains_key(*n)) {
+            problem = Some(format!("type name \"{n}\" is already used by {}", types[n]));
+        } else if let Some(n) = root_names.iter().find(|n| roots.contains_key(**n)) {
+            problem = Some(format!(
+                "root field \"{n}\" is already used by {}",
+                roots[*n]
+            ));
+        } else if let Some(n) = root_names.iter().find(|n| !is_valid_name(n)) {
+            problem = Some(format!("root field \"{n}\" is not a valid GraphQL name"));
+        } else if root_names[0] == root_names[1]
+            || root_names[0] == root_names[2]
+            || root_names[1] == root_names[2]
+        {
+            problem = Some("root field names must be distinct".to_owned());
+        } else {
+            let mut fields = HashSet::new();
+            let names = table
+                .columns
+                .values()
+                .map(|c| &c.gql_name)
+                .chain(table.object_relationships.iter().map(|r| &r.name))
+                .chain(table.array_relationships.iter().map(|r| &r.name));
+            for n in names {
+                if !is_valid_name(n) {
+                    problem = Some(format!("field \"{n}\" is not a valid GraphQL name"));
+                    break;
+                }
+                if !fields.insert(n.as_str()) {
+                    problem = Some(format!("field name \"{n}\" is used more than once"));
+                    break;
+                }
+            }
+        }
+        if let Some(p) = problem {
+            inconsistencies.push(format!("{owner}: {p}"));
+            tables
+                .by_name
+                .remove(&(table.source.clone(), table.name.clone()));
+            continue;
+        }
+        for n in type_names {
+            types.insert(n, owner.clone());
+        }
+        for n in root_names {
+            roots.insert(n.clone(), owner.clone());
+        }
+        kept.push(table);
+    }
+    tables.ordered = kept;
 }

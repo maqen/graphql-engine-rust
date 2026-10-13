@@ -57,14 +57,6 @@ impl SqlBuilder {
         push_type(&mut self.sql, ty);
         self
     }
-
-    /// Bind an untyped text parameter: `$n::text`.
-    pub fn text_param(&mut self, value: impl Into<String>) -> &mut Self {
-        self.params.push(Some(value.into()));
-        let n = self.params.len();
-        write!(self.sql, "(${n})::text").expect("write to string");
-        self
-    }
 }
 
 pub fn push_ident(out: &mut String, name: &str) {

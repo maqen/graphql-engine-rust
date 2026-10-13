@@ -5,6 +5,7 @@
 
 use hge_core::{Code, Error, RoleName, Session, SessionVariables};
 use http::HeaderMap;
+use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
 pub const ADMIN_SECRET_HEADER: &str = "x-hasura-admin-secret";
@@ -26,11 +27,12 @@ pub fn authenticate(config: &AuthConfig, headers: &HeaderMap) -> Result<Session,
     }
     match headers.get(ADMIN_SECRET_HEADER) {
         Some(given) => {
-            let given = given.as_bytes();
+            // Compare digests so neither timing nor length reveals anything about the secret.
+            let given = Sha256::digest(given.as_bytes());
             let ok = config
                 .admin_secrets
                 .iter()
-                .any(|s| bool::from(s.as_bytes().ct_eq(given)));
+                .any(|s| bool::from(Sha256::digest(s.as_bytes()).ct_eq(&given)));
             if ok {
                 Ok(fallback_admin(variables))
             } else {
@@ -38,10 +40,7 @@ pub fn authenticate(config: &AuthConfig, headers: &HeaderMap) -> Result<Session,
             }
         }
         None => match &config.unauthorized_role {
-            Some(role) => Ok(Session {
-                role: RoleName::new(role),
-                variables,
-            }),
+            Some(role) => Ok(with_role(RoleName::new(role), variables)),
             None => Err(access_denied(format!(
                 "\"{ADMIN_SECRET_HEADER}\" required, but not found"
             ))),
@@ -59,6 +58,12 @@ fn fallback_admin(variables: SessionVariables) -> Session {
         .get(ROLE_HEADER)
         .map(RoleName::new)
         .unwrap_or_else(RoleName::admin);
+    with_role(role, variables)
+}
+
+/// A session whose `x-hasura-role` variable is the resolved role, whatever was sent.
+fn with_role(role: RoleName, mut variables: SessionVariables) -> Session {
+    variables.insert(ROLE_HEADER, role.as_str());
     Session { role, variables }
 }
 

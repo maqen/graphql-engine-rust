@@ -158,10 +158,81 @@ async fn graphql_cases() {
     for file in case_files() {
         failures.extend(run_file(&file, &url).await);
     }
+    failures.extend(query_limits(&url).await);
     assert!(
         failures.is_empty(),
         "{} case(s) failed:\n{}",
         failures.len(),
         failures.join("\n")
     );
+}
+
+/// Queries built to exhaust the server (deep fragment chains, exponential fragment
+/// fan-out) are rejected quickly instead of overflowing the stack or burning CPU.
+async fn query_limits(database_url: &str) -> Vec<String> {
+    let config = ServerConfig {
+        database_url: Some(database_url.to_owned()),
+        metadata_dir: Some(Path::new(FIXTURE).join("metadata")),
+        ..ServerConfig::default()
+    };
+    let router = hge_server::routes::router(hge_server::build_engine(config).await.unwrap());
+
+    // 4000 fragments, each one level deeper than the last.
+    let mut deep = String::from("{ author { ...F0 } }");
+    for i in 0..4000 {
+        if i % 2 == 0 {
+            deep += &format!(
+                " fragment F{i} on author {{ articles {{ ...F{} }} }}",
+                i + 1
+            );
+        } else {
+            deep += &format!(" fragment F{i} on article {{ author {{ ...F{} }} }}", i + 1);
+        }
+    }
+    deep += " fragment F4000 on author { id }";
+
+    // Each fragment spreads the next one twice: 2^30 selections if expanded.
+    let mut wide = String::from("{ __type(name: \"author\") { ...F0 } }");
+    for i in 0..30 {
+        wide += &format!(
+            " fragment F{i} on __Type {{ name a: ofType {{ ...F{n} }} b: ofType {{ ...F{n} }} }}",
+            n = i + 1
+        );
+    }
+    wide += " fragment F30 on __Type { name }";
+
+    let mut failures = vec![];
+    for (name, query, expected) in [
+        (
+            "deep fragment chain",
+            deep,
+            "the query exceeds the maximum depth of 100",
+        ),
+        (
+            "exponential fragment spreads",
+            wide,
+            "the query exceeds the maximum of 20000 selections",
+        ),
+    ] {
+        let started = std::time::Instant::now();
+        let req = Request::post("/v1/graphql")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({ "query": query }).to_string(),
+            ))
+            .unwrap();
+        let resp = router.clone().oneshot(req).await.unwrap();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        let message = body["errors"][0]["message"].as_str().unwrap_or_default();
+        if message != expected || started.elapsed() > std::time::Duration::from_secs(5) {
+            failures.push(format!(
+                "{name}: expected error {expected:?} within 5s, got {body} after {:?}",
+                started.elapsed()
+            ));
+        }
+    }
+    failures
 }

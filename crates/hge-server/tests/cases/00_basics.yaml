@@ -145,3 +145,10 @@ cases:
       data:
         __schema: { queryType: { name: query_root }, mutationType: null }
         __type: { name: author, kind: OBJECT }
+
+  - description: aliases longer than Postgres identifiers stay distinct
+    query:
+      query: "{ author(where: {id: {_eq: 1}}) { aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab: name } }"
+    response:
+      data:
+        author: [{ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: 1, aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab: Alice }]

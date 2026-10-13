@@ -39,7 +39,8 @@ impl Default for PoolConfig {
 }
 
 /// Create a pool. Connections are opened lazily.
-pub fn connect_pool(url: &str, config: &PoolConfig) -> Result<Pool, Error> {
+/// Build a pool. Also returns the TLS connector, which query cancellation needs.
+pub fn connect_pool(url: &str, config: &PoolConfig) -> Result<(Pool, MakeRustlsConnect), Error> {
     let (url, tls) = prepare_url(url)?;
     let pg_config: tokio_postgres::Config = url.parse().map_err(|e| {
         Error::new(
@@ -50,7 +51,7 @@ pub fn connect_pool(url: &str, config: &PoolConfig) -> Result<Pool, Error> {
     let connector = MakeRustlsConnect::new(tls_config(&tls)?);
     let manager = Manager::from_config(
         pg_config,
-        connector,
+        connector.clone(),
         ManagerConfig {
             recycling_method: RecyclingMethod::Fast,
         },
@@ -62,9 +63,10 @@ pub fn connect_pool(url: &str, config: &PoolConfig) -> Result<Pool, Error> {
         builder = builder.wait_timeout(Some(Duration::from_secs(t)));
     }
     builder = builder.create_timeout(Some(Duration::from_secs(30)));
-    builder
+    let pool = builder
         .build()
-        .map_err(|e| Error::new(Code::InvalidConfiguration, format!("pool error: {e}")))
+        .map_err(|e| Error::new(Code::InvalidConfiguration, format!("pool error: {e}")))?;
+    Ok((pool, connector))
 }
 
 #[derive(Debug, Default)]
@@ -108,7 +110,9 @@ fn percent_decode(s: &str) -> String {
     while i < bytes.len() {
         if bytes[i] == b'%'
             && i + 2 < bytes.len()
-            && let Ok(b) = u8::from_str_radix(&s[i + 1..i + 3], 16)
+            && let Some(b) = std::str::from_utf8(&bytes[i + 1..i + 3])
+                .ok()
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
         {
             out.push(b);
             i += 3;

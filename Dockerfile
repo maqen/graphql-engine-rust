@@ -8,9 +8,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
  && cp target/release/graphql-engine /graphql-engine
 
 FROM gcr.io/distroless/cc-debian12:nonroot
-COPY --from=build /graphql-engine /bin/graphql-engine
+COPY --from=build /graphql-engine /usr/local/bin/graphql-engine
 # Cloud Run sets $PORT; HASURA_GRAPHQL_SERVER_PORT wins when given.
 ENV HASURA_GRAPHQL_SERVER_HOST="*"
 EXPOSE 8080
-ENTRYPOINT ["/bin/graphql-engine"]
-CMD ["serve"]
+# Plain CMD like hasura/graphql-engine, so `command: graphql-engine serve` keeps working.
+CMD ["graphql-engine", "serve"]

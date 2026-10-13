@@ -121,6 +121,10 @@ struct ServeArgs {
     #[arg(long, env = "HASURA_GRAPHQL_ENABLE_CONSOLE", value_parser = parse_bool, default_value = "false")]
     enable_console: bool,
 
+    /// Not implemented yet: refusing to start beats silently accepting every query.
+    #[arg(long, env = "HASURA_GRAPHQL_ENABLE_ALLOWLIST", value_parser = parse_bool, default_value = "false")]
+    enable_allowlist: bool,
+
     #[arg(long, env = "HASURA_GRAPHQL_LOG_LEVEL", default_value = "info")]
     log_level: String,
 
@@ -140,6 +144,11 @@ fn init_logging(level: &str) {
 }
 
 fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
+    if args.enable_allowlist {
+        anyhow::bail!(
+            "HASURA_GRAPHQL_ENABLE_ALLOWLIST is not supported yet; refusing to start without it"
+        );
+    }
     let mut admin_secrets = vec![];
     if let Some(s) = &args.admin_secret {
         admin_secrets.push(s.clone());
@@ -148,6 +157,9 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
         let parsed: Vec<String> = serde_json::from_str(list)
             .context("HASURA_GRAPHQL_ADMIN_SECRETS must be a JSON list of strings")?;
         admin_secrets.extend(parsed);
+    }
+    if admin_secrets.iter().any(|s| s.is_empty()) {
+        anyhow::bail!("the admin secret must not be empty");
     }
     let port = match args.server_port {
         Some(p) => p,
