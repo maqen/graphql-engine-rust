@@ -423,21 +423,6 @@ impl<'s, 'd> Context<'s, 'd> {
         depth: usize,
         visiting: &mut HashSet<String>,
     ) -> Result<Vec<SelectedField<'s>>, Error> {
-        self.collect_and_normalize_in(type_name, type_name, selection_sets, path, depth, visiting)
-    }
-
-    /// Like [`Self::collect_and_normalize`] for the object type `type_name`, with selection
-    /// sets written on type `scope` (an interface or union `type_name` belongs to, or
-    /// `type_name` itself).
-    fn collect_and_normalize_in(
-        &self,
-        scope: &'s str,
-        type_name: &'s str,
-        selection_sets: &[&'d SelectionSet],
-        path: &str,
-        depth: usize,
-        visiting: &mut HashSet<String>,
-    ) -> Result<Vec<SelectedField<'s>>, Error> {
         if depth > MAX_DEPTH {
             return Err(Error::validation(format!(
                 "the query exceeds the maximum depth of {MAX_DEPTH}"
@@ -447,7 +432,7 @@ impl<'s, 'd> Context<'s, 'd> {
         let mut grouped: IndexMap<String, Vec<&'d async_graphql_parser::types::Field>> =
             IndexMap::new();
         for set in selection_sets {
-            self.collect(scope, type_name, set, &mut grouped, visiting, path, depth)?;
+            self.collect(type_name, set, &mut grouped, visiting, path, depth)?;
         }
         let object = self.schema.object(type_name);
         let mut out = Vec::with_capacity(grouped.len());
@@ -515,15 +500,15 @@ impl<'s, 'd> Context<'s, 'd> {
                 }
                 let base_name: &'s str = base_def.name();
                 if base_def.is_abstract() {
-                    // The selection is collected once per possible type; charge the budget
-                    // for the most expensive pass only.
+                    // Like V2, the selection is parsed against each possible type (so an
+                    // unknown field names the object type); charge the budget for the most
+                    // expensive pass only.
                     let start = self.budget.get();
                     let mut left = start;
                     for concrete in self.schema.possible_types(base_name) {
                         let concrete: &'s str = concrete;
                         self.budget.set(start);
-                        let fields = self.collect_and_normalize_in(
-                            base_name,
+                        let fields = self.collect_and_normalize(
                             concrete,
                             &sets,
                             &field_path,
@@ -561,12 +546,9 @@ impl<'s, 'd> Context<'s, 'd> {
         Ok(out)
     }
 
-    /// Collect the fields of `set`, written on type `scope`, that apply to the object type
-    /// `type_name`.
-    #[allow(clippy::too_many_arguments)]
+    /// Collect the fields of `set` that apply to the object type `type_name`.
     fn collect(
         &self,
-        scope: &str,
         type_name: &str,
         set: &'d SelectionSet,
         grouped: &mut IndexMap<String, Vec<&'d async_graphql_parser::types::Field>>,
@@ -594,40 +576,18 @@ impl<'s, 'd> Context<'s, 'd> {
             }
             match &sel.node {
                 Selection::Field(f) => {
-                    let name = f.node.name.node.as_str();
-                    // On an interface or union, a field must exist on the abstract type itself.
-                    if scope != type_name
-                        && name != "__typename"
-                        && self
-                            .schema
-                            .fields_of(scope)
-                            .is_none_or(|fields| !fields.contains_key(name))
-                    {
-                        return Err(Error::validation(format!(
-                            "field '{name}' not found in type: '{scope}'"
-                        ))
-                        .with_path(format!(
-                            "{path}.selectionSet.{}",
-                            f.node.response_key().node
-                        )));
-                    }
                     grouped
                         .entry(f.node.response_key().node.to_string())
                         .or_default()
                         .push(&f.node);
                 }
                 Selection::InlineFragment(frag) => {
-                    let mut inner_scope = scope;
-                    if let Some(cond) = &frag.node.type_condition {
-                        let on = cond.node.on.node.as_str();
-                        self.check_fragment_type(on, scope, path)?;
-                        if !self.applies(on, type_name) {
-                            continue;
-                        }
-                        inner_scope = on;
+                    if let Some(cond) = &frag.node.type_condition
+                        && !self.applies(cond.node.on.node.as_str(), type_name)
+                    {
+                        continue;
                     }
                     self.collect(
-                        inner_scope,
                         type_name,
                         &frag.node.selection_set.node,
                         grouped,
@@ -643,7 +603,6 @@ impl<'s, 'd> Context<'s, 'd> {
                             .with_path(path.to_owned())
                     })?;
                     let on = frag.node.type_condition.node.on.node.as_str();
-                    self.check_fragment_type(on, scope, path)?;
                     if !self.applies(on, type_name) {
                         continue;
                     }
@@ -655,7 +614,7 @@ impl<'s, 'd> Context<'s, 'd> {
                     }
                     let frag_set: &'d SelectionSet = &frag.node.selection_set.node;
                     let result =
-                        self.collect(on, type_name, frag_set, grouped, visiting, path, depth + 1);
+                        self.collect(type_name, frag_set, grouped, visiting, path, depth + 1);
                     visiting.remove(name);
                     result?;
                 }
@@ -664,44 +623,15 @@ impl<'s, 'd> Context<'s, 'd> {
         Ok(())
     }
 
-    /// Whether a fragment on type `on` applies to an object of type `type_name`.
+    /// Whether a fragment on type `on` applies to an object of type `type_name`: V2 applies
+    /// it when `on` is the object type or an interface it implements, and silently leaves
+    /// out any other fragment (even on an unknown type or a union the object belongs to).
     fn applies(&self, on: &str, type_name: &str) -> bool {
         on == type_name
             || self
                 .schema
-                .possible_types(on)
-                .iter()
-                .any(|t| t == type_name)
-    }
-
-    fn check_fragment_type(&self, on: &str, scope: &str, path: &str) -> Result<(), Error> {
-        match self.schema.get(on) {
-            Some(TypeDef::Object(_) | TypeDef::Interface(_) | TypeDef::Union(_)) => {
-                let spreadable = on == scope || {
-                    let in_scope = self.schema.possible_types(scope);
-                    self.schema
-                        .possible_types(on)
-                        .iter()
-                        .any(|t| in_scope.contains(t))
-                };
-                if spreadable {
-                    Ok(())
-                } else {
-                    Err(Error::validation(format!(
-                        "cannot spread fragment on type '{on}' within type '{scope}'"
-                    ))
-                    .with_path(path.to_owned()))
-                }
-            }
-            Some(_) => Err(Error::validation(format!(
-                "fragments can only be defined on object types, not on '{on}'"
-            ))
-            .with_path(path.to_owned())),
-            None => Err(Error::validation(format!(
-                "fragment type condition refers to unknown type '{on}'"
-            ))
-            .with_path(path.to_owned())),
-        }
+                .object(type_name)
+                .is_some_and(|o| o.interfaces.iter().any(|i| i == on))
     }
 
     fn should_include(

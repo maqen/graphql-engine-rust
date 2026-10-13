@@ -191,6 +191,9 @@ struct ServeArgs {
     #[arg(long, env = "HASURA_GRAPHQL_PRESERVE_401_ERRORS", value_parser = parse_bool, default_value = "false")]
     preserve_401_errors: bool,
 
+    #[arg(long, env = "HASURA_GRAPHQL_ENABLE_RELAY", value_parser = parse_bool, default_value = "true")]
+    enable_relay: bool,
+
     #[arg(long = "read-only-mode", env = "HASURA_GRAPHQL_ENABLE_READ_ONLY_MODE", value_parser = parse_bool, default_value = "false")]
     read_only_mode: bool,
 
@@ -621,6 +624,7 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
         pg_connections: args.pg_connections,
         use_prepared_statements: args.use_prepared_statements,
         preserve_401_errors: args.preserve_401_errors,
+        enable_relay: args.enable_relay,
         events: hge_events_config(args),
         enable_allowlist: args.enable_allowlist,
         websocket: websocket_config(args),

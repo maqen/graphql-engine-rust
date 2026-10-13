@@ -7,6 +7,7 @@ mod aggregate;
 mod boolexp;
 mod count;
 pub mod mutation;
+mod relay;
 mod select;
 mod subscription;
 
@@ -65,6 +66,7 @@ pub fn translate_query_with(
                 ));
             }
             QueryRoot::Aggregate(select) => t.select_aggregate(select, None)?,
+            QueryRoot::Connection(conn) => t.select_connection(conn, None)?,
         }
         t.b.push(")::text");
     }

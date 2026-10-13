@@ -88,6 +88,10 @@ pub enum Field {
     /// A table computed field: rows of the select's `from` function (called on the current
     /// row), as a JSON array.
     ComputedTable(Box<Select>),
+    /// The Relay node id of the row (`id` on the Relay endpoint).
+    NodeId(Box<crate::NodeIdField>),
+    /// `<rel>_connection { … }` (Relay).
+    ArrayConnection(Box<crate::RelationshipConnection>),
 }
 
 #[derive(Debug, Clone)]
