@@ -1,0 +1,134 @@
+{
+  "status": 200,
+  "content_encoding": "gzip",
+  "body": {
+    "data": {
+      "gold": [
+        {
+          "customer_id": 10,
+          "metadata": {
+            "tags": [
+              "t1",
+              "t0"
+            ],
+            "tier": "gold"
+          },
+          "tags": [
+            "t1",
+            "t0"
+          ]
+        },
+        {
+          "customer_id": 20,
+          "metadata": {
+            "tags": [
+              "t2",
+              "t0"
+            ],
+            "tier": "gold"
+          },
+          "tags": [
+            "t2",
+            "t0"
+          ]
+        },
+        {
+          "customer_id": 30,
+          "metadata": {
+            "tags": [
+              "t0",
+              "t0"
+            ],
+            "tier": "gold"
+          },
+          "tags": [
+            "t0",
+            "t0"
+          ]
+        },
+        {
+          "customer_id": 40,
+          "metadata": {
+            "tags": [
+              "t1",
+              "t0"
+            ],
+            "tier": "gold"
+          },
+          "tags": [
+            "t1",
+            "t0"
+          ]
+        },
+        {
+          "customer_id": 50,
+          "metadata": {
+            "tags": [
+              "t2",
+              "t0"
+            ],
+            "tier": "gold"
+          },
+          "tags": [
+            "t2",
+            "t0"
+          ]
+        }
+      ],
+      "search": [
+        {
+          "track_id": 42,
+          "name": "Track 00042"
+        },
+        {
+          "track_id": 420,
+          "name": "Track 00420"
+        },
+        {
+          "track_id": 421,
+          "name": "Track 00421"
+        },
+        {
+          "track_id": 422,
+          "name": "Track 00422"
+        },
+        {
+          "track_id": 423,
+          "name": "Track 00423"
+        },
+        {
+          "track_id": 424,
+          "name": "Track 00424"
+        },
+        {
+          "track_id": 425,
+          "name": "Track 00425"
+        },
+        {
+          "track_id": 426,
+          "name": "Track 00426"
+        },
+        {
+          "track_id": 427,
+          "name": "Track 00427"
+        },
+        {
+          "track_id": 428,
+          "name": "Track 00428"
+        },
+        {
+          "track_id": 429,
+          "name": "Track 00429"
+        },
+        {
+          "track_id": 10042,
+          "name": "Track 10042"
+        },
+        {
+          "track_id": 20042,
+          "name": "Track 20042"
+        }
+      ]
+    }
+  }
+}

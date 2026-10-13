@@ -1,0 +1,12 @@
+DROP VIEW IF EXISTS public.artist_stats;
+DROP FUNCTION IF EXISTS public.track_seconds(public.track);
+DROP TABLE IF EXISTS public.playlist;
+DROP TABLE IF EXISTS public.invoice_line;
+DROP TABLE IF EXISTS public.invoice;
+DROP TABLE IF EXISTS public.customer;
+DROP TABLE IF EXISTS public.employee;
+DROP TABLE IF EXISTS public.track;
+DROP TABLE IF EXISTS public.album;
+DROP TABLE IF EXISTS public.media_type;
+DROP TABLE IF EXISTS public.genre;
+DROP TABLE IF EXISTS public.artist;

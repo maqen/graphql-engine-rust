@@ -1,0 +1,33 @@
+{
+  "status": 200,
+  "content_encoding": null,
+  "body": {
+    "data": {
+      "track_aggregate": {
+        "aggregate": {
+          "count": 3600,
+          "sum": {
+            "milliseconds": 841721400,
+            "unit_price": 4764.00
+          },
+          "avg": {
+            "milliseconds": 233811.500000000000
+          },
+          "min": {
+            "milliseconds": 120037,
+            "name": "Track 00001"
+          },
+          "max": {
+            "milliseconds": 359761,
+            "name": "Track 29978"
+          }
+        }
+      },
+      "invoice_aggregate": {
+        "aggregate": {
+          "count": 2000
+        }
+      }
+    }
+  }
+}

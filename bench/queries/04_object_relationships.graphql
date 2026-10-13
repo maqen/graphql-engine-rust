@@ -1,0 +1,13 @@
+#@ description: Two levels of object relationships
+query {
+  track(order_by: {track_id: asc}, limit: 50) {
+    track_id
+    name
+    genre { name }
+    media_type { name }
+    album {
+      title
+      artist { name }
+    }
+  }
+}

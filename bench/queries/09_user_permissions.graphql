@@ -1,0 +1,16 @@
+#@ description: Row-level permissions via session variable and relationship filters (role user)
+#@ role: user
+#@ user_id: 42
+query {
+  customer {
+    customer_id
+    first_name
+    email
+    invoices(order_by: {invoice_id: asc}, limit: 5) {
+      invoice_id
+      total
+      lines(order_by: {invoice_line_id: asc}) { quantity track { name } }
+    }
+  }
+  invoice(order_by: {invoice_id: asc}, limit: 3) { invoice_id customer_id }
+}

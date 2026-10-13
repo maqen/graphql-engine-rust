@@ -1,0 +1,5 @@
+#@ description: Role user has no select permission on employee (field-not-found error)
+#@ role: user
+#@ user_id: 1
+#@ bench: false
+query { employee { first_name } }

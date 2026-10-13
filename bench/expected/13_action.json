@@ -1,0 +1,20 @@
+{
+  "status": 200,
+  "content_encoding": null,
+  "body": {
+    "data": {
+      "trackPriceQuote": {
+        "trackId": 9,
+        "quantity": 3,
+        "total": 5.97,
+        "currency": "USD",
+        "track": {
+          "name": "Track 00009",
+          "album": {
+            "title": "Album 0009"
+          }
+        }
+      }
+    }
+  }
+}

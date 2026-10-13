@@ -1,0 +1,7 @@
+#@ description: Insert with column preset + event trigger, then delete in the same transaction (net zero rows)
+#@ role: user
+#@ user_id: 77
+mutation {
+  insert_playlist_one(object: {name: "bench-tmp"}) { name owner_id }
+  delete_playlist(where: {name: {_eq: "bench-tmp"}}) { affected_rows returning { name } }
+}

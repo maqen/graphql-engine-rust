@@ -1,0 +1,142 @@
+{
+  "status": 200,
+  "content_encoding": "gzip",
+  "body": {
+    "data": {
+      "track": [
+        {
+          "name": "Track 00001",
+          "milliseconds": 120037,
+          "seconds": 120
+        },
+        {
+          "name": "Track 00002",
+          "milliseconds": 120074,
+          "seconds": 120
+        },
+        {
+          "name": "Track 00003",
+          "milliseconds": 120111,
+          "seconds": 120
+        },
+        {
+          "name": "Track 00004",
+          "milliseconds": 120148,
+          "seconds": 120
+        },
+        {
+          "name": "Track 00005",
+          "milliseconds": 120185,
+          "seconds": 120
+        },
+        {
+          "name": "Track 00006",
+          "milliseconds": 120222,
+          "seconds": 120
+        },
+        {
+          "name": "Track 00007",
+          "milliseconds": 120259,
+          "seconds": 120
+        },
+        {
+          "name": "Track 00008",
+          "milliseconds": 120296,
+          "seconds": 120
+        },
+        {
+          "name": "Track 00009",
+          "milliseconds": 120333,
+          "seconds": 120
+        },
+        {
+          "name": "Track 00010",
+          "milliseconds": 120370,
+          "seconds": 120
+        }
+      ],
+      "artist_stats": [
+        {
+          "name": "Artist 0001",
+          "albumCount": 3,
+          "trackCount": 30,
+          "artist": {
+            "artist_id": 1
+          }
+        },
+        {
+          "name": "Artist 0002",
+          "albumCount": 3,
+          "trackCount": 30,
+          "artist": {
+            "artist_id": 2
+          }
+        },
+        {
+          "name": "Artist 0003",
+          "albumCount": 3,
+          "trackCount": 30,
+          "artist": {
+            "artist_id": 3
+          }
+        },
+        {
+          "name": "Artist 0004",
+          "albumCount": 3,
+          "trackCount": 30,
+          "artist": {
+            "artist_id": 4
+          }
+        },
+        {
+          "name": "Artist 0005",
+          "albumCount": 3,
+          "trackCount": 30,
+          "artist": {
+            "artist_id": 5
+          }
+        },
+        {
+          "name": "Artist 0006",
+          "albumCount": 3,
+          "trackCount": 30,
+          "artist": {
+            "artist_id": 6
+          }
+        },
+        {
+          "name": "Artist 0007",
+          "albumCount": 3,
+          "trackCount": 30,
+          "artist": {
+            "artist_id": 7
+          }
+        },
+        {
+          "name": "Artist 0008",
+          "albumCount": 3,
+          "trackCount": 30,
+          "artist": {
+            "artist_id": 8
+          }
+        },
+        {
+          "name": "Artist 0009",
+          "albumCount": 3,
+          "trackCount": 30,
+          "artist": {
+            "artist_id": 9
+          }
+        },
+        {
+          "name": "Artist 0010",
+          "albumCount": 3,
+          "trackCount": 30,
+          "artist": {
+            "artist_id": 10
+          }
+        }
+      ]
+    }
+  }
+}

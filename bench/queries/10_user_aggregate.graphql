@@ -1,0 +1,9 @@
+#@ description: Aggregates under row-level permissions (role user)
+#@ role: user
+#@ user_id: 42
+query {
+  invoice_aggregate {
+    aggregate { count sum { total } avg { total } max { invoice_date } }
+  }
+  invoice_line_aggregate { aggregate { count sum { quantity } } }
+}

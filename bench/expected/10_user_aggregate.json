@@ -1,0 +1,30 @@
+{
+  "status": 200,
+  "content_encoding": null,
+  "body": {
+    "data": {
+      "invoice_aggregate": {
+        "aggregate": {
+          "count": 10,
+          "sum": {
+            "total": 150.00
+          },
+          "avg": {
+            "total": 15.0000000000000000
+          },
+          "max": {
+            "invoice_date": "2022-01-21T18:00:00+00:00"
+          }
+        }
+      },
+      "invoice_line_aggregate": {
+        "aggregate": {
+          "count": 50,
+          "sum": {
+            "quantity": 100
+          }
+        }
+      }
+    }
+  }
+}

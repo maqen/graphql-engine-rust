@@ -1,0 +1,12 @@
+#@ description: Synchronous action with an action relationship to a table (throughput bounded by the Python handler)
+#@ role: user
+#@ user_id: 3
+query {
+  trackPriceQuote(trackId: 9, quantity: 3) {
+    trackId
+    quantity
+    total
+    currency
+    track { name album { title } }
+  }
+}

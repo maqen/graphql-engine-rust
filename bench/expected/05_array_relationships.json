@@ -1,0 +1,810 @@
+{
+  "status": 200,
+  "content_encoding": "gzip",
+  "body": {
+    "data": {
+      "artist": [
+        {
+          "name": "Artist 0001",
+          "albums": [
+            {
+              "title": "Album 0001",
+              "tracks": [
+                {
+                  "name": "Track 00001",
+                  "milliseconds": 120037
+                },
+                {
+                  "name": "Track 03001",
+                  "milliseconds": 231037
+                },
+                {
+                  "name": "Track 06001",
+                  "milliseconds": 342037
+                },
+                {
+                  "name": "Track 09001",
+                  "milliseconds": 213037
+                },
+                {
+                  "name": "Track 12001",
+                  "milliseconds": 324037
+                }
+              ]
+            },
+            {
+              "title": "Album 1001",
+              "tracks": [
+                {
+                  "name": "Track 01001",
+                  "milliseconds": 157037
+                },
+                {
+                  "name": "Track 04001",
+                  "milliseconds": 268037
+                },
+                {
+                  "name": "Track 07001",
+                  "milliseconds": 139037
+                },
+                {
+                  "name": "Track 10001",
+                  "milliseconds": 250037
+                },
+                {
+                  "name": "Track 13001",
+                  "milliseconds": 121037
+                }
+              ]
+            },
+            {
+              "title": "Album 2001",
+              "tracks": [
+                {
+                  "name": "Track 02001",
+                  "milliseconds": 194037
+                },
+                {
+                  "name": "Track 05001",
+                  "milliseconds": 305037
+                },
+                {
+                  "name": "Track 08001",
+                  "milliseconds": 176037
+                },
+                {
+                  "name": "Track 11001",
+                  "milliseconds": 287037
+                },
+                {
+                  "name": "Track 14001",
+                  "milliseconds": 158037
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Artist 0002",
+          "albums": [
+            {
+              "title": "Album 0002",
+              "tracks": [
+                {
+                  "name": "Track 00002",
+                  "milliseconds": 120074
+                },
+                {
+                  "name": "Track 03002",
+                  "milliseconds": 231074
+                },
+                {
+                  "name": "Track 06002",
+                  "milliseconds": 342074
+                },
+                {
+                  "name": "Track 09002",
+                  "milliseconds": 213074
+                },
+                {
+                  "name": "Track 12002",
+                  "milliseconds": 324074
+                }
+              ]
+            },
+            {
+              "title": "Album 1002",
+              "tracks": [
+                {
+                  "name": "Track 01002",
+                  "milliseconds": 157074
+                },
+                {
+                  "name": "Track 04002",
+                  "milliseconds": 268074
+                },
+                {
+                  "name": "Track 07002",
+                  "milliseconds": 139074
+                },
+                {
+                  "name": "Track 10002",
+                  "milliseconds": 250074
+                },
+                {
+                  "name": "Track 13002",
+                  "milliseconds": 121074
+                }
+              ]
+            },
+            {
+              "title": "Album 2002",
+              "tracks": [
+                {
+                  "name": "Track 02002",
+                  "milliseconds": 194074
+                },
+                {
+                  "name": "Track 05002",
+                  "milliseconds": 305074
+                },
+                {
+                  "name": "Track 08002",
+                  "milliseconds": 176074
+                },
+                {
+                  "name": "Track 11002",
+                  "milliseconds": 287074
+                },
+                {
+                  "name": "Track 14002",
+                  "milliseconds": 158074
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Artist 0003",
+          "albums": [
+            {
+              "title": "Album 0003",
+              "tracks": [
+                {
+                  "name": "Track 00003",
+                  "milliseconds": 120111
+                },
+                {
+                  "name": "Track 03003",
+                  "milliseconds": 231111
+                },
+                {
+                  "name": "Track 06003",
+                  "milliseconds": 342111
+                },
+                {
+                  "name": "Track 09003",
+                  "milliseconds": 213111
+                },
+                {
+                  "name": "Track 12003",
+                  "milliseconds": 324111
+                }
+              ]
+            },
+            {
+              "title": "Album 1003",
+              "tracks": [
+                {
+                  "name": "Track 01003",
+                  "milliseconds": 157111
+                },
+                {
+                  "name": "Track 04003",
+                  "milliseconds": 268111
+                },
+                {
+                  "name": "Track 07003",
+                  "milliseconds": 139111
+                },
+                {
+                  "name": "Track 10003",
+                  "milliseconds": 250111
+                },
+                {
+                  "name": "Track 13003",
+                  "milliseconds": 121111
+                }
+              ]
+            },
+            {
+              "title": "Album 2003",
+              "tracks": [
+                {
+                  "name": "Track 02003",
+                  "milliseconds": 194111
+                },
+                {
+                  "name": "Track 05003",
+                  "milliseconds": 305111
+                },
+                {
+                  "name": "Track 08003",
+                  "milliseconds": 176111
+                },
+                {
+                  "name": "Track 11003",
+                  "milliseconds": 287111
+                },
+                {
+                  "name": "Track 14003",
+                  "milliseconds": 158111
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Artist 0004",
+          "albums": [
+            {
+              "title": "Album 0004",
+              "tracks": [
+                {
+                  "name": "Track 00004",
+                  "milliseconds": 120148
+                },
+                {
+                  "name": "Track 03004",
+                  "milliseconds": 231148
+                },
+                {
+                  "name": "Track 06004",
+                  "milliseconds": 342148
+                },
+                {
+                  "name": "Track 09004",
+                  "milliseconds": 213148
+                },
+                {
+                  "name": "Track 12004",
+                  "milliseconds": 324148
+                }
+              ]
+            },
+            {
+              "title": "Album 1004",
+              "tracks": [
+                {
+                  "name": "Track 01004",
+                  "milliseconds": 157148
+                },
+                {
+                  "name": "Track 04004",
+                  "milliseconds": 268148
+                },
+                {
+                  "name": "Track 07004",
+                  "milliseconds": 139148
+                },
+                {
+                  "name": "Track 10004",
+                  "milliseconds": 250148
+                },
+                {
+                  "name": "Track 13004",
+                  "milliseconds": 121148
+                }
+              ]
+            },
+            {
+              "title": "Album 2004",
+              "tracks": [
+                {
+                  "name": "Track 02004",
+                  "milliseconds": 194148
+                },
+                {
+                  "name": "Track 05004",
+                  "milliseconds": 305148
+                },
+                {
+                  "name": "Track 08004",
+                  "milliseconds": 176148
+                },
+                {
+                  "name": "Track 11004",
+                  "milliseconds": 287148
+                },
+                {
+                  "name": "Track 14004",
+                  "milliseconds": 158148
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Artist 0005",
+          "albums": [
+            {
+              "title": "Album 0005",
+              "tracks": [
+                {
+                  "name": "Track 00005",
+                  "milliseconds": 120185
+                },
+                {
+                  "name": "Track 03005",
+                  "milliseconds": 231185
+                },
+                {
+                  "name": "Track 06005",
+                  "milliseconds": 342185
+                },
+                {
+                  "name": "Track 09005",
+                  "milliseconds": 213185
+                },
+                {
+                  "name": "Track 12005",
+                  "milliseconds": 324185
+                }
+              ]
+            },
+            {
+              "title": "Album 1005",
+              "tracks": [
+                {
+                  "name": "Track 01005",
+                  "milliseconds": 157185
+                },
+                {
+                  "name": "Track 04005",
+                  "milliseconds": 268185
+                },
+                {
+                  "name": "Track 07005",
+                  "milliseconds": 139185
+                },
+                {
+                  "name": "Track 10005",
+                  "milliseconds": 250185
+                },
+                {
+                  "name": "Track 13005",
+                  "milliseconds": 121185
+                }
+              ]
+            },
+            {
+              "title": "Album 2005",
+              "tracks": [
+                {
+                  "name": "Track 02005",
+                  "milliseconds": 194185
+                },
+                {
+                  "name": "Track 05005",
+                  "milliseconds": 305185
+                },
+                {
+                  "name": "Track 08005",
+                  "milliseconds": 176185
+                },
+                {
+                  "name": "Track 11005",
+                  "milliseconds": 287185
+                },
+                {
+                  "name": "Track 14005",
+                  "milliseconds": 158185
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Artist 0006",
+          "albums": [
+            {
+              "title": "Album 0006",
+              "tracks": [
+                {
+                  "name": "Track 00006",
+                  "milliseconds": 120222
+                },
+                {
+                  "name": "Track 03006",
+                  "milliseconds": 231222
+                },
+                {
+                  "name": "Track 06006",
+                  "milliseconds": 342222
+                },
+                {
+                  "name": "Track 09006",
+                  "milliseconds": 213222
+                },
+                {
+                  "name": "Track 12006",
+                  "milliseconds": 324222
+                }
+              ]
+            },
+            {
+              "title": "Album 1006",
+              "tracks": [
+                {
+                  "name": "Track 01006",
+                  "milliseconds": 157222
+                },
+                {
+                  "name": "Track 04006",
+                  "milliseconds": 268222
+                },
+                {
+                  "name": "Track 07006",
+                  "milliseconds": 139222
+                },
+                {
+                  "name": "Track 10006",
+                  "milliseconds": 250222
+                },
+                {
+                  "name": "Track 13006",
+                  "milliseconds": 121222
+                }
+              ]
+            },
+            {
+              "title": "Album 2006",
+              "tracks": [
+                {
+                  "name": "Track 02006",
+                  "milliseconds": 194222
+                },
+                {
+                  "name": "Track 05006",
+                  "milliseconds": 305222
+                },
+                {
+                  "name": "Track 08006",
+                  "milliseconds": 176222
+                },
+                {
+                  "name": "Track 11006",
+                  "milliseconds": 287222
+                },
+                {
+                  "name": "Track 14006",
+                  "milliseconds": 158222
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Artist 0007",
+          "albums": [
+            {
+              "title": "Album 0007",
+              "tracks": [
+                {
+                  "name": "Track 00007",
+                  "milliseconds": 120259
+                },
+                {
+                  "name": "Track 03007",
+                  "milliseconds": 231259
+                },
+                {
+                  "name": "Track 06007",
+                  "milliseconds": 342259
+                },
+                {
+                  "name": "Track 09007",
+                  "milliseconds": 213259
+                },
+                {
+                  "name": "Track 12007",
+                  "milliseconds": 324259
+                }
+              ]
+            },
+            {
+              "title": "Album 1007",
+              "tracks": [
+                {
+                  "name": "Track 01007",
+                  "milliseconds": 157259
+                },
+                {
+                  "name": "Track 04007",
+                  "milliseconds": 268259
+                },
+                {
+                  "name": "Track 07007",
+                  "milliseconds": 139259
+                },
+                {
+                  "name": "Track 10007",
+                  "milliseconds": 250259
+                },
+                {
+                  "name": "Track 13007",
+                  "milliseconds": 121259
+                }
+              ]
+            },
+            {
+              "title": "Album 2007",
+              "tracks": [
+                {
+                  "name": "Track 02007",
+                  "milliseconds": 194259
+                },
+                {
+                  "name": "Track 05007",
+                  "milliseconds": 305259
+                },
+                {
+                  "name": "Track 08007",
+                  "milliseconds": 176259
+                },
+                {
+                  "name": "Track 11007",
+                  "milliseconds": 287259
+                },
+                {
+                  "name": "Track 14007",
+                  "milliseconds": 158259
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Artist 0008",
+          "albums": [
+            {
+              "title": "Album 0008",
+              "tracks": [
+                {
+                  "name": "Track 00008",
+                  "milliseconds": 120296
+                },
+                {
+                  "name": "Track 03008",
+                  "milliseconds": 231296
+                },
+                {
+                  "name": "Track 06008",
+                  "milliseconds": 342296
+                },
+                {
+                  "name": "Track 09008",
+                  "milliseconds": 213296
+                },
+                {
+                  "name": "Track 12008",
+                  "milliseconds": 324296
+                }
+              ]
+            },
+            {
+              "title": "Album 1008",
+              "tracks": [
+                {
+                  "name": "Track 01008",
+                  "milliseconds": 157296
+                },
+                {
+                  "name": "Track 04008",
+                  "milliseconds": 268296
+                },
+                {
+                  "name": "Track 07008",
+                  "milliseconds": 139296
+                },
+                {
+                  "name": "Track 10008",
+                  "milliseconds": 250296
+                },
+                {
+                  "name": "Track 13008",
+                  "milliseconds": 121296
+                }
+              ]
+            },
+            {
+              "title": "Album 2008",
+              "tracks": [
+                {
+                  "name": "Track 02008",
+                  "milliseconds": 194296
+                },
+                {
+                  "name": "Track 05008",
+                  "milliseconds": 305296
+                },
+                {
+                  "name": "Track 08008",
+                  "milliseconds": 176296
+                },
+                {
+                  "name": "Track 11008",
+                  "milliseconds": 287296
+                },
+                {
+                  "name": "Track 14008",
+                  "milliseconds": 158296
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Artist 0009",
+          "albums": [
+            {
+              "title": "Album 0009",
+              "tracks": [
+                {
+                  "name": "Track 00009",
+                  "milliseconds": 120333
+                },
+                {
+                  "name": "Track 03009",
+                  "milliseconds": 231333
+                },
+                {
+                  "name": "Track 06009",
+                  "milliseconds": 342333
+                },
+                {
+                  "name": "Track 09009",
+                  "milliseconds": 213333
+                },
+                {
+                  "name": "Track 12009",
+                  "milliseconds": 324333
+                }
+              ]
+            },
+            {
+              "title": "Album 1009",
+              "tracks": [
+                {
+                  "name": "Track 01009",
+                  "milliseconds": 157333
+                },
+                {
+                  "name": "Track 04009",
+                  "milliseconds": 268333
+                },
+                {
+                  "name": "Track 07009",
+                  "milliseconds": 139333
+                },
+                {
+                  "name": "Track 10009",
+                  "milliseconds": 250333
+                },
+                {
+                  "name": "Track 13009",
+                  "milliseconds": 121333
+                }
+              ]
+            },
+            {
+              "title": "Album 2009",
+              "tracks": [
+                {
+                  "name": "Track 02009",
+                  "milliseconds": 194333
+                },
+                {
+                  "name": "Track 05009",
+                  "milliseconds": 305333
+                },
+                {
+                  "name": "Track 08009",
+                  "milliseconds": 176333
+                },
+                {
+                  "name": "Track 11009",
+                  "milliseconds": 287333
+                },
+                {
+                  "name": "Track 14009",
+                  "milliseconds": 158333
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Artist 0010",
+          "albums": [
+            {
+              "title": "Album 0010",
+              "tracks": [
+                {
+                  "name": "Track 00010",
+                  "milliseconds": 120370
+                },
+                {
+                  "name": "Track 03010",
+                  "milliseconds": 231370
+                },
+                {
+                  "name": "Track 06010",
+                  "milliseconds": 342370
+                },
+                {
+                  "name": "Track 09010",
+                  "milliseconds": 213370
+                },
+                {
+                  "name": "Track 12010",
+                  "milliseconds": 324370
+                }
+              ]
+            },
+            {
+              "title": "Album 1010",
+              "tracks": [
+                {
+                  "name": "Track 01010",
+                  "milliseconds": 157370
+                },
+                {
+                  "name": "Track 04010",
+                  "milliseconds": 268370
+                },
+                {
+                  "name": "Track 07010",
+                  "milliseconds": 139370
+                },
+                {
+                  "name": "Track 10010",
+                  "milliseconds": 250370
+                },
+                {
+                  "name": "Track 13010",
+                  "milliseconds": 121370
+                }
+              ]
+            },
+            {
+              "title": "Album 2010",
+              "tracks": [
+                {
+                  "name": "Track 02010",
+                  "milliseconds": 194370
+                },
+                {
+                  "name": "Track 05010",
+                  "milliseconds": 305370
+                },
+                {
+                  "name": "Track 08010",
+                  "milliseconds": 176370
+                },
+                {
+                  "name": "Track 11010",
+                  "milliseconds": 287370
+                },
+                {
+                  "name": "Track 14010",
+                  "milliseconds": 158370
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

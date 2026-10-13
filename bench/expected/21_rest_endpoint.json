@@ -1,0 +1,24 @@
+{
+  "status": 200,
+  "content_encoding": null,
+  "body": {
+    "artist_by_pk": {
+      "artist_id": 3,
+      "name": "Artist 0003",
+      "albums": [
+        {
+          "album_id": 3,
+          "title": "Album 0003"
+        },
+        {
+          "album_id": 1003,
+          "title": "Album 1003"
+        },
+        {
+          "album_id": 2003,
+          "title": "Album 2003"
+        }
+      ]
+    }
+  }
+}

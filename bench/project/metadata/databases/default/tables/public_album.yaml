@@ -1,0 +1,26 @@
+table:
+  name: album
+  schema: public
+object_relationships:
+  - name: artist
+    using:
+      foreign_key_constraint_on: artist_id
+array_relationships:
+  - name: tracks
+    using:
+      foreign_key_constraint_on:
+        column: album_id
+        table:
+          name: track
+          schema: public
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - album_id
+        - artist_id
+        - released_on
+        - title
+      filter: {}
+      limit: 500
+      allow_aggregations: true

@@ -1,0 +1,17 @@
+#@ description: Variables, fragments, aliases, __typename, @include/@skip
+#@ variables: {"albumId": 17, "withAlbum": true, "skipComposer": true}
+query AlbumTracks($albumId: Int!, $withAlbum: Boolean!, $skipComposer: Boolean!) {
+  first: track(where: {album_id: {_eq: $albumId}}, order_by: {track_id: asc}) {
+    ...TrackFields
+  }
+  album: album_by_pk(album_id: $albumId) @include(if: $withAlbum) {
+    __typename
+    title
+  }
+}
+fragment TrackFields on track {
+  __typename
+  id: track_id
+  name
+  composer @skip(if: $skipComposer)
+}

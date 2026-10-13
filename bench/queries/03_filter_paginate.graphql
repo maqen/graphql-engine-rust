@@ -1,0 +1,14 @@
+#@ description: Compound where, order_by on two columns, limit/offset
+query {
+  track(
+    where: {_and: [{genre_id: {_eq: 5}}, {unit_price: {_gt: 1}}, {composer: {_is_null: false}}]}
+    order_by: [{milliseconds: desc}, {track_id: asc}]
+    limit: 20
+    offset: 10
+  ) {
+    track_id
+    name
+    milliseconds
+    unit_price
+  }
+}

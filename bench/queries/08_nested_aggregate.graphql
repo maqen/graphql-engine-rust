@@ -1,0 +1,11 @@
+#@ description: Aggregates over array relationships
+query {
+  artist(order_by: {artist_id: asc}, limit: 20) {
+    name
+    albums_aggregate { aggregate { count } }
+    albums(order_by: {album_id: asc}, limit: 2) {
+      title
+      tracks_aggregate { aggregate { count sum { milliseconds } } }
+    }
+  }
+}

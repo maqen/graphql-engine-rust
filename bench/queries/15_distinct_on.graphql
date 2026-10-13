@@ -1,0 +1,8 @@
+#@ description: distinct_on with matching order_by
+query {
+  track(distinct_on: genre_id, order_by: [{genre_id: asc}, {milliseconds: desc}]) {
+    genre_id
+    track_id
+    milliseconds
+  }
+}

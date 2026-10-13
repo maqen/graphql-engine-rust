@@ -1,0 +1,71 @@
+name: bench-parity
+
+# Images come from mirror.gcr.io (bench/.env.mirror) to avoid Docker Hub
+# pull limits on shared runners.
+#
+# Compatibility suite: replays bench/queries against the official Hasura V2
+# image and checks the responses still match the recorded goldens in
+# bench/expected (guards the harness itself), then, once the repo has a
+# Dockerfile, runs the same suite against our Rust engine and publishes the
+# parity report. The Rust job is informational until the engine catches up.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: bench-parity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hasura-golden:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start Postgres, handler and Hasura V2
+        working-directory: bench
+        run: docker compose --env-file .env.mirror up -d --wait
+      - name: Parity vs recorded goldens
+        run: python3 bench/scripts/parity.py --a hasura=http://localhost:8080 --golden --report parity-hasura.md
+      - name: Publish parity report
+        if: always()
+        run: test -f parity-hasura.md && cat parity-hasura.md >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Hasura logs on failure
+        if: failure()
+        working-directory: bench
+        run: docker compose logs hasura | tail -200
+
+  rust-engine-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for engine Dockerfile
+        id: dockerfile
+        run: |
+          if [ -f Dockerfile ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Build and start Rust engine
+        if: steps.dockerfile.outputs.present == 'true'
+        working-directory: bench
+        run: |
+          docker compose --env-file .env.mirror --profile rust up -d --wait postgres handler
+          docker compose --env-file .env.mirror --profile rust up -d --build rust-engine
+          for i in $(seq 1 120); do
+            curl -sf http://localhost:8081/healthz && exit 0
+            sleep 1
+          done
+          exit 1
+      - name: Parity vs Hasura goldens
+        if: steps.dockerfile.outputs.present == 'true'
+        run: python3 bench/scripts/parity.py --a rust=http://localhost:8081 --golden --report parity-rust.md
+      - name: Publish parity report
+        if: always() && steps.dockerfile.outputs.present == 'true'
+        run: test -f parity-rust.md && cat parity-rust.md >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Rust engine logs on failure
+        if: failure() && steps.dockerfile.outputs.present == 'true'
+        working-directory: bench
+        run: docker compose --env-file .env.mirror --profile rust logs rust-engine | tail -200

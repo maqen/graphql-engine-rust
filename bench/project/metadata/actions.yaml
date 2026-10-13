@@ -1,0 +1,24 @@
+actions:
+  - name: trackPriceQuote
+    definition:
+      kind: ""
+      handler: '{{ACTION_BASE_URL}}/price-quote'
+      forward_client_headers: true
+    permissions:
+      - role: user
+    comment: Quote a price for buying a track (served by bench/handler)
+custom_types:
+  enums: []
+  input_objects: []
+  objects:
+    - name: PriceQuote
+      relationships:
+        - field_mapping:
+            trackId: track_id
+          name: track
+          remote_table:
+            name: track
+            schema: public
+          source: default
+          type: object
+  scalars: []

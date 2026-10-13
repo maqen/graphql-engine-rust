@@ -1,0 +1,15 @@
+#@ description: Root aggregate with count/sum/avg/min/max and nodes
+query {
+  track_aggregate(where: {genre_id: {_in: [1, 2, 3]}}) {
+    aggregate {
+      count
+      sum { milliseconds unit_price }
+      avg { milliseconds }
+      min { milliseconds name }
+      max { milliseconds name }
+    }
+  }
+  invoice_aggregate {
+    aggregate { count(columns: customer_id, distinct: true) }
+  }
+}

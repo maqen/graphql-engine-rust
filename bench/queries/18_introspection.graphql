@@ -1,0 +1,32 @@
+#@ description: Full schema introspection for role user (schema parity)
+#@ role: user
+#@ user_id: 1
+query IntrospectionQuery {
+  __schema {
+    queryType { name }
+    mutationType { name }
+    subscriptionType { name }
+    types {
+      kind
+      name
+      description
+      fields(includeDeprecated: true) {
+        name
+        description
+        args { name description type { ...TypeRef } defaultValue }
+        type { ...TypeRef }
+        isDeprecated
+        deprecationReason
+      }
+      inputFields { name description type { ...TypeRef } defaultValue }
+      interfaces { ...TypeRef }
+      enumValues(includeDeprecated: true) { name description isDeprecated deprecationReason }
+      possibleTypes { ...TypeRef }
+    }
+    directives { name description locations args { name description type { ...TypeRef } defaultValue } }
+  }
+}
+fragment TypeRef on __Type {
+  kind name
+  ofType { kind name ofType { kind name ofType { kind name ofType { kind name ofType { kind name ofType { kind name ofType { kind name } } } } } } }
+}

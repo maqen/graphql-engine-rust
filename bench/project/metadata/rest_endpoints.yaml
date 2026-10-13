@@ -1,0 +1,9 @@
+- comment: Artist with albums, via a saved query
+  definition:
+    query:
+      collection_name: allowed-queries
+      query_name: artist_by_id
+  methods:
+    - GET
+  name: artist_by_id
+  url: artist/:id

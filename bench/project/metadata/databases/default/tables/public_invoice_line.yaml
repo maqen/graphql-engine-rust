@@ -1,0 +1,24 @@
+table:
+  name: invoice_line
+  schema: public
+object_relationships:
+  - name: invoice
+    using:
+      foreign_key_constraint_on: invoice_id
+  - name: track
+    using:
+      foreign_key_constraint_on: track_id
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - invoice_id
+        - invoice_line_id
+        - quantity
+        - track_id
+        - unit_price
+      filter:
+        invoice:
+          customer_id:
+            _eq: X-Hasura-User-Id
+      allow_aggregations: true

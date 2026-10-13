@@ -1,0 +1,80 @@
+{
+  "status": 200,
+  "content_encoding": "gzip",
+  "body": {
+    "data": {
+      "album": [
+        {
+          "album_id": 3,
+          "title": "Album 0003",
+          "artist": {
+            "name": "Artist 0003"
+          }
+        },
+        {
+          "album_id": 28,
+          "title": "Album 0028",
+          "artist": {
+            "name": "Artist 0028"
+          }
+        },
+        {
+          "album_id": 53,
+          "title": "Album 0053",
+          "artist": {
+            "name": "Artist 0053"
+          }
+        },
+        {
+          "album_id": 78,
+          "title": "Album 0078",
+          "artist": {
+            "name": "Artist 0078"
+          }
+        },
+        {
+          "album_id": 1003,
+          "title": "Album 1003",
+          "artist": {
+            "name": "Artist 0003"
+          }
+        },
+        {
+          "album_id": 1028,
+          "title": "Album 1028",
+          "artist": {
+            "name": "Artist 0028"
+          }
+        },
+        {
+          "album_id": 1053,
+          "title": "Album 1053",
+          "artist": {
+            "name": "Artist 0053"
+          }
+        },
+        {
+          "album_id": 1078,
+          "title": "Album 1078",
+          "artist": {
+            "name": "Artist 0078"
+          }
+        },
+        {
+          "album_id": 2003,
+          "title": "Album 2003",
+          "artist": {
+            "name": "Artist 0003"
+          }
+        },
+        {
+          "album_id": 2028,
+          "title": "Album 2028",
+          "artist": {
+            "name": "Artist 0028"
+          }
+        }
+      ]
+    }
+  }
+}

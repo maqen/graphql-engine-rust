@@ -1,0 +1,9 @@
+#@ description: jsonb _contains / _has_key and text _ilike operators
+query {
+  gold: customer(where: {metadata: {_contains: {tier: "gold"}}}, order_by: {customer_id: asc}, limit: 5) {
+    customer_id
+    metadata
+    tags: metadata(path: "tags")
+  }
+  search: track(where: {name: {_ilike: "%0042%"}}, order_by: {track_id: asc}) { track_id name }
+}

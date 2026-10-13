@@ -1,0 +1,12 @@
+#@ description: Computed field, tracked view with custom column names, manual relationship
+#@ role: user
+#@ user_id: 1
+query {
+  track(order_by: {track_id: asc}, limit: 10) { name milliseconds seconds }
+  artist_stats(order_by: {artist_id: asc}, limit: 10) {
+    name
+    albumCount
+    trackCount
+    artist { artist_id }
+  }
+}

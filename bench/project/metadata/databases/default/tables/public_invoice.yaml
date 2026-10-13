@@ -1,0 +1,29 @@
+table:
+  name: invoice
+  schema: public
+object_relationships:
+  - name: customer
+    using:
+      foreign_key_constraint_on: customer_id
+array_relationships:
+  - name: lines
+    using:
+      foreign_key_constraint_on:
+        column: invoice_id
+        table:
+          name: invoice_line
+          schema: public
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - billing_country
+        - customer_id
+        - invoice_date
+        - invoice_id
+        - total
+      filter:
+        customer:
+          customer_id:
+            _eq: X-Hasura-User-Id
+      allow_aggregations: true

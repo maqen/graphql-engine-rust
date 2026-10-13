@@ -1,0 +1,7 @@
+#@ description: Flat select with order_by + limit (admin)
+query {
+  artist(order_by: {artist_id: asc}, limit: 10) {
+    artist_id
+    name
+  }
+}

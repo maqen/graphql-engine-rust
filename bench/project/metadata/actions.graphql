@@ -1,0 +1,13 @@
+type Query {
+  trackPriceQuote(
+    trackId: Int!
+    quantity: Int!
+  ): PriceQuote
+}
+
+type PriceQuote {
+  trackId: Int!
+  quantity: Int!
+  total: Float!
+  currency: String!
+}

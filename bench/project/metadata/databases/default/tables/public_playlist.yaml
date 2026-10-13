@@ -1,0 +1,54 @@
+table:
+  name: playlist
+  schema: public
+object_relationships:
+  - name: owner
+    using:
+      foreign_key_constraint_on: owner_id
+insert_permissions:
+  - role: user
+    permission:
+      check:
+        owner_id:
+          _eq: X-Hasura-User-Id
+      set:
+        owner_id: x-hasura-User-Id
+      columns:
+        - name
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - created_at
+        - name
+        - owner_id
+        - playlist_id
+      filter:
+        owner_id:
+          _eq: X-Hasura-User-Id
+update_permissions:
+  - role: user
+    permission:
+      columns:
+        - name
+      filter:
+        owner_id:
+          _eq: X-Hasura-User-Id
+      check: null
+delete_permissions:
+  - role: user
+    permission:
+      filter:
+        owner_id:
+          _eq: X-Hasura-User-Id
+event_triggers:
+  - name: playlist_created
+    definition:
+      enable_manual: true
+      insert:
+        columns: '*'
+    retry_conf:
+      interval_sec: 10
+      num_retries: 0
+      timeout_sec: 60
+    webhook_from_env: EVENT_WEBHOOK_URL

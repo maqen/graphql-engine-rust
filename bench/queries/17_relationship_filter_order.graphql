@@ -1,0 +1,12 @@
+#@ description: where/order_by across relationships and aggregate order_by
+query {
+  album(
+    where: {artist: {name: {_like: "Artist 00%"}}, tracks: {genre_id: {_eq: 3}}}
+    order_by: [{tracks_aggregate: {count: desc}}, {album_id: asc}]
+    limit: 10
+  ) {
+    album_id
+    title
+    artist { name }
+  }
+}

@@ -1,0 +1,211 @@
+{
+  "status": 200,
+  "content_encoding": "gzip",
+  "body": {
+    "data": {
+      "customer": [
+        {
+          "customer_id": 42,
+          "first_name": "Cust42",
+          "email": "customer42@example.com",
+          "invoices": [
+            {
+              "invoice_id": 42,
+              "total": 15.90,
+              "lines": [
+                {
+                  "quantity": 3,
+                  "track": {
+                    "name": "Track 06387"
+                  }
+                },
+                {
+                  "quantity": 1,
+                  "track": {
+                    "name": "Track 06418"
+                  }
+                },
+                {
+                  "quantity": 2,
+                  "track": {
+                    "name": "Track 06449"
+                  }
+                },
+                {
+                  "quantity": 3,
+                  "track": {
+                    "name": "Track 06480"
+                  }
+                },
+                {
+                  "quantity": 1,
+                  "track": {
+                    "name": "Track 06511"
+                  }
+                }
+              ]
+            },
+            {
+              "invoice_id": 2042,
+              "total": 11.91,
+              "lines": [
+                {
+                  "quantity": 1,
+                  "track": {
+                    "name": "Track 16387"
+                  }
+                },
+                {
+                  "quantity": 2,
+                  "track": {
+                    "name": "Track 16418"
+                  }
+                },
+                {
+                  "quantity": 3,
+                  "track": {
+                    "name": "Track 16449"
+                  }
+                },
+                {
+                  "quantity": 1,
+                  "track": {
+                    "name": "Track 16480"
+                  }
+                },
+                {
+                  "quantity": 2,
+                  "track": {
+                    "name": "Track 16511"
+                  }
+                }
+              ]
+            },
+            {
+              "invoice_id": 4042,
+              "total": 16.89,
+              "lines": [
+                {
+                  "quantity": 2,
+                  "track": {
+                    "name": "Track 26387"
+                  }
+                },
+                {
+                  "quantity": 3,
+                  "track": {
+                    "name": "Track 26418"
+                  }
+                },
+                {
+                  "quantity": 1,
+                  "track": {
+                    "name": "Track 26449"
+                  }
+                },
+                {
+                  "quantity": 2,
+                  "track": {
+                    "name": "Track 26480"
+                  }
+                },
+                {
+                  "quantity": 3,
+                  "track": {
+                    "name": "Track 26511"
+                  }
+                }
+              ]
+            },
+            {
+              "invoice_id": 6042,
+              "total": 15.90,
+              "lines": [
+                {
+                  "quantity": 3,
+                  "track": {
+                    "name": "Track 06387"
+                  }
+                },
+                {
+                  "quantity": 1,
+                  "track": {
+                    "name": "Track 06418"
+                  }
+                },
+                {
+                  "quantity": 2,
+                  "track": {
+                    "name": "Track 06449"
+                  }
+                },
+                {
+                  "quantity": 3,
+                  "track": {
+                    "name": "Track 06480"
+                  }
+                },
+                {
+                  "quantity": 1,
+                  "track": {
+                    "name": "Track 06511"
+                  }
+                }
+              ]
+            },
+            {
+              "invoice_id": 8042,
+              "total": 11.91,
+              "lines": [
+                {
+                  "quantity": 1,
+                  "track": {
+                    "name": "Track 16387"
+                  }
+                },
+                {
+                  "quantity": 2,
+                  "track": {
+                    "name": "Track 16418"
+                  }
+                },
+                {
+                  "quantity": 3,
+                  "track": {
+                    "name": "Track 16449"
+                  }
+                },
+                {
+                  "quantity": 1,
+                  "track": {
+                    "name": "Track 16480"
+                  }
+                },
+                {
+                  "quantity": 2,
+                  "track": {
+                    "name": "Track 16511"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "invoice": [
+        {
+          "invoice_id": 42,
+          "customer_id": 42
+        },
+        {
+          "invoice_id": 2042,
+          "customer_id": 42
+        },
+        {
+          "invoice_id": 4042,
+          "customer_id": 42
+        }
+      ]
+    }
+  }
+}

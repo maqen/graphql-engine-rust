@@ -1,0 +1,650 @@
+{
+  "status": 200,
+  "content_encoding": "gzip",
+  "body": {
+    "data": {
+      "artist": [
+        {
+          "name": "Artist 0001",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0001",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2355370
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1001",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2245370
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0002",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0002",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2355740
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1002",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2245740
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0003",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0003",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2356110
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1003",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2246110
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0004",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0004",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2356480
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1004",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2246480
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0005",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0005",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2356850
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1005",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2246850
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0006",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0006",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2357220
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1006",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2247220
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0007",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0007",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2357590
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1007",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2247590
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0008",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0008",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2357960
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1008",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2247960
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0009",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0009",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2358330
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1009",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2248330
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0010",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0010",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2358700
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1010",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2248700
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0011",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0011",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2359070
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1011",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2249070
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0012",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0012",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2359440
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1012",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2249440
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0013",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0013",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2359810
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1013",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2249810
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0014",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0014",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2360180
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1014",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2250180
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0015",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0015",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2360550
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1015",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2250550
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0016",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0016",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2360920
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1016",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2250920
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0017",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0017",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2361290
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1017",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2251290
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0018",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0018",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2361660
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1018",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2251660
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0019",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0019",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2362030
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1019",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2252030
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Artist 0020",
+          "albums_aggregate": {
+            "aggregate": {
+              "count": 3
+            }
+          },
+          "albums": [
+            {
+              "title": "Album 0020",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2362400
+                  }
+                }
+              }
+            },
+            {
+              "title": "Album 1020",
+              "tracks_aggregate": {
+                "aggregate": {
+                  "count": 10,
+                  "sum": {
+                    "milliseconds": 2252400
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

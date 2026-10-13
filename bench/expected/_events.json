@@ -1,0 +1,36 @@
+{
+  "counts": {
+    "playlist_created": 1
+  },
+  "payloads": {
+    "playlist_created": [
+      {
+        "delivery_info": {
+          "current_retry": 0,
+          "max_retries": 0
+        },
+        "event": {
+          "data": {
+            "new": {
+              "name": "bench-tmp",
+              "owner_id": 77
+            },
+            "old": null
+          },
+          "op": "INSERT",
+          "session_variables": {
+            "x-hasura-role": "user",
+            "x-hasura-user-id": "77"
+          }
+        },
+        "table": {
+          "name": "playlist",
+          "schema": "public"
+        },
+        "trigger": {
+          "name": "playlist_created"
+        }
+      }
+    ]
+  }
+}

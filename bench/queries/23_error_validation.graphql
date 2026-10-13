@@ -1,0 +1,3 @@
+#@ description: Unknown field validation error
+#@ bench: false
+query { artist { artist_id nope } }

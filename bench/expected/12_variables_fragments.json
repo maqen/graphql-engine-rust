@@ -1,0 +1,64 @@
+{
+  "status": 200,
+  "content_encoding": null,
+  "body": {
+    "data": {
+      "first": [
+        {
+          "__typename": "track",
+          "id": 17,
+          "name": "Track 00017"
+        },
+        {
+          "__typename": "track",
+          "id": 3017,
+          "name": "Track 03017"
+        },
+        {
+          "__typename": "track",
+          "id": 6017,
+          "name": "Track 06017"
+        },
+        {
+          "__typename": "track",
+          "id": 9017,
+          "name": "Track 09017"
+        },
+        {
+          "__typename": "track",
+          "id": 12017,
+          "name": "Track 12017"
+        },
+        {
+          "__typename": "track",
+          "id": 15017,
+          "name": "Track 15017"
+        },
+        {
+          "__typename": "track",
+          "id": 18017,
+          "name": "Track 18017"
+        },
+        {
+          "__typename": "track",
+          "id": 21017,
+          "name": "Track 21017"
+        },
+        {
+          "__typename": "track",
+          "id": 24017,
+          "name": "Track 24017"
+        },
+        {
+          "__typename": "track",
+          "id": 27017,
+          "name": "Track 27017"
+        }
+      ],
+      "album": {
+        "__typename": "album",
+        "title": "Album 0017"
+      }
+    }
+  }
+}

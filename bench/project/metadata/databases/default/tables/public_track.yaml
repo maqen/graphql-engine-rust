@@ -1,0 +1,44 @@
+table:
+  name: track
+  schema: public
+object_relationships:
+  - name: album
+    using:
+      foreign_key_constraint_on: album_id
+  - name: genre
+    using:
+      foreign_key_constraint_on: genre_id
+  - name: media_type
+    using:
+      foreign_key_constraint_on: media_type_id
+array_relationships:
+  - name: invoice_lines
+    using:
+      foreign_key_constraint_on:
+        column: track_id
+        table:
+          name: invoice_line
+          schema: public
+computed_fields:
+  - name: seconds
+    definition:
+      function:
+        name: track_seconds
+        schema: public
+    comment: Track duration in whole seconds
+select_permissions:
+  - role: user
+    permission:
+      columns:
+        - album_id
+        - composer
+        - genre_id
+        - media_type_id
+        - milliseconds
+        - name
+        - track_id
+        - unit_price
+      computed_fields:
+        - seconds
+      filter: {}
+      allow_aggregations: true
