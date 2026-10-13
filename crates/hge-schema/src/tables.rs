@@ -133,11 +133,20 @@ impl TableInfo {
 
     /// The table name as V2 prints it in descriptions (schema omitted when `public`).
     pub fn display_name(&self) -> String {
-        if self.name.schema == "public" || self.logical_model {
+        if self.logical_model {
             self.name.name.clone()
         } else {
-            format!("{}.{}", self.name.schema, self.name.name)
+            display_name(&self.name)
         }
+    }
+}
+
+/// How V2 names a table in descriptions: unqualified in `public`, else `schema.name`.
+fn display_name(table: &QualifiedTable) -> String {
+    if table.schema == "public" {
+        table.name.clone()
+    } else {
+        format!("{}.{}", table.schema, table.name)
     }
 }
 
@@ -427,7 +436,17 @@ fn resolve_table(
         source: source.clone(),
         name: entry.table.clone(),
         gql_name,
-        description: config.comment.clone().or_else(|| cat.description.clone()),
+        // An explicit metadata comment wins (an empty one means none); then the database
+        // comment; then V2's default.
+        description: match &config.comment {
+            Some(c) => Some(c.clone()),
+            None => Some(cat.description.clone().unwrap_or_else(|| {
+                format!(
+                    "columns and relationships of \"{}\"",
+                    display_name(&entry.table)
+                )
+            })),
+        },
         columns,
         primary_key: cat.primary_key.clone(),
         constraints: cat.constraints.clone(),

@@ -929,6 +929,32 @@ impl Builder<'_> {
         name
     }
 
+    /// Names of every type some field, argument, input field or directive argument refers to.
+    fn referenced_types(&self) -> HashSet<String> {
+        let mut used = HashSet::new();
+        let add_args = |used: &mut HashSet<String>, args: &IndexMap<String, InputValueDef>| {
+            for arg in args.values() {
+                used.insert(arg.ty.base().to_owned());
+            }
+        };
+        for ty in self.schema.types.values() {
+            match ty {
+                TypeDef::Object(obj) => {
+                    for field in obj.fields.values() {
+                        used.insert(field.ty.base().to_owned());
+                        add_args(&mut used, &field.args);
+                    }
+                }
+                TypeDef::InputObject(obj) => add_args(&mut used, &obj.fields),
+                TypeDef::Enum(_) | TypeDef::Scalar(_) => {}
+            }
+        }
+        for directive in &self.schema.directives {
+            add_args(&mut used, &directive.args);
+        }
+        used
+    }
+
     fn finish(&mut self) {
         for name in std::mem::take(&mut self.scalars) {
             if self.schema.types.contains_key(&name) {
@@ -940,17 +966,41 @@ impl Builder<'_> {
                 description: None,
             }));
         }
+        // V2 lists only the types reachable from the roots: drop scalars nothing refers to
+        // (an unused `ID`, `Float`, …).
+        let used = self.referenced_types();
+        self.schema
+            .types
+            .retain(|name, ty| !matches!(ty, TypeDef::Scalar(_)) || used.contains(name.as_str()));
         // V2 lists types, fields, arguments, input fields (and enum values) sorted by name.
+        // An empty comment in metadata means no description.
+        let blank = |d: &mut Option<String>| {
+            if d.as_deref() == Some("") {
+                *d = None;
+            }
+        };
         self.schema.types.sort_keys();
         for ty in self.schema.types.values_mut() {
             match ty {
                 TypeDef::Object(obj) => {
+                    blank(&mut obj.description);
                     obj.fields.sort_keys();
                     for field in obj.fields.values_mut() {
+                        blank(&mut field.description);
                         field.args.sort_keys();
+                        field
+                            .args
+                            .values_mut()
+                            .for_each(|a| blank(&mut a.description));
                     }
                 }
-                TypeDef::InputObject(obj) => obj.fields.sort_keys(),
+                TypeDef::InputObject(obj) => {
+                    blank(&mut obj.description);
+                    obj.fields.sort_keys();
+                    obj.fields
+                        .values_mut()
+                        .for_each(|f| blank(&mut f.description));
+                }
                 // Enum values keep definition order; introspection sorts them.
                 TypeDef::Enum(_) => {}
                 TypeDef::Scalar(_) => {}

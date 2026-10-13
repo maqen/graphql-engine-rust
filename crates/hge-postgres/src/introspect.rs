@@ -16,6 +16,7 @@ SELECT coalesce(json_agg(json_build_object(
   'schema', n.nspname,
   'name', c.relname,
   'kind', c.relkind::text,
+  'description', pg_catalog.obj_description(c.oid, 'pg_class'),
   'columns', (
     SELECT coalesce(json_agg(json_build_object(
       'name', a.attname,
@@ -27,7 +28,8 @@ SELECT coalesce(json_agg(json_build_object(
       'has_default', a.atthasdef,
       'is_identity', a.attidentity <> '',
       'is_generated', a.attgenerated <> '',
-      'is_identity_always', a.attidentity = 'a'
+      'is_identity_always', a.attidentity = 'a',
+      'description', pg_catalog.col_description(c.oid, a.attnum)
     ) ORDER BY a.attnum), '[]')
     FROM pg_catalog.pg_attribute a
     JOIN (SELECT ty.oid, ty.typname, ty.typtype, ty.typelem, ty.typcategory, ty.typbasetype,
@@ -197,6 +199,8 @@ struct RawTable {
     schema: String,
     name: String,
     kind: String,
+    #[serde(default)]
+    description: Option<String>,
     columns: Vec<RawColumn>,
     primary_key: Option<Vec<String>>,
     unique_constraints: Vec<Option<Vec<String>>>,
@@ -218,6 +222,8 @@ struct RawColumn {
     is_identity: bool,
     is_generated: bool,
     is_identity_always: bool,
+    #[serde(default)]
+    description: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -334,7 +340,7 @@ pub fn parse_catalog(tables_json: &str, enums_json: &str) -> Result<SourceCatalo
                         is_identity: c.is_identity,
                         is_generated: c.is_generated,
                         is_identity_always: c.is_identity_always,
-                        description: None,
+                        description: c.description,
                     },
                 )
             })
@@ -353,7 +359,7 @@ pub fn parse_catalog(tables_json: &str, enums_json: &str) -> Result<SourceCatalo
             TableCatalog {
                 name,
                 kind,
-                description: None,
+                description: t.description,
                 columns,
                 primary_key: t.primary_key,
                 unique_constraints: t.unique_constraints.into_iter().flatten().collect(),
