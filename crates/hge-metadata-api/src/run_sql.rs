@@ -43,10 +43,12 @@ fn default_source() -> String {
 impl RunSql {
     /// V2's `isSchemaCacheBuildRequiredRunSQL`.
     pub fn checks_metadata(&self) -> bool {
-        match self.check_metadata_consistency {
-            Some(b) => b,
-            None => !self.read_only && looks_like_ddl(&self.sql),
+        // A read-only transaction cannot change the schema, whatever the flag says.
+        if self.read_only {
+            return false;
         }
+        self.check_metadata_consistency
+            .unwrap_or_else(|| looks_like_ddl(&self.sql))
     }
 }
 
@@ -390,6 +392,7 @@ async fn introspect_in(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::{Value, json};
 
     #[test]
     fn ddl_heuristic() {
@@ -400,6 +403,22 @@ mod tests {
         assert!(looks_like_ddl("COMMENT ON TABLE a IS 'x'"));
         assert!(!looks_like_ddl("CREATE TABLE a (id int)"));
         assert!(!looks_like_ddl("select altered, droppable from t"));
+    }
+
+    #[test]
+    fn read_only_never_checks_metadata() {
+        let args = |v: Value| serde_json::from_value::<RunSql>(v).unwrap();
+        assert!(
+            !args(
+                json!({"sql": "select 1", "read_only": true, "check_metadata_consistency": true})
+            )
+            .checks_metadata()
+        );
+        assert!(!args(json!({"sql": "drop table t", "read_only": true})).checks_metadata());
+        assert!(
+            args(json!({"sql": "select 1", "check_metadata_consistency": true})).checks_metadata()
+        );
+        assert!(args(json!({"sql": "drop table t"})).checks_metadata());
     }
 
     #[test]
