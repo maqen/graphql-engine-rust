@@ -218,6 +218,7 @@ async fn websockets() {
     jwt_expiry(&server).await;
     async_actions(&server, &url).await;
     async_actions_with_relationships(&server, &url).await;
+    large_message(&server).await;
 
     let server = start(&url, |c| {
         c.websocket.init_timeout = Duration::from_millis(200)
@@ -981,6 +982,25 @@ async fn async_actions_with_relationships(server: &Server, url: &str) {
         "database query error"
     );
     quiet(&mut ws).await;
+}
+
+/// A message larger than a connection's initial read buffer is read whole.
+async fn large_message(server: &Server) {
+    let mut ws = server.connect(Some("graphql-transport-ws")).await;
+    init(&mut ws, admin()).await;
+    let query = format!(
+        "#{}\nsubscription {{ message_by_pk(id: 1) {{ id }} }}",
+        "x".repeat(300_000)
+    );
+    send(
+        &mut ws,
+        json!({"id": "1", "type": "subscribe", "payload": {"query": query}}),
+    )
+    .await;
+    assert_eq!(
+        recv(&mut ws).await,
+        data("1", "next", json!({"message_by_pk": {"id": 1}}))
+    );
 }
 
 /// With no room in the send queue, every result overflows.

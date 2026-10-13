@@ -69,6 +69,9 @@ impl Default for WebSocketConfig {
     }
 }
 
+/// Initial capacity of a connection's read buffer.
+const READ_BUFFER_SIZE: usize = 4 * 1024;
+
 /// Server-wide WebSocket state: the pollers and the open connections.
 pub struct WebSockets {
     pub live_queries: Registry,
@@ -196,7 +199,12 @@ pub fn upgrade(
     ] {
         headers.remove(h);
     }
-    let ws = ws.protocols([GRAPHQL_TRANSPORT_WS, GRAPHQL_WS]);
+    // tungstenite allocates and zero-fills its whole read buffer per connection (128 KiB by
+    // default), which dominated the memory of a subscriber. Clients send small messages; a
+    // larger one grows the buffer as needed.
+    let ws = ws
+        .read_buffer_size(READ_BUFFER_SIZE)
+        .protocols([GRAPHQL_TRANSPORT_WS, GRAPHQL_WS]);
     let protocol = Protocol::from_selected(ws.selected_protocol().and_then(|p| p.to_str().ok()));
     ws.on_upgrade(move |socket| async move {
         Connection::run(engine, socket, protocol, endpoint, headers).await;
