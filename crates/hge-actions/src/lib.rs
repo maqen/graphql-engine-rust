@@ -1,10 +1,11 @@
-//! Executing actions: calling HTTP handlers, validating and projecting their responses, and
-//! joining action outputs to tables.
+//! Executing actions: calling HTTP handlers, validating and projecting their responses,
+//! joining action outputs to tables, and asynchronous actions ([`async_action`]).
 //!
 //! The schema side (custom types, root fields, lowering to IR) lives in
 //! `hge_schema::actions`; this crate receives [`hge_ir::ActionRootField`]s and looks the
 //! handler configuration up by action name in an [`ActionRegistry`].
 
+pub mod async_action;
 pub mod env;
 pub mod project;
 pub mod registry;
@@ -18,6 +19,7 @@ use hge_ir::action::{ActionCall, ActionRelationship};
 use hge_ir::{ActionRootField, BoolExp, CompareOp, QueryRoot, SourceExecutor, Value as IrValue};
 use serde_json::Value;
 
+pub use async_action::{ActionLogStore, ProcessorConfig};
 pub use env::{Environment, ProcessEnv};
 pub use registry::{ActionHandler, ActionRegistry, BuiltRegistry, ConfiguredHeader, HandlerConfig};
 
@@ -29,6 +31,10 @@ pub struct RequestContext<'a> {
     pub client_headers: &'a http::HeaderMap,
     /// The GraphQL query text (sent as `request_query`).
     pub query: Option<&'a str>,
+    /// Where asynchronous actions are recorded (`None` without a metadata database).
+    pub action_log: Option<&'a dyn ActionLogStore>,
+    /// Whether `internal` error details are shown to this request (async `errors` field).
+    pub include_internal: bool,
 }
 
 /// Database access for action relationships.
@@ -86,10 +92,31 @@ pub async fn execute(
                 set_cookies: resp.set_cookies,
             })
         }
-        ActionCall::AsyncMutation { .. } | ActionCall::AsyncQuery { .. } => Err(Error::new(
-            hge_core::Code::NotSupported,
-            "asynchronous actions are not supported yet",
-        )),
+        ActionCall::AsyncMutation { input } => Ok(ActionResult {
+            value: async_action::submit(&handler.name, input, ctx).await?,
+            set_cookies: vec![],
+        }),
+        ActionCall::AsyncQuery {
+            id,
+            output,
+            fields,
+            has_relationships,
+        } => {
+            let poll = async_action::poll_async_query(
+                &field.action,
+                id,
+                output,
+                fields,
+                *has_relationships,
+                ctx,
+                sources,
+            )
+            .await?;
+            Ok(ActionResult {
+                value: poll.value,
+                set_cookies: vec![],
+            })
+        }
     }
 }
 
@@ -133,7 +160,7 @@ type JoinQuery = (project::RelId, Vec<Value>, QueryRoot);
 const MAX_ROOTS_PER_STATEMENT: usize = 500;
 
 /// Fetch every joined row: one round trip per source and chunk of keys, concurrently.
-async fn fetch_joins(
+pub(crate) async fn fetch_joins(
     joins: &project::Joins<'_>,
     session: &Session,
     sources: &dyn Sources,

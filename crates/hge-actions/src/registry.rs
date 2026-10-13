@@ -8,6 +8,7 @@ use hge_core::InconsistentObject;
 use hge_ir::action::ActionOutput;
 use hge_metadata::Metadata;
 use hge_metadata::actions::{Action, ActionType, HeaderConf};
+use hge_transforms::{Request as TransformRequest, RequestTransform, ResponseTransform};
 
 use crate::env::{Environment, Template};
 
@@ -48,8 +49,11 @@ pub struct ActionHandler {
     /// Lower-cased names of client headers that are never forwarded.
     pub ignored_client_headers: HashSet<String>,
     pub timeout: Duration,
-    pub request_transform: Option<serde_json::Value>,
-    pub response_transform: Option<serde_json::Value>,
+    pub request_transform: Option<RequestTransform>,
+    pub response_transform: Option<ResponseTransform>,
+    /// With a request transform: the resolved URL parsed as V2's `parseRequest` does (the
+    /// error is the invalid-URL message).
+    pub transform_base: Option<Result<TransformRequest, String>>,
     pub output: Arc<ActionOutput>,
 }
 
@@ -167,6 +171,11 @@ impl ActionRegistry {
                     continue;
                 }
             };
+            // The handler URL as transforms see it, parsed once (only if one is configured).
+            let transform_base = def
+                .request_transform
+                .as_ref()
+                .map(|_| TransformRequest::new("POST", &url, vec![], vec![]));
             actions.insert(
                 action.name.clone(),
                 Arc::new(ActionHandler {
@@ -184,6 +193,7 @@ impl ActionRegistry {
                     timeout: Duration::from_secs(def.timeout_secs),
                     request_transform: def.request_transform,
                     response_transform: def.response_transform,
+                    transform_base,
                     output: output.clone(),
                 }),
             );
@@ -255,5 +265,74 @@ mod tests {
             ]
         );
         assert!(built.registry.get("good").is_some());
+    }
+
+    #[test]
+    fn transforms_are_parsed_with_the_metadata() {
+        // Malformed transform JSON makes the metadata unreadable, as in V2's FromJSON.
+        let e = hge_metadata::from_json(json!({
+            "version": 3, "sources": [],
+            "actions": [
+                {"name": "ok", "definition": {"output_type": "String", "handler": "http://h"}},
+                {"name": "bad", "definition": {"output_type": "String", "handler": "http://h",
+                    "request_transform": {"version": 2, "body": {"action": "nope"}}}}
+            ]
+        }))
+        .unwrap_err();
+        assert_eq!(
+            (e.code, e.path.as_str(), e.message.as_str()),
+            (
+                hge_core::Code::ParseFailed,
+                "$.actions[1].definition.request_transform.body",
+                "invalid transform action"
+            )
+        );
+        let e = hge_metadata::from_json(json!({
+            "version": 3, "sources": [],
+            "actions": [{"name": "bad", "definition": {"output_type": "String",
+                "handler": "http://h", "response_transform": {"version": 3}}}]
+        }))
+        .unwrap_err();
+        assert_eq!(e.path, "$.actions[0].definition.response_transform.version");
+
+        // Kriti templates are only checked when the action runs.
+        let metadata = hge_metadata::from_json(json!({
+            "version": 3, "sources": [],
+            "actions": [
+                {"name": "good", "definition": {"output_type": "String", "handler": "http://u:p@h/x",
+                    "request_transform": {"body": "{{ unparsed"},
+                    "response_transform": {"version": 2, "body": {"action": "remove"}}}},
+                {"name": "plain", "definition": {"output_type": "String", "handler": "http://h"}}
+            ]
+        }))
+        .unwrap();
+        let output = Arc::new(ActionOutput {
+            ty: OutputType::Named("String".into()),
+            base: OutputBase::BuiltinScalar,
+        });
+        let outputs = ["good", "plain"]
+            .into_iter()
+            .map(|n| (n.to_owned(), output.clone()))
+            .collect();
+        let built = ActionRegistry::build(
+            &metadata,
+            &outputs,
+            Arc::new(crate::ProcessEnv),
+            HandlerConfig::default(),
+        );
+        assert!(built.failed.is_empty() && built.inconsistencies.is_empty());
+        let good = built.registry.get("good").unwrap();
+        assert!(good.request_transform.is_some() && good.response_transform.is_some());
+        let base = good.transform_base.clone().unwrap().unwrap();
+        assert_eq!(base.full_url(), "http://h/x");
+        assert_eq!(base.headers[0].0, "Authorization");
+        assert!(
+            built
+                .registry
+                .get("plain")
+                .unwrap()
+                .transform_base
+                .is_none()
+        );
     }
 }

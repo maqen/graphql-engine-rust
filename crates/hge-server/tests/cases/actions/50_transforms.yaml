@@ -1,0 +1,150 @@
+cases:
+  - description: request transform sets method, url, query params, headers and body
+    headers: { x-hasura-role: user, x-hasura-user-id: '7' }
+    query:
+      query: '{ transformRequest(id: 5, name: "n") }'
+    response:
+      data:
+        transformRequest:
+          method: PUT
+          path: /raw/users/5
+          query: id=5&role=user
+          headers:
+            - [content-type, application/json]
+            - [x-user, user-7]
+          body: '{"action":"transformRequest","base":[],"name":"n"}'
+
+  - description: form body, replaced content type; response transform sees the transformed request
+    query:
+      query: '{ transformForm(foo: "a b&c") }'
+    response:
+      data:
+        transformForm:
+          handler:
+            method: POST
+            path: /raw
+            query: null
+            headers:
+              - [content-type, application/x-www-form-urlencoded]
+              - [user-agent, hasura-graphql-engine/v2.48.0-rs.0.1.0]
+            body: baz=world&foo=a%20b%26c
+          request_body: null
+          request_query: []
+          status: 200
+
+  - description: response transform reshapes a 2xx body into the output type
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ transformResponse(status: 200, body: {id: 3, name: "x"}) { authorId label } }'
+    response:
+      data:
+        transformResponse: { authorId: 3, label: x }
+
+  - description: response transform runs on 4xx bodies too
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ transformResponse(status: 400, body: {error: "bad"}) { label } }'
+    response:
+      errors:
+        - extensions: { path: '$', code: unexpected }
+          message: bad
+
+  - description: response transform failure (body is not JSON, so $body is null)
+    query:
+      query: '{ transformResponse(status: 200, body: "raw:not json") { label } }'
+    response:
+      errors:
+        - extensions:
+            path: '$'
+            code: unexpected
+            internal:
+              - error_code: Type Error
+                message: Couldn't match expected type 'Object' with actual type 'Null'
+                source_position: { start_line: 0, start_column: 49, end_line: 0, end_column: 54 }
+          message: Response Transformation Failed
+
+  - description: internal details are hidden from non-admin roles
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ transformResponse(status: 200, body: "raw:not json") { label } }'
+    response:
+      errors:
+        - extensions: { path: '$', code: unexpected }
+          message: Response Transformation Failed
+
+  - description: request transform failures are collected (evaluation and parse errors)
+    query:
+      query: '{ transformBroken }'
+    response:
+      errors:
+        - extensions:
+            path: '$'
+            code: unexpected
+            internal:
+              - error_code: Attribute Error
+                message: "'Object' has no attritubte 'world'."
+                source_position: { start_line: 0, start_column: 4, end_line: 0, end_column: 15 }
+              # The span of the last token: the closing quote of the unescaped template.
+              - error_code: Parse Error
+                message: Unexpected token '"'.
+                source_position: { start_line: 0, start_column: 16, end_line: 0, end_column: 17 }
+          message: Request Transformation Failed
+
+  - description: test_webhook_transform applies a request transform to a sample request
+    url: /v1/metadata
+    query:
+      type: test_webhook_transform
+      args:
+        webhook_url: '{{BASE}}/users'
+        env: { BASE: 'http://example.com' }
+        body: { input: { id: 5 } }
+        request_headers: [[Content-Type, application/json]]
+        request_transform:
+          version: 2
+          method: PUT
+          url: '{{$base_url}}/{{$body.input.id}}'
+          query_params: { q: x }
+          body: { action: transform, template: '{"id": {{$body.input.id}}}' }
+    response:
+      webhook_url: http://example.com/users/5?q=x
+      method: PUT
+      headers: [[content-type, application/json]]
+      body: { id: 5 }
+
+  - description: test_webhook_transform reports evaluation errors as validation-failed
+    url: /v1/metadata
+    status: 400
+    query:
+      type: test_webhook_transform
+      args:
+        webhook_url: http://localhost:1234
+        body: { hello: world }
+        request_transform: { body: '{{ $body.world }}' }
+    response:
+      path: $.args
+      error: request transform validation failed
+      code: validation-failed
+      internal:
+        - error_code: Attribute Error
+          message: "'Object' has no attritubte 'world'."
+          source_position: { end_column: 15, end_line: 0, start_column: 4, start_line: 0 }
+
+  - description: replace_metadata with a malformed transform is a parse error at its path
+    url: /v1/metadata
+    status: 400
+    query:
+      type: replace_metadata
+      args:
+        metadata:
+          version: 3
+          sources: []
+          actions:
+            - name: bad
+              definition:
+                handler: http://h
+                output_type: String
+                request_transform: { version: 2, body: { action: nope } }
+    response:
+      path: $.args.metadata.actions[0].definition.request_transform.body
+      error: invalid transform action
+      code: parse-failed

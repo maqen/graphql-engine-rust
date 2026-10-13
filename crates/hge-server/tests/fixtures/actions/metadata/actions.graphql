@@ -14,6 +14,14 @@ type Query {
 
 type Mutation {
   login(username: String!, password: String!): LoginOutput!
+
+  asyncRespond(status: Int!, body: json): AsyncRespond
+
+  asyncEcho(arg: EchoInput): AsyncEcho
+
+  asyncAuthor(id: Int!): AsyncAuthor
+
+  asyncSlow: AsyncRespond
 }
 
 input EchoInput {
@@ -39,4 +47,34 @@ type Address {
 
 type LoginOutput {
   token: String!
+}
+
+type AsyncRespond {
+  authorId: Int
+  label: String!
+  address: Address
+}
+
+type AsyncEcho {
+  payload: json
+  headers: json
+}
+
+type AsyncAuthor {
+  authorId: Int
+  label: String!
+}
+
+extend type Query {
+  transformRequest(id: Int!, name: String!): json
+
+  transformForm(foo: String!, missing: String): json
+
+  transformResponse(status: Int!, body: json): AuthorInfo
+
+  transformBroken: json
+}
+
+extend type Mutation {
+  asyncTransformed(other: Int!): AsyncAuthor
 }

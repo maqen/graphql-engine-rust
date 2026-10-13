@@ -1,0 +1,77 @@
+# Asynchronous actions: what does not depend on generated ids. Submitting, processing and
+# reading results back is covered by `async_actions` in `tests/actions.rs`.
+cases:
+  - description: the async query field returns the result object of the action
+    query:
+      query: >-
+        { __type(name: "asyncRespond") { name description
+          fields { name type { kind name ofType { name } } } } }
+    response:
+      data:
+        __type:
+          name: asyncRespond
+          description: 'fields of action: "asyncRespond"'
+          fields:
+            - { name: id, type: { kind: NON_NULL, name: null, ofType: { name: uuid } } }
+            - { name: created_at, type: { kind: NON_NULL, name: null, ofType: { name: timestamptz } } }
+            - { name: errors, type: { kind: SCALAR, name: json, ofType: null } }
+            - { name: output, type: { kind: OBJECT, name: AsyncRespond, ofType: null } }
+
+  - description: the async mutation returns the action id
+    headers: { x-hasura-role: public }
+    query:
+      query: >-
+        { __schema { mutationType { fields(includeDeprecated: true) { name type { kind ofType { name } } } } } }
+    response:
+      data:
+        __schema:
+          mutationType:
+            fields:
+              - { name: asyncAuthor, type: { kind: NON_NULL, ofType: { name: uuid } } }
+              - { name: asyncRespond, type: { kind: NON_NULL, ofType: { name: uuid } } }
+              - { name: login, type: { kind: NON_NULL, ofType: { name: LoginOutput } } }
+
+  - description: an unknown id is a database error (V2 expects exactly one row)
+    headers: { x-hasura-role: public }
+    query:
+      query: '{ asyncRespond(id: "00000000-0000-0000-0000-000000000000") { id } }'
+    response:
+      errors:
+        - extensions: { path: '$', code: unexpected }
+          message: database query error
+
+  - description: an id that is not a uuid fails to parse (V2's uuid scalar parser)
+    headers: { x-hasura-role: public }
+    query:
+      query: '{ asyncRespond(id: "nope") { id } }'
+    response:
+      errors:
+        - extensions: { path: '$.selectionSet.asyncRespond.args.id', code: parse-failed }
+          message: invalid UUID
+
+  - description: only the hyphenated uuid form is accepted (Data.UUID.fromText)
+    headers: { x-hasura-role: public }
+    query:
+      query: '{ asyncRespond(id: "00000000000000000000000000000000") { id } }'
+    response:
+      errors:
+        - extensions: { path: '$.selectionSet.asyncRespond.args.id', code: parse-failed }
+          message: invalid UUID
+
+  - description: an uppercase uuid is accepted
+    headers: { x-hasura-role: public }
+    query:
+      query: '{ asyncRespond(id: "0000000A-0000-0000-0000-000000000000") { id } }'
+    response:
+      errors:
+        - extensions: { path: '$', code: unexpected }
+          message: database query error
+
+  - description: async actions follow action permissions
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ asyncAuthor(id: "00000000-0000-0000-0000-000000000000") { id } }'
+    response:
+      errors:
+        - extensions: { path: '$.selectionSet.asyncAuthor', code: validation-failed }
+          message: "field 'asyncAuthor' not found in type: 'query_root'"

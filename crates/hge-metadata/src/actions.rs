@@ -8,7 +8,8 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use hge_core::QualifiedTable;
+use hge_core::{Code, Error, QualifiedTable};
+use hge_transforms::{ParseError, RequestTransform, ResponseTransform};
 
 /// `definition.timeout` default, in seconds.
 pub const DEFAULT_ACTION_TIMEOUT_SECS: u64 = 30;
@@ -72,8 +73,10 @@ pub struct ActionDefinition {
     pub forward_client_headers: bool,
     pub ignored_client_headers: Vec<String>,
     pub timeout_secs: u64,
-    pub request_transform: Option<Value>,
-    pub response_transform: Option<Value>,
+    /// Parsed transforms; their Kriti templates are only parse-checked by the metadata
+    /// API, so a template error surfaces when the action is called.
+    pub request_transform: Option<RequestTransform>,
+    pub response_transform: Option<ResponseTransform>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -238,7 +241,12 @@ impl ActionDefinition {
             },
             Some(_) => return Err("expected Number for 'timeout'".into()),
         };
-        let transform = |key: &str| obj.get(key).filter(|v| !v.is_null()).cloned();
+        let request_transform =
+            transform(obj.get("request_transform"), RequestTransform::from_json)
+                .map_err(|e| format!("request_transform: {e}"))?;
+        let response_transform =
+            transform(obj.get("response_transform"), ResponseTransform::from_json)
+                .map_err(|e| format!("response_transform: {e}"))?;
         Ok(ActionDefinition {
             action_type,
             arguments,
@@ -248,10 +256,41 @@ impl ActionDefinition {
             forward_client_headers,
             ignored_client_headers,
             timeout_secs,
-            request_transform: transform("request_transform"),
-            response_transform: transform("response_transform"),
+            request_transform,
+            response_transform,
         })
     }
+}
+
+fn transform<T>(
+    v: Option<&Value>,
+    parse: impl Fn(&Value) -> Result<T, ParseError>,
+) -> Result<Option<T>, ParseError> {
+    v.filter(|v| !v.is_null()).map(parse).transpose()
+}
+
+/// Decode every action's transforms. As in V2's `FromJSON`, a malformed transform makes
+/// the whole metadata document unreadable: `parse-failed` at
+/// `$.actions[i].definition.request_transform…`.
+pub fn check_transforms(actions: &[Value]) -> Result<(), Error> {
+    for (i, action) in actions.iter().enumerate() {
+        let Some(def) = action.get("definition") else {
+            continue;
+        };
+        let request = transform(def.get("request_transform"), RequestTransform::from_json);
+        let response = transform(def.get("response_transform"), ResponseTransform::from_json);
+        for (key, result) in [
+            ("request_transform", request.map(|_| ())),
+            ("response_transform", response.map(|_| ())),
+        ] {
+            if let Err(e) = result {
+                let rest = e.path.strip_prefix('$').unwrap_or(&e.path);
+                return Err(Error::new(Code::ParseFailed, e.message)
+                    .with_path(format!("$.actions[{i}].definition.{key}{rest}")));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// `custom_types`.

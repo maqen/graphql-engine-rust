@@ -1744,7 +1744,7 @@ files) and `lib/api-tests/src/Test/Webhook/WebhookTransformSpec.hs`.
 
 | Env var / flag | Default | Effect |
 |---|---|---|
-| `HASURA_GRAPHQL_ASYNC_ACTIONS_FETCH_INTERVAL` / `--async-actions-fetch-interval` | `1000` (ms) | Poll interval. `0` disables processing (the loop sleeps 1 s and re-checks). |
+| `HASURA_GRAPHQL_ASYNC_ACTIONS_FETCH_INTERVAL` / `--async-actions-fetch-interval` | `1000` (ms, Haskell `Double` syntax, e.g. `500.5`) | Poll interval. `0` disables processing (the loop sleeps 1 s and re-checks). |
 | `HASURA_GRAPHQL_ASYNC_ACTIONS_FETCH_BATCH_SIZE` / `--async-actions-fetch-batch-size` | `10` | Rows claimed per poll, processed concurrently |
 | `HASURA_GRAPHQL_CONFIGURED_HEADER_PRECEDENCE` / `--configured-header-precedence` | `false` | `true` means configured headers win over client headers (§7.3) |
 | `HASURA_GRAPHQL_REDACT_ACTION_HANDLER_LOGS` / `--redact-action-handler-logs` | `false` | Redact bodies in `action-handler-log` |
@@ -1813,6 +1813,31 @@ files) and `lib/api-tests/src/Test/Webhook/WebhookTransformSpec.hs`.
   defaults to true).
 - **Q14**: `create_action_permission` on a missing action silently succeeds
   (inferred).
+
+### 16.1 Deliberate deviations of the Rust engine (async actions)
+
+- **D1, relationship mode in memory**: with relationships on the output object
+  (§9.4 (b)), V2 builds the result with SQL on the relationship's source
+  (`jsonb_to_record` with typed columns). The Rust engine builds it in memory: the same
+  exact session-variables check for non-admin roles, then the projection of §8.4 and the
+  remote joins of §8.7. Values are therefore returned as the handler sent them, not
+  re-typed by Postgres. Concretely: a `Float` sent as `1.0` is returned as `1.0` (V2's
+  `float` column renders `1`); Postgres-scalar fields are not re-rendered
+  (`timestamptz`, `numeric` text forms); `HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES` is not
+  applied inside `output`; an out-of-range `Int` is returned instead of failing the cast;
+  and `created_at` is always rendered as `…+00:00`, whatever the source session's
+  `TimeZone`.
+- **D2, no `x-hasura-*` request headers stored**: `request_headers` omits `x-hasura-*`
+  headers (including `x-hasura-admin-secret`). They are never forwarded (§7.3), so
+  handlers see no difference; the admin secret is just not kept in plain text.
+- **D3, lower-cased header names**: header names are stored lower-cased (HTTP/2 and
+  hyper normalise them), so the case-sensitive duplicate names of §9.1 cannot occur.
+- **D4, no trace headers**: the engine has no trace context, so none are injected into
+  the stored headers; stored ones (from V2) are still stripped before forwarding.
+- **D5, undecodable rows**: a claimed row that cannot be decoded (for example a JSON
+  number outside `f64`) is marked `error` with
+  `{"error": "invalid JSON in action log <column>: …", "path": "$", "code": "unexpected"}`
+  instead of failing the whole batch.
 
 ---
 

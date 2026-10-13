@@ -1,0 +1,18 @@
+[package]
+name = "hge-transforms"
+description = "Hasura webhook request/response transforms (actions, event and cron triggers)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+base64.workspace = true
+hge-core.workspace = true
+hge-kriti = { path = "../hge-kriti" }
+http.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

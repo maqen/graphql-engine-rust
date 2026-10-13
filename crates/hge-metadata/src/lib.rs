@@ -100,8 +100,10 @@ fn check_table_keys(value: &serde_json::Value) -> Result<(), Error> {
 
 fn serde_path_to_error_lite(value: serde_json::Value) -> Result<Metadata, Error> {
     check_table_keys(&value)?;
-    serde_json::from_value::<Metadata>(value)
-        .map_err(|e| Error::new(Code::ParseFailed, format!("invalid metadata: {e}")))
+    let metadata = serde_json::from_value::<Metadata>(value)
+        .map_err(|e| Error::new(Code::ParseFailed, format!("invalid metadata: {e}")))?;
+    actions::check_transforms(&metadata.actions)?;
+    Ok(metadata)
 }
 
 #[cfg(test)]

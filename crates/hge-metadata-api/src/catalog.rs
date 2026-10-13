@@ -164,6 +164,8 @@ const UPGRADES: &[(u32, &str)] = &[
 /// The metadata catalog of one database.
 pub struct PgCatalog {
     pool: Pool,
+    /// `HASURA_GRAPHQL_METADATA_DATABASE_EXTENSIONS_SCHEMA`: where `pgcrypto` is created.
+    extensions_schema: String,
 }
 
 /// What [`PgCatalog::init`] found.
@@ -188,7 +190,16 @@ impl PgCatalog {
                 ..PoolConfig::default()
             },
         )?;
-        Ok(PgCatalog { pool })
+        Ok(PgCatalog {
+            pool,
+            extensions_schema: "public".to_owned(),
+        })
+    }
+
+    /// Create `pgcrypto` in this schema instead of `public`.
+    pub fn with_extensions_schema(mut self, schema: &str) -> Self {
+        self.extensions_schema = schema.to_owned();
+        self
     }
 
     async fn client(&self) -> Result<Object, Error> {
@@ -226,7 +237,7 @@ impl PgCatalog {
             if !has_schema {
                 exec(&tx, "CREATE SCHEMA hdb_catalog").await?;
             }
-            ensure_gen_random_uuid(&tx).await?;
+            ensure_gen_random_uuid(&tx, &self.extensions_schema).await?;
             tx.batch_execute(INITIALISE_SQL)
                 .await
                 .map_err(|e| pg_error(e, INITIALISE_SQL))?;
@@ -289,7 +300,10 @@ async fn exec(client: &impl GenericClient, sql: &str) -> Result<(), Error> {
 
 /// V2 installs pgcrypto for `gen_random_uuid()`. Postgres 13+ has it built in, so a failure
 /// to create the extension there (e.g. no permission) is not fatal.
-async fn ensure_gen_random_uuid(tx: &impl GenericClient) -> Result<(), Error> {
+async fn ensure_gen_random_uuid(
+    tx: &impl GenericClient,
+    extensions_schema: &str,
+) -> Result<(), Error> {
     let row = tx
         .query_one(
             "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pgcrypto'), \
@@ -309,7 +323,12 @@ async fn ensure_gen_random_uuid(tx: &impl GenericClient) -> Result<(), Error> {
              PostgreSQL server. Please make sure this extension is available.",
         ));
     }
-    exec(tx, "CREATE EXTENSION IF NOT EXISTS pgcrypto").await
+    let schema = format!("\"{}\"", extensions_schema.replace('"', "\"\""));
+    exec(
+        tx,
+        &format!("CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA {schema}"),
+    )
+    .await
 }
 
 async fn set_version(tx: &impl GenericClient) -> Result<(), Error> {

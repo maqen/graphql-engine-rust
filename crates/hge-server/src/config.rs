@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Duration;
 
 pub use hge_events::EventingConfig;
 
@@ -59,6 +60,14 @@ pub struct ServerConfig {
     pub schema_sync_poll_interval_ms: u64,
     /// `HASURA_GRAPHQL_CONFIGURED_HEADER_PRECEDENCE`
     pub configured_header_precedence: bool,
+    /// `HASURA_GRAPHQL_ASYNC_ACTIONS_FETCH_INTERVAL` (milliseconds; zero disables the async
+    /// action processor).
+    pub async_actions_fetch_interval: Duration,
+    /// `HASURA_GRAPHQL_METADATA_DATABASE_EXTENSIONS_SCHEMA`: where `pgcrypto` is created in
+    /// the metadata database.
+    pub metadata_database_extensions_schema: String,
+    /// `HASURA_GRAPHQL_ASYNC_ACTIONS_FETCH_BATCH_SIZE`
+    pub async_actions_fetch_batch_size: u32,
     /// Values that take precedence over the process environment for `{{VAR}}` and
     /// `value_from_env` lookups in action metadata (tests, embedding).
     pub env_overrides: HashMap<String, String>,
@@ -98,6 +107,9 @@ impl Default for ServerConfig {
             read_only: false,
             schema_sync_poll_interval_ms: 1000,
             configured_header_precedence: false,
+            async_actions_fetch_interval: Duration::from_millis(1000),
+            async_actions_fetch_batch_size: 10,
+            metadata_database_extensions_schema: "public".to_owned(),
             env_overrides: HashMap::new(),
             websocket: WebSocketConfig::default(),
         }
