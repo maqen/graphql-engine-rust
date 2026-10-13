@@ -23,7 +23,8 @@ pub struct SelectArgs {
     pub order_by: Vec<OrderBy>,
     pub limit: Option<u64>,
     pub offset: Option<u64>,
-    pub distinct_on: Vec<String>,
+    /// Columns ([`OrderByTarget::Column`] or [`OrderByTarget::RedactedColumn`]).
+    pub distinct_on: Vec<OrderByTarget>,
 }
 
 #[derive(Debug, Clone)]
@@ -43,6 +44,8 @@ pub struct ColumnField {
     pub stringify: bool,
     /// `path` argument on json/jsonb columns, already parsed into path elements.
     pub json_path: Option<Vec<JsonPathElement>>,
+    /// Inherited-role redaction: the value is NULL unless this holds for the row.
+    pub redact: Option<Box<BoolExp>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -65,9 +68,14 @@ pub struct OrderBy {
     pub nulls: NullsOrder,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum OrderByTarget {
     Column(String),
+    /// A column redacted for an inherited role: sorts as NULL where `condition` fails.
+    RedactedColumn {
+        column: String,
+        condition: Box<BoolExp>,
+    },
     /// A column reached through an object relationship
     /// (`mapping`: `(this column, remote column)`).
     ObjectRelationship {
@@ -123,6 +131,12 @@ pub enum BoolExp {
     /// inside a relationship condition). Root references (`["$", col]`) inside it refer to
     /// the table it is evaluated against, not to the outer expression's root.
     Rooted(Box<BoolExp>),
+    /// A [`BoolExp::Compare`] on a column redacted for an inherited role: the column is
+    /// read as `CASE WHEN condition THEN col ELSE NULL END`, as V2 does.
+    Redacted {
+        condition: Box<BoolExp>,
+        exp: Box<BoolExp>,
+    },
 }
 
 /// The right-hand side of a column-to-column comparison.

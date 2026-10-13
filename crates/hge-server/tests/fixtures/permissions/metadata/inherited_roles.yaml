@@ -1,0 +1,5 @@
+- role_name: staff
+  role_set: [user, auditor]
+# Every title, but ids and word counts of published articles only.
+- role_name: pab
+  role_set: [auditor, titles]

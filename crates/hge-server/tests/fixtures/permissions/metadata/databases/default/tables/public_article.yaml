@@ -21,6 +21,17 @@ select_permissions:
               id:
                 _eq: X-Hasura-User-Id
       limit: 3
+  # Published articles, with their word counts.
+  - role: auditor
+    permission:
+      columns: [id, title, word_count]
+      filter:
+        is_published:
+          _eq: true
+  - role: titles
+    permission:
+      columns: [title]
+      filter: {}
   # Articles meeting their own minimum length.
   - role: editor
     permission:

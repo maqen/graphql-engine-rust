@@ -444,6 +444,7 @@ mod tests {
                         ty: ColumnType::builtin("int4"),
                         stringify: false,
                         json_path: None,
+                        redact: None,
                     }),
                 )]),
             ),

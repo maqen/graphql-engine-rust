@@ -62,7 +62,7 @@ impl<'s> Translator<'s> {
                     OrderByTarget::Column(c) => {
                         self.b.qualified(&base, c);
                     }
-                    OrderByTarget::ObjectRelationship { .. } => {
+                    _ => {
                         self.b.qualified(&base, &order_key(i));
                     }
                 }
@@ -102,17 +102,27 @@ impl<'s> Translator<'s> {
         self.b.push("SELECT ");
         if !args.distinct_on.is_empty() {
             self.b.push("DISTINCT ON (");
-            for (i, c) in args.distinct_on.iter().enumerate() {
+            for (i, target) in args.distinct_on.iter().enumerate() {
                 if i > 0 {
                     self.b.push(", ");
                 }
-                self.b.qualified(alias, c);
+                match target {
+                    OrderByTarget::Column(c) => {
+                        self.b.qualified(alias, c);
+                    }
+                    // Must match the initial ORDER BY items, which are order-key output
+                    // columns for expressions (re-rendering would bind fresh parameters).
+                    _ if i < args.order_by.len() => {
+                        self.b.ident(&order_key(i));
+                    }
+                    _ => self.order_target(target, alias)?,
+                }
             }
             self.b.push(") ");
         }
         self.b.ident(alias).push(".*");
         for (i, ob) in args.order_by.iter().enumerate() {
-            if let OrderByTarget::ObjectRelationship { .. } = &ob.target {
+            if !matches!(&ob.target, OrderByTarget::Column(_)) {
                 self.b.push(", ");
                 self.order_target(&ob.target, alias)?;
                 self.b.push(" AS ").ident(&order_key(i));
@@ -160,7 +170,7 @@ impl<'s> Translator<'s> {
                     OrderByTarget::Column(c) => {
                         self.b.qualified(alias, c);
                     }
-                    OrderByTarget::ObjectRelationship { .. } => {
+                    _ => {
                         self.b.ident(&order_key(i));
                     }
                 }
@@ -187,6 +197,13 @@ impl<'s> Translator<'s> {
         match target {
             OrderByTarget::Column(c) => {
                 self.b.qualified(alias, c);
+            }
+            OrderByTarget::RedactedColumn { column, condition } => {
+                self.b.push("(CASE WHEN ");
+                self.bool_exp(condition, alias)?;
+                self.b.push(" THEN ");
+                self.b.qualified(alias, column);
+                self.b.push(" ELSE NULL END)");
             }
             OrderByTarget::ObjectRelationship {
                 table,
@@ -266,6 +283,11 @@ impl<'s> Translator<'s> {
                 self.b.string_literal(t);
             }
             Field::Column(c) => {
+                if let Some(condition) = &c.redact {
+                    self.b.push("(CASE WHEN ");
+                    self.bool_exp(condition, alias)?;
+                    self.b.push(" THEN ");
+                }
                 let geo =
                     c.ty.dimensions == 0 && matches!(c.ty.name.as_str(), "geometry" | "geography");
                 if let Some(path) = &c.json_path
@@ -292,6 +314,9 @@ impl<'s> Translator<'s> {
                     self.b.qualified(alias, &c.column).push(", 15, 4)::json");
                 } else {
                     self.b.qualified(alias, &c.column);
+                }
+                if c.redact.is_some() {
+                    self.b.push(" ELSE NULL END)");
                 }
             }
             Field::ObjectRelationship(rel) => {

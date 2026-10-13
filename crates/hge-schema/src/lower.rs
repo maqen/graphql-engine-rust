@@ -68,6 +68,23 @@ impl Lowerer<'_> {
             .ok_or_else(|| Error::unexpected(format!("unknown table {}", rel.target)))
     }
 
+    /// The condition under which `column` of `table` is visible, if it is redacted for this
+    /// (inherited) role.
+    fn redaction(&self, table: &TableInfo, column: &str) -> Option<&BoolExp> {
+        self.rs.select_access(table)?.redaction(column)
+    }
+
+    /// A column as an order-by / distinct-on target, redacted if it must be.
+    fn column_target(&self, table: &TableInfo, column: &str) -> OrderByTarget {
+        match self.redaction(table, column) {
+            None => OrderByTarget::Column(column.to_owned()),
+            Some(condition) => OrderByTarget::RedactedColumn {
+                column: column.to_owned(),
+                condition: Box::new(condition.clone()),
+            },
+        }
+    }
+
     /// The role's select filter on `table`, unless it lets every row through. Without select
     /// access (the schema should never lead here) no row is visible.
     fn permission_filter(&self, table: &TableInfo) -> Option<BoolExp> {
@@ -111,10 +128,14 @@ impl Lowerer<'_> {
                 Error::validation(format!("missing required field '{}'", col.gql_name))
                     .with_path(field.arg_path(&col.gql_name))
             })?;
-            conds.push(BoolExp::Compare {
+            let cmp = BoolExp::Compare {
                 column: col.name.clone(),
                 ty: col.ty.clone(),
                 op: CompareOp::Eq(to_value(value, &col.ty, &field.arg_path(&col.gql_name))?),
+            };
+            conds.push(match self.redaction(table, &col.name) {
+                None => cmp,
+                Some(condition) => redacted_comparison(condition, cmp),
             });
         }
         select.args.where_ = Some(BoolExp::And(conds));
@@ -123,7 +144,7 @@ impl Lowerer<'_> {
 
     pub(crate) fn fields(
         &self,
-        _table: &TableInfo,
+        table: &TableInfo,
         selection: &[SelectedField<'_>],
     ) -> Result<Vec<(String, Field)>, Error> {
         let mut out = Vec::with_capacity(selection.len());
@@ -144,6 +165,7 @@ impl Lowerer<'_> {
                             stringify: self.rs.options.stringify_numeric_types
                                 && scalars::is_big_num(ty),
                             json_path,
+                            redact: self.redaction(table, column).cloned().map(Box::new),
                         })
                     }
                     FieldKind::ObjectRelationship(rel) => {
@@ -200,7 +222,7 @@ impl Lowerer<'_> {
                     Error::validation(format!("unknown column '{name}'"))
                         .with_path(field.arg_path("distinct_on"))
                 })?;
-                args.distinct_on.push(col.name.clone());
+                args.distinct_on.push(self.column_target(table, &col.name));
             }
             if !args.distinct_on.is_empty() && !args.order_by.is_empty() {
                 let prefix_ok = args.order_by.len() >= args.distinct_on.len()
@@ -208,7 +230,7 @@ impl Lowerer<'_> {
                         .distinct_on
                         .iter()
                         .zip(&args.order_by)
-                        .all(|(d, o)| matches!(&o.target, OrderByTarget::Column(c) if c == d));
+                        .all(|(d, o)| *d == o.target);
                 if !prefix_ok {
                     return Err(Error::validation(
                         "\"distinct_on\" columns must match initial \"order_by\" columns",
@@ -260,7 +282,15 @@ impl Lowerer<'_> {
                 _ => {
                     if let Some(col) = table.column_by_gql_name(key) {
                         if let Json::Object(ops) = value {
-                            self.comparisons(&col.name, &col.ty, ops, &item_path, &mut items)?;
+                            let mut cmps = vec![];
+                            self.comparisons(&col.name, &col.ty, ops, &item_path, &mut cmps)?;
+                            match self.redaction(table, &col.name) {
+                                None => items.extend(cmps),
+                                Some(condition) => items.extend(
+                                    cmps.into_iter()
+                                        .map(|cmp| redacted_comparison(condition, cmp)),
+                                ),
+                            }
                         }
                     } else if let Some(rel) = table.relationship_by_name(key) {
                         let target = self.target(rel)?;
@@ -375,7 +405,7 @@ impl Lowerer<'_> {
             if let Some(col) = table.column_by_gql_name(key) {
                 let (direction, nulls) = order_type(value.as_str().unwrap_or("asc"));
                 out.push(OrderBy {
-                    target: OrderByTarget::Column(col.name.clone()),
+                    target: self.column_target(table, &col.name),
                     direction,
                     nulls,
                 });
@@ -406,6 +436,14 @@ impl Lowerer<'_> {
             }
         }
         Ok(())
+    }
+}
+
+/// Compare a redacted column like V2 compares `CASE WHEN condition THEN col ELSE NULL END`.
+fn redacted_comparison(condition: &BoolExp, cmp: BoolExp) -> BoolExp {
+    BoolExp::Redacted {
+        condition: Box::new(BoolExp::Rooted(Box::new(condition.clone()))),
+        exp: Box::new(cmp),
     }
 }
 

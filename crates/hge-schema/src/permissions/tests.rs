@@ -81,6 +81,14 @@ fn catalog() -> SourceCatalog {
 /// Resolve metadata with the given `author` and `article` table entries (merged into the
 /// defaults).
 fn resolve(author: serde_json::Value, article: serde_json::Value) -> (Tables, Vec<String>) {
+    resolve_with(author, article, json!([]))
+}
+
+fn resolve_with(
+    author: serde_json::Value,
+    article: serde_json::Value,
+    inherited_roles: serde_json::Value,
+) -> (Tables, Vec<String>) {
     let mut author_entry = json!({
         "table": {"schema": "public", "name": "author"},
         "array_relationships": [{"name": "articles", "using": {"foreign_key_constraint_on":
@@ -102,7 +110,8 @@ fn resolve(author: serde_json::Value, article: serde_json::Value) -> (Tables, Ve
             "kind": "postgres",
             "configuration": {"connection_info": {"database_url": "postgres://x"}},
             "tables": [author_entry, article_entry]
-        }]
+        }],
+        "inherited_roles": inherited_roles
     }))
     .unwrap();
     let catalogs = HashMap::from([("default".to_owned(), catalog())]);
@@ -410,4 +419,120 @@ fn non_ascii_literals() {
             ..
         }
     ));
+}
+
+fn select_of<'t>(tables: &'t Tables, role: &str) -> Option<&'t hge_ir::SelectPermission> {
+    table_permissions(author(tables), &RoleName::new(role))?
+        .select
+        .as_ref()
+}
+
+fn filter_eq(column: &str, v: i64) -> serde_json::Value {
+    json!({ column: {"_eq": v} })
+}
+
+#[test]
+fn inherited_select_combines_with_redaction() {
+    let (tables, errs) = resolve_with(
+        json!({"select_permissions": [
+            {"role": "a", "permission": {"columns": ["id", "name"], "filter": filter_eq("id", 1), "limit": 5}},
+            {"role": "b", "permission": {"columns": ["id", "manager_id"], "filter": filter_eq("id", 2),
+                "allow_aggregations": true}},
+            {"role": "c", "permission": {"columns": ["id"], "filter": {}, "limit": 50}},
+        ]}),
+        json!({}),
+        json!([
+            {"role_name": "ab", "role_set": ["a", "b"]},
+            {"role_name": "abc", "role_set": ["ab", "c"]},
+        ]),
+    );
+    assert!(errs.is_empty(), "{errs:?}");
+    let a = select_of(&tables, "a").unwrap();
+    let b = select_of(&tables, "b").unwrap();
+    let ab = select_of(&tables, "ab").unwrap();
+    assert_eq!(ab.columns, ["id", "name", "manager_id"]);
+    assert_eq!(
+        ab.filter,
+        BoolExp::Or(vec![a.filter.clone(), b.filter.clone()])
+    );
+    assert_eq!(ab.limit, Some(5));
+    assert!(ab.allow_aggregations);
+    assert!(ab.redaction("id").is_none());
+    assert_eq!(ab.redaction("name"), Some(&a.filter));
+    assert_eq!(ab.redaction("manager_id"), Some(&b.filter));
+
+    // Nested: `c` sees every row, so the combined filter is true; columns that `ab`
+    // redacts stay redacted by `ab`'s condition AND its filter.
+    let abc = select_of(&tables, "abc").unwrap();
+    assert!(abc.filter.is_true());
+    assert_eq!(abc.limit, Some(50));
+    assert!(abc.redaction("id").is_none());
+    assert_eq!(
+        abc.redaction("name"),
+        Some(&BoolExp::And(vec![a.filter.clone(), ab.filter.clone()]))
+    );
+}
+
+#[test]
+fn inherited_explicit_permission_wins_and_mutations_must_agree() {
+    let insert = |check: serde_json::Value| json!({"check": check, "columns": ["name"]});
+    let (tables, errs) = resolve_with(
+        json!({
+            "select_permissions": [
+                {"role": "a", "permission": {"columns": ["id"], "filter": {}}},
+                {"role": "both", "permission": {"columns": ["name"], "filter": {}}},
+            ],
+            "insert_permissions": [
+                {"role": "a", "permission": insert(json!({}))},
+                {"role": "b", "permission": insert(json!({}))},
+                {"role": "c", "permission": insert(filter_eq("id", 1))},
+            ],
+            "delete_permissions": [{"role": "b", "permission": {"filter": {}}}],
+        }),
+        json!({}),
+        json!([
+            {"role_name": "both", "role_set": ["a", "b"]},
+            {"role_name": "clash", "role_set": ["a", "c"]},
+        ]),
+    );
+    let both = table_permissions(author(&tables), &RoleName::new("both")).unwrap();
+    assert_eq!(both.select.as_ref().unwrap().columns, ["name"]);
+    assert!(both.insert.is_some());
+    // Parents without the permission are ignored.
+    assert!(both.delete.is_some());
+    let clash = table_permissions(author(&tables), &RoleName::new("clash")).unwrap();
+    assert!(clash.insert.is_none() && clash.select.is_some());
+    assert_eq!(errs.len(), 1, "{errs:?}");
+    assert!(errs[0].starts_with("Could not inherit permission for the role 'clash'"));
+}
+
+#[test]
+fn invalid_inherited_roles() {
+    let (tables, errs) = resolve_with(
+        json!({"select_permissions": [{"role": "a", "permission": {"columns": ["id"], "filter": {}}}]}),
+        json!({}),
+        json!([
+            {"role_name": "self", "role_set": ["self", "a"]},
+            {"role_name": "orphan", "role_set": ["a", "ghost", "spook"]},
+            {"role_name": "x", "role_set": ["y", "a"]},
+            {"role_name": "y", "role_set": ["x"]},
+            {"role_name": "ok", "role_set": ["a"]},
+            {"role_name": "z", "role_set": ["x", "a"]},
+        ]),
+    );
+    // One inconsistency per invalid role; both roles of the cycle report it.
+    assert_eq!(errs.len(), 5, "{errs:?}");
+    assert!(errs[0].contains("an inherited role name cannot be in the role combination"));
+    assert!(errs[1].contains(
+        "the following parent role(s) are not found: ghost, spook which are required to construct the inherited role: \"orphan\""
+    ));
+    assert_eq!(errs[2], r#"found cycle(s) in roles: ["x","y","x"]"#);
+    assert_eq!(errs[3], errs[2]);
+    assert!(
+        errs[4].contains("not found: x which are required to construct the inherited role: \"z\"")
+    );
+    for role in ["self", "orphan", "x", "y", "z"] {
+        assert!(select_of(&tables, role).is_none(), "{role}");
+    }
+    assert!(select_of(&tables, "ok").is_some());
 }

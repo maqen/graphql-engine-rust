@@ -42,7 +42,7 @@ pub fn resolve_tables<C: std::borrow::Borrow<SourceCatalog>>(
         }
     }
     tables::drop_conflicting(&mut tables, &mut inconsistencies);
-    permissions::resolve_permissions(&mut tables, &mut inconsistencies);
+    permissions::resolve_permissions(metadata, &mut tables, &mut inconsistencies);
     // V2 lists sources, then tables, then the objects inside tables.
     inconsistencies.sort_by_key(|o| match o.kind.as_str() {
         "source" => 0,
