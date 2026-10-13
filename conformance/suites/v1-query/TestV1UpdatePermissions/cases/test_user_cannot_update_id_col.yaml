@@ -1,0 +1,29 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1UpdatePermissions
+  method: test_user_cannot_update_id_col
+  fixtures:
+  - queries/v1/update/permissions/user_cannot_update_id_col_article.yaml
+steps:
+- description: Users cannot update id of his article
+  url: /v1/query
+  status: 400
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    type: update
+    args:
+      table: article
+      $set:
+        id: 2
+      where:
+        id: 1
+      returning:
+      - id
+      - title
+      - content
+  response:
+    error: role "user" does not have permission to update column "id"
+    path: $.args["$set"]
+    code: permission-denied

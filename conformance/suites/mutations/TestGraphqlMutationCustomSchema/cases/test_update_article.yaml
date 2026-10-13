@@ -1,0 +1,46 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlMutationCustomSchema
+  method: test_update_article
+  fixtures:
+  - queries/graphql_mutation/custom_schema/update_article.yaml
+steps:
+- description: Update article title
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        UpdateArticles(
+          where: {author: {AuthorId: {_eq: 1}}}
+          _set: {title: "Article's by author 1 updated"}
+        ){
+          affected_rows
+          returning{
+            ArticleId
+            title
+            content
+            author{
+              AuthorId
+              name
+            }
+          }
+        }
+      }
+  response:
+    data:
+      UpdateArticles:
+        affected_rows: 2
+        returning:
+        - ArticleId: 1
+          title: Article's by author 1 updated
+          content: Content for Article 1
+          author:
+            AuthorId: 1
+            name: Author 1
+        - ArticleId: 2
+          title: Article's by author 1 updated
+          content: Content for Article 2
+          author:
+            AuthorId: 1
+            name: Author 1

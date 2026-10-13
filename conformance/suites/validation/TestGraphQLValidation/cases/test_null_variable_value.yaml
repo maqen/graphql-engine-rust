@@ -1,0 +1,63 @@
+upstream:
+  file: test_validation.py
+  class: TestGraphQLValidation
+  method: test_null_variable_value
+  fixtures:
+  - queries/graphql_validation/null_variable_value.yaml
+steps:
+- description: Passing null value for nullable type
+  url: /v1/graphql
+  status: 200
+  query:
+    variables:
+      limit: null
+    query: |
+      query author($limit: Int) {
+        author(limit: $limit) {
+          id
+          name
+        }
+      }
+  response:
+    data:
+      author: []
+- description: Passing null value for non-nullable type with default value
+  url: /v1/graphql
+  status: 200
+  query:
+    variables:
+      limit: null
+    query: |
+      query author($limit: Int! = 1) {
+        author(limit: $limit) {
+          id
+          name
+        }
+      }
+  response:
+    errors:
+    - message: 'null value found for non-nullable type: "Int!"'
+      extensions:
+        path: $
+        code: validation-failed
+- description: Passing null value for non nullable type
+  url: /v1/graphql
+  status: 200
+  query:
+    variables:
+      author_id: null
+    query: |
+      mutation update_author($author_id: Int) {
+        update_author(where: {id: {_eq: $author_id}}, _set: {name: ""}) {
+          returning {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: unexpected null value for type 'Int'
+      extensions:
+        path: $.selectionSet.update_author.args.where.id._eq
+        code: validation-failed

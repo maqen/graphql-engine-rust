@@ -1,0 +1,77 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestRunSQL
+  method: test_select_query_read_only
+  fixtures:
+  - queries/v1/run_sql/sql_select_query_read_only.yaml
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      read_only: true
+      sql: |
+        SELECT * from author
+  response:
+    result_type: TuplesOk
+    result:
+    - - id
+      - name
+    - - '1'
+      - Author 1
+    - - '2'
+      - Author 2
+- url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      read_only: true
+      sql: |
+        SELECT alterable, droppable FROM malicious
+  response:
+    result_type: TuplesOk
+    result:
+    - - alterable
+      - droppable
+    - - t
+      - f
+    - - f
+      - t
+- url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      read_only: true
+      sql: |
+        SELECT ' alter ' as drop
+  response:
+    result_type: TuplesOk
+    result:
+    - - drop
+    - - ' alter '
+- url: /v1/query
+  status: 400
+  query:
+    type: run_sql
+    args:
+      read_only: true
+      sql: |
+        DROP TABLE malicious
+  response:
+    error: query execution failed
+    path: $.args
+    code: postgres-error
+    internal:
+      arguments: []
+      error:
+        description: null
+        exec_status: FatalError
+        hint: null
+        message: cannot execute DROP TABLE in a read-only transaction
+        status_code: '25006'
+      prepared: false
+      statement: |
+        DROP TABLE malicious

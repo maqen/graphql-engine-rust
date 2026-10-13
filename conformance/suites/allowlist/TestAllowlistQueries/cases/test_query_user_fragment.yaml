@@ -1,0 +1,33 @@
+upstream:
+  file: test_allowlist_queries.py
+  class: TestAllowlistQueries
+  method: test_query_user_fragment
+  fixtures:
+  - queries/graphql_query/allowlist/query_user_fragment.yaml
+steps:
+- description: Query data from user table
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: |
+      fragment userDetails on user {
+        id
+        name
+        company
+      }
+      query {
+        user{
+          ...userDetails
+        }
+      }
+  response:
+    data:
+      user:
+      - id: 1
+        name: clarke
+        company: Symons
+      - id: 2
+        name: reckler
+        company: null

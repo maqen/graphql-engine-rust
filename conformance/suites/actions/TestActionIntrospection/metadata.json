@@ -1,0 +1,128 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ],
+  "actions": [
+    {
+      "name": "actionName",
+      "definition": {
+        "handler": "http://localhost:3000",
+        "output_type": "[SampleOutput!]",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "text",
+            "type": "jsonb!"
+          },
+          {
+            "name": "attributes",
+            "type": "String!"
+          }
+        ],
+        "type": "mutation",
+        "kind": "synchronous"
+      }
+    },
+    {
+      "name": "actionName2",
+      "definition": {
+        "handler": "http://localhost:3000",
+        "output_type": "SampleOutput2",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "a",
+            "type": "ID!"
+          },
+          {
+            "name": "b",
+            "type": "ID!"
+          }
+        ],
+        "type": "mutation",
+        "kind": "synchronous"
+      }
+    }
+  ],
+  "custom_types": {
+    "input_objects": [
+      {
+        "name": "SampleInput",
+        "fields": [
+          {
+            "name": "username",
+            "type": "String!"
+          },
+          {
+            "name": "password",
+            "type": "String!"
+          }
+        ]
+      }
+    ],
+    "objects": [
+      {
+        "name": "SampleOutput",
+        "fields": [
+          {
+            "name": "id",
+            "type": "[String!]"
+          }
+        ]
+      },
+      {
+        "name": "SampleOutput2",
+        "fields": [
+          {
+            "name": "id",
+            "type": "String!"
+          }
+        ]
+      }
+    ]
+  }
+}

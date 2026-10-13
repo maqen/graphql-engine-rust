@@ -1,0 +1,28 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1InsertOnConflict
+  method: test_author_on_conflict_update
+  fixtures:
+  - queries/v1/insert/onconflict/upsert_author.yaml
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: insert
+    args:
+      table: author
+      objects:
+      - name: Author 1 updated
+        id: 1
+      on_conflict:
+        constraint_on:
+        - id
+        action: update
+      returning:
+      - name
+      - id
+  response:
+    returning:
+    - name: Author 1 updated
+      id: 1
+    affected_rows: 1

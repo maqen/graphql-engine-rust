@@ -1,0 +1,46 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectPermissions
+  method: test_user_cannot_access_remarks_col
+  fixtures:
+  - queries/v1/select/permissions/user_cannot_access_remarks_col.yaml
+steps:
+- description: User cannot access remarks column
+  url: /v1/query
+  status: 400
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - id
+      - name
+      - remarks_internal
+  response:
+    error: role "user" does not have permission to select column "remarks_internal"
+    path: $.args.columns[2]
+    code: permission-denied
+- description: Admin can access remarks column
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - id
+      - name
+      - remarks_internal
+  response:
+  - id: 1
+    name: Author 1
+    remarks_internal: remark 1
+  - id: 2
+    name: Author 2
+    remarks_internal: remark 2
+  - id: 3
+    name: Author 3
+    remarks_internal: remark 3

@@ -1,0 +1,159 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "article",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "public_role",
+              "permission": {
+                "columns": [
+                  "title",
+                  "content"
+                ],
+                "filter": {}
+              }
+            },
+            {
+              "role": "user",
+              "permission": {
+                "columns": "*",
+                "filter": {}
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "author",
+            "schema": "public"
+          },
+          "computed_fields": [
+            {
+              "name": "full_name",
+              "definition": {
+                "function": {
+                  "name": "full_name",
+                  "schema": "public"
+                }
+              }
+            },
+            {
+              "name": "get_articles",
+              "definition": {
+                "function": {
+                  "name": "fetch_articles",
+                  "schema": "public"
+                },
+                "table_argument": "author_row"
+              }
+            },
+            {
+              "name": "get_articles_plain",
+              "definition": {
+                "function": {
+                  "name": "fetch_articles_plain",
+                  "schema": "public"
+                },
+                "table_argument": "author_row"
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "public_role",
+              "permission": {
+                "columns": [
+                  "first_name",
+                  "last_name"
+                ],
+                "filter": {}
+              }
+            },
+            {
+              "role": "user",
+              "permission": {
+                "columns": [],
+                "computed_fields": [
+                  "full_name"
+                ],
+                "filter": {
+                  "id": "X-Hasura-User-Id"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "float_test",
+            "schema": "public"
+          },
+          "computed_fields": [
+            {
+              "name": "sum_float",
+              "definition": {
+                "function": {
+                  "name": "get_sum",
+                  "schema": "public"
+                }
+              }
+            },
+            {
+              "name": "sum_float_offset",
+              "definition": {
+                "function": {
+                  "name": "get_sum_offset",
+                  "schema": "public"
+                },
+                "session_argument": "hasura_session"
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "locations",
+            "schema": "public"
+          },
+          "computed_fields": [
+            {
+              "name": "distance",
+              "definition": {
+                "function": {
+                  "name": "locations_distance",
+                  "schema": "public"
+                },
+                "table_argument": "locations_row"
+              }
+            }
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "function": {
+            "name": "fetch_articles",
+            "schema": "public"
+          }
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

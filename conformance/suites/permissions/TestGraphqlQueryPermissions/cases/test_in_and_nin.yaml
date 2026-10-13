@@ -1,0 +1,78 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphqlQueryPermissions
+  method: test_in_and_nin
+  fixtures:
+  - queries/graphql_query/permissions/in_and_nin.yaml
+steps:
+- description: user can only select free artists
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: free_user_in
+    X-Hasura-free-artists: '{Camilla,DSP}'
+  query:
+    query: |
+      query {
+        Artist (order_by: {name: asc}) {
+          name
+        }
+      }
+  response:
+    data:
+      Artist:
+      - name: Camilla
+      - name: DSP
+- description: user can only select free artists (no free artists)
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: free_user_in
+    X-Hasura-free-artists: '{}'
+  query:
+    query: |
+      query {
+        Artist (order_by: {name: asc}) {
+          name
+        }
+      }
+  response:
+    data:
+      Artist: []
+- description: user can only select non premium artists
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: free_user_nin
+    X-Hasura-premium-artists: '{Akon}'
+  query:
+    query: |
+      query {
+        Artist (order_by: {name: asc}) {
+          name
+        }
+      }
+  response:
+    data:
+      Artist:
+      - name: Camilla
+      - name: DSP
+- description: user can only select non premium artists (no premium artists
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: free_user_nin
+    X-Hasura-premium-artists: '{}'
+  query:
+    query: |
+      query {
+        Artist (order_by: {name: asc}) {
+          name
+        }
+      }
+  response:
+    data:
+      Artist:
+      - name: Akon
+      - name: Camilla
+      - name: DSP

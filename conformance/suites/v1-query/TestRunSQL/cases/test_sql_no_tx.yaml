@@ -1,0 +1,72 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestRunSQL
+  method: test_sql_no_tx
+  fixtures:
+  - queries/v1/run_sql/sql_no_tx.yaml
+steps:
+- url: /v1/query
+  status: 400
+  query:
+    type: run_sql
+    args:
+      sql: |
+        CREATE TABLE users (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            email VARCHAR(100) UNIQUE,
+            created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (NOW() AT TIME ZONE 'UTC')
+        );
+        -- Creating a concurrent index in a transaction is not allowed
+        CREATE INDEX CONCURRENTLY index_users_created_at ON users (created_at);
+      no_transaction: false
+  response:
+    error: query execution failed
+    path: $.args
+    code: postgres-error
+    internal:
+      arguments: []
+      error:
+        description: null
+        exec_status: FatalError
+        hint: null
+        message: CREATE INDEX CONCURRENTLY cannot run inside a transaction block
+        status_code: '25001'
+      prepared: false
+      statement: |
+        CREATE TABLE users (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            email VARCHAR(100) UNIQUE,
+            created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (NOW() AT TIME ZONE 'UTC')
+        );
+        -- Creating a concurrent index in a transaction is not allowed
+        CREATE INDEX CONCURRENTLY index_users_created_at ON users (created_at);
+- url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        CREATE TABLE users (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            email VARCHAR(100) UNIQUE,
+            created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (NOW() AT TIME ZONE 'UTC')
+        );
+        -- Creating a concurrent index without a transaction is allowed
+        CREATE INDEX CONCURRENTLY index_users_created_at ON users (created_at);
+      no_transaction: true
+  response:
+    result_type: CommandOk
+    result: null
+- url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        DROP TABLE users;
+  response:
+    result_type: CommandOk
+    result: null

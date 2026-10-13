@@ -1,0 +1,41 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlUpdateBasic
+  method: test_set_person_details
+  fixtures:
+  - queries/graphql_mutation/update/basic/person_set_details.yaml
+steps:
+- description: Updated person data using _set operator
+  url: /v1/graphql
+  status: 200
+  query:
+    variables:
+      value:
+        name:
+          first: john
+          last: taylor
+    query: |
+      mutation update_person($value: jsonb) {
+        update_person(
+          where: {id: {_eq: 1}},
+          _set: {
+            details: $value
+          }
+        ){
+          affected_rows
+          returning{
+            id
+            details
+          }
+        }
+      }
+  response:
+    data:
+      update_person:
+        affected_rows: 1
+        returning:
+        - id: 1
+          details:
+            name:
+              last: taylor
+              first: john

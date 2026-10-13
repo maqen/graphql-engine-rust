@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_v1_queries.py::TestGraphQLQueryBoolExpLtree
+upstream:
+  file: test_v1_queries.py
+  class: TestGraphQLQueryBoolExpLtree
+  dir: queries/v1/select/boolexp/ltree
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none

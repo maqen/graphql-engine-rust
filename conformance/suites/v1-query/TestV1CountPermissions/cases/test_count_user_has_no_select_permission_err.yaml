@@ -1,0 +1,23 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1CountPermissions
+  method: test_count_user_has_no_select_permission_err
+  fixtures:
+  - queries/v1/count/permissions/count_user_has_no_select_perm_error.yaml
+steps:
+- description: Count number of authors
+  url: /v1/query
+  status: 400
+  headers:
+    X-Hasura-Role: contractor
+  query:
+    type: count
+    args:
+      table: article
+      where:
+        is_published: false
+  response:
+    error: select on "article" for role "contractor" is not allowed. ; "count" is only allowed if the
+      role has "select" permissions on the table
+    path: $.args
+    code: permission-denied

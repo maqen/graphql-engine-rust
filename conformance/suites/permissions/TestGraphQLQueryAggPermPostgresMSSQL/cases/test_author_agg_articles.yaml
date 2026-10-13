@@ -1,0 +1,47 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryAggPermPostgresMSSQL
+  method: test_author_agg_articles
+  fixtures:
+  - queries/graphql_query/agg_perm/author_agg_articles.yaml
+steps:
+- description: Query aggregations on author along with it's articles with user role
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: |
+      query {
+        author_aggregate{
+          aggregate{
+            count
+            max{
+              id
+            }
+          }
+          nodes{
+            id
+            name
+            articles{
+              id
+              title
+              content
+            }
+          }
+        }
+      }
+  response:
+    data:
+      author_aggregate:
+        aggregate:
+          count: 2
+          max:
+            id: 2
+        nodes:
+        - id: 1
+          name: Author 1
+          articles:
+          - id: 1
+            title: Article 1
+            content: Sample article content 1

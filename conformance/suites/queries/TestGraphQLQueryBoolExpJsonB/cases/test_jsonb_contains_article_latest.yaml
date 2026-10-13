@@ -1,0 +1,46 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpJsonB
+  method: test_jsonb_contains_article_latest
+  fixtures:
+  - queries/graphql_query/boolexp/jsonb/select_article_author_jsonb_contains_latest.yaml
+steps:
+- description: Select author and their articles
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query ($tags: jsonb) {
+        article (
+        where: { tags: {_contains: "latest"}}
+        ) {
+          id
+          title
+          content
+          tags
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    data:
+      article:
+      - id: 2
+        title: Article 2
+        content: Sample article content 2
+        tags:
+        - bestseller
+        - latest
+        author:
+          id: 1
+          name: Author 1
+      - id: 3
+        title: Article 3
+        content: Sample article content 3
+        tags:
+        - latest
+        author:
+          id: 2
+          name: Author 2

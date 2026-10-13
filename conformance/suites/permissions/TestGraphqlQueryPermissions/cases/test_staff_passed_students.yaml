@@ -1,0 +1,29 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphqlQueryPermissions
+  method: test_staff_passed_students
+  fixtures:
+  - queries/graphql_query/permissions/staff_passed_students.yaml
+steps:
+- description: Query passed students as staff
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: staff
+  query:
+    query: |
+      query {
+        passed_students(args: {pass_gpa: 8.00}) {
+          id
+          student_name
+        }
+      }
+  response:
+    data:
+      passed_students:
+      - id: 1
+        student_name: clarke
+      - id: 2
+        student_name: george
+      - id: 4
+        student_name: leonel

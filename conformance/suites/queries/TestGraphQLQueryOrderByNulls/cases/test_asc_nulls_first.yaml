@@ -1,0 +1,31 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryOrderByNulls
+  method: test_asc_nulls_first
+  fixtures:
+  - queries/graphql_query/order_by_nulls/asc_nulls_first.yaml
+steps:
+- description: order by nullable column ascending with nulls first, same on every backend
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        order_by_nulls_test(order_by: [{val: asc_nulls_first}, {id: asc}]) {
+          id
+          val
+        }
+      }
+  response:
+    data:
+      order_by_nulls_test:
+      - id: 2
+        val: null
+      - id: 4
+        val: null
+      - id: 3
+        val: 1
+      - id: 5
+        val: 2
+      - id: 1
+        val: 3

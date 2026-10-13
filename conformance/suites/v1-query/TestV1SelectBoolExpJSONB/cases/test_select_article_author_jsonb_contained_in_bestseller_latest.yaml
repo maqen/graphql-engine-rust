@@ -1,0 +1,46 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectBoolExpJSONB
+  method: test_select_article_author_jsonb_contained_in_bestseller_latest
+  fixtures:
+  - queries/v1/select/boolexp/jsonb/select_article_author_jsonb_contained_in_bestseller_latest.yaml
+steps:
+- description: Nested select on article
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      - title
+      - content
+      - tags
+      - name: author
+        columns:
+        - id
+        - name
+      where:
+        tags:
+          $contained_in:
+          - bestseller
+          - latest
+  response:
+  - id: 2
+    title: Article 2
+    content: Sample article content 2
+    tags:
+    - bestseller
+    - latest
+    author:
+      id: 1
+      name: Author 1
+  - id: 3
+    title: Article 3
+    content: Sample article content 3
+    tags:
+    - latest
+    author:
+      id: 2
+      name: Author 2

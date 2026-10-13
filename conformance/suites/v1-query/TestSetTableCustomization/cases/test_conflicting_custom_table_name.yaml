@@ -1,0 +1,28 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestSetTableCustomization
+  method: test_conflicting_custom_table_name
+  fixtures:
+  - queries/v1/set_table_configuration/fail_conflicting_custom_table_name.yaml
+steps:
+- description: set custom table name which conflicts with other nodes
+  url: /v1/query
+  status: 500
+  query:
+    type: set_table_customization
+    args:
+      table: author
+      configuration:
+        custom_name: article
+  response:
+    error: 'Encountered conflicting definitions in the selection set for ''mutation_root'' for fields:
+      [''delete_article_by_pk'' defined in [table article in source default, table author in source default],
+      ''delete_article'' defined in [table article in source default, table author in source default],
+      ''update_article_many'' defined in [table article in source default, table author in source default],
+      ''update_article_by_pk'' defined in [table article in source default, table author in source default],
+      ''update_article'' defined in [table article in source default, table author in source default],
+      ''insert_article_one'' defined in [table article in source default, table author in source default],
+      ''insert_article'' defined in [table article in source default, table author in source default]].
+      Fields must not be defined more than once across all sources.'
+    path: $.args
+    code: unexpected

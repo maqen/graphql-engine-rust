@@ -1,0 +1,29 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertViews
+  method: test_insert_view_author_complex_fail
+  fixtures:
+  - queries/graphql_mutation/insert/views/insert_view_author_complex_fail.yaml
+steps:
+- description: Insert into author_complex view (Error)
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation author_complex{
+        insert_author_complex(
+          objects: [{author_id: 1, author_title: "Article title"}]
+        ){
+          affected_rows
+          returning{
+            author_id
+            author_title
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'field ''insert_author_complex'' not found in type: ''mutation_root'''
+      extensions:
+        path: $.selectionSet.insert_author_complex
+        code: validation-failed

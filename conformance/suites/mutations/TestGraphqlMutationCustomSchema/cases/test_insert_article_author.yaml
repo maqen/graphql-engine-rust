@@ -1,0 +1,48 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlMutationCustomSchema
+  method: test_insert_article_author
+  fixtures:
+  - queries/graphql_mutation/custom_schema/insert_article_author.yaml
+steps:
+- description: Insert into article table with a new author
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        AddArticles(
+          objects: [
+            {
+              title: "Article 4 by new author",
+              content: "Content for Article 4"
+              author: {
+                data: {
+                  AuthorId: 3
+                  name: "Author 3"
+                }
+              }
+            }
+          ]
+        ){
+          affected_rows
+          returning{
+            title
+            content
+            author{
+              AuthorId
+              name
+            }
+          }
+        }
+      }
+  response:
+    data:
+      AddArticles:
+        affected_rows: 2
+        returning:
+        - title: Article 4 by new author
+          content: Content for Article 4
+          author:
+            AuthorId: 3
+            name: Author 3

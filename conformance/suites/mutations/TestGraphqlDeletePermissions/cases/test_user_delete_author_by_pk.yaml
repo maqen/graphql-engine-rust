@@ -1,0 +1,34 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlDeletePermissions
+  method: test_user_delete_author_by_pk
+  fixtures:
+  - queries/graphql_mutation/delete/permissions/user_delete_author_by_pk.yaml
+steps:
+- description: Delete an author by pk
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '5'
+  query:
+    query: |
+      mutation {
+        delete_author_by_pk(
+          id: 5
+        ){
+          id
+          name
+          articles {
+            id
+            title
+            content
+          }
+        }
+      }
+  response:
+    data:
+      delete_author_by_pk:
+        id: 5
+        name: Author 5
+        articles: []

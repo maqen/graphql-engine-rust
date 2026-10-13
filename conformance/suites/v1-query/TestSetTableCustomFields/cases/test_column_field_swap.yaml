@@ -1,0 +1,75 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestSetTableCustomFields
+  method: test_column_field_swap
+  fixtures:
+  - queries/v1/set_table_custom_fields/column_field_swap.yaml
+steps:
+- description: Set custom column names for article table by swaping the column names
+  url: /v1/query
+  status: 200
+  query:
+    type: set_table_custom_fields
+    version: 2
+    args:
+      table: article
+      custom_root_fields: {}
+      custom_column_names:
+        title: content
+        content: title
+  response:
+    message: success
+- description: Perform graphql query
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        article{
+          id
+          title
+          content
+        }
+      }
+  response:
+    data:
+      article:
+      - id: 1
+        title: Article 1 content
+        content: Article 1 title
+      - id: 2
+        title: Article 2 content
+        content: Article 2 title
+- description: Unset the custom column names
+  url: /v1/query
+  status: 200
+  query:
+    type: set_table_custom_fields
+    version: 2
+    args:
+      table: article
+      custom_root_fields: {}
+      custom_column_names: {}
+  response:
+    message: success
+- description: Peform graphql query
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        article{
+          id
+          title
+          content
+        }
+      }
+  response:
+    data:
+      article:
+      - id: 1
+        title: Article 1 title
+        content: Article 1 content
+      - id: 2
+        title: Article 2 title
+        content: Article 2 content

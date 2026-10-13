@@ -1,0 +1,23 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectBoolExpBasic
+  method: test_order_delivered_at_is_null
+  fixtures:
+  - queries/v1/select/boolexp/basic/select_query_order_delivered_at_is_null.yaml
+steps:
+- description: Get all the orders which are not delivered at (delivered_at is NULL)
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: orders
+      where:
+        delivered_at:
+          $is_null: true
+      columns:
+      - id
+      - received_at
+  response:
+  - id: 1
+    received_at: '2018-09-21T09:39:44+00:00'

@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_graphql_mutations.py::TestGraphqlNestedInserts
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlNestedInserts
+  dir: queries/graphql_mutation/insert/nested
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: data

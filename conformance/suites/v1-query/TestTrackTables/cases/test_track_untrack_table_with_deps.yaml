@@ -1,0 +1,85 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestTrackTables
+  method: test_track_untrack_table_with_deps
+  fixtures:
+  - queries/v1/track_table/track_untrack_table_deps.yaml
+steps:
+- description: Track tables and relationships
+  url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: track_table
+      args:
+        name: author
+    - type: track_table
+      args:
+        name: article
+    - type: create_object_relationship
+      args:
+        name: author
+        table: article
+        using:
+          foreign_key_constraint_on: author_id
+    - type: create_array_relationship
+      args:
+        name: articles
+        table: author
+        using:
+          foreign_key_constraint_on:
+            table: article
+            column: author_id
+  response:
+  - message: success
+  - message: success
+  - message: success
+  - message: success
+- description: untrack author
+  url: /v1/query
+  status: 400
+  query:
+    type: untrack_table
+    args:
+      table:
+        name: author
+  response:
+    error: 'cannot drop due to the following dependent objects: relationship article.author in source
+      "default"'
+    path: $.args
+    code: dependency-error
+- description: untrack article
+  url: /v1/query
+  status: 400
+  query:
+    type: untrack_table
+    args:
+      table:
+        name: article
+  response:
+    error: 'cannot drop due to the following dependent objects: relationship author.articles in source
+      "default"'
+    path: $.args
+    code: dependency-error
+- description: untrack author with cascade
+  url: /v1/query
+  status: 200
+  query:
+    type: untrack_table
+    args:
+      table:
+        name: author
+      cascade: true
+  response:
+    message: success
+- description: untrack article
+  url: /v1/query
+  status: 200
+  query:
+    type: untrack_table
+    args:
+      table:
+        name: article
+  response:
+    message: success

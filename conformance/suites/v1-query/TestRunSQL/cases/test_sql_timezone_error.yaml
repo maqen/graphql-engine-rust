@@ -1,0 +1,29 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestRunSQL
+  method: test_sql_timezone_error
+  fixtures:
+  - queries/v1/run_sql/sql_set_timezone_error.yaml
+steps:
+- url: /v1/query
+  status: 400
+  query:
+    type: run_sql
+    args:
+      sql: |
+        SET TIME ZONE 'ABC'
+  response:
+    error: query execution failed
+    path: $.args
+    code: postgres-error
+    internal:
+      arguments: []
+      error:
+        description: null
+        exec_status: FatalError
+        hint: null
+        message: 'invalid value for parameter "TimeZone": "ABC"'
+        status_code: '22023'
+      prepared: false
+      statement: |
+        SET TIME ZONE 'ABC'

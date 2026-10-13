@@ -1,0 +1,27 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlUpdateBasic
+  method: test_column_in_multiple_operators
+  fixtures:
+  - queries/graphql_mutation/update/basic/article_column_multiple_operators.yaml
+steps:
+- description: Update an article with a column used in multiple operators
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        update_article(
+          _set: {id: 1, author_id: 1}
+          _inc: {id: 2, author_id: 2}
+          where: {author_id: {_eq: 1}}
+        ){
+          affected_rows
+        }
+      }
+  response:
+    errors:
+    - message: 'Column found in multiple operators: [''id'', ''author_id''].'
+      extensions:
+        path: $.selectionSet.update_article.args
+        code: validation-failed

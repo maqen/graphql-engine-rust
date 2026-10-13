@@ -1,0 +1,40 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertPermission
+  method: test_resident_infant_role_insert_fail
+  fixtures:
+  - queries/graphql_mutation/insert/permissions/resident_infant_fail.yaml
+steps:
+- description: Insert into resident table with non insertable columns (Error)
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: infant
+    X-Hasura-Infant-Id: '1'
+    X-Hasura-Infant-Name: Bittu
+  query:
+    query: |
+      mutation {
+        insert_resident(
+          objects: [
+            {
+              age: 3
+              is_user: true
+            }
+          ]
+        ){
+          affected_rows
+          returning{
+            id
+            name
+            age
+            is_user
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'field ''is_user'' not found in type: ''resident_insert_input'''
+      extensions:
+        path: $.selectionSet.insert_resident.args.objects[0].is_user
+        code: validation-failed

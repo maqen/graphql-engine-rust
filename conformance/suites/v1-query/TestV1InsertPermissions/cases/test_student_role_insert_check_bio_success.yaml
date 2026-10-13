@@ -1,0 +1,23 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1InsertPermissions
+  method: test_student_role_insert_check_bio_success
+  fixtures:
+  - queries/v1/insert/permissions/author_student_role_insert_check_bio_success.yaml
+steps:
+- description: Inserts author with bio as a student
+  url: /v1/query
+  status: 200
+  headers:
+    X-Hasura-Role: student
+  query:
+    type: insert
+    args:
+      table: author
+      objects:
+      - id: 5
+        name: Student 1
+        is_registered: false
+        bio: Electrical Engineering
+  response:
+    affected_rows: 1

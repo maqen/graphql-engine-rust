@@ -1,0 +1,53 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlUpdateBasic
+  method: test_set_author_name
+  fixtures:
+  - queries/graphql_mutation/update/basic/author_set_name.yaml
+steps:
+- description: Update mutation on author
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation update_author {
+        update_author(
+          where: {id: {_eq: 1}},
+          _set: {name: "Jane"}
+        ) {
+          affected_rows
+          returning{
+            id
+            name
+            emails
+            info
+            location
+            articles{
+              id
+              title
+              content
+              is_published
+            }
+          }
+        }
+      }
+  response:
+    data:
+      update_author:
+        affected_rows: 1
+        returning:
+        - id: 1
+          name: Jane
+          emails: []
+          info:
+            age: 23
+          location:
+            type: Point
+            crs:
+              type: name
+              properties:
+                name: urn:ogc:def:crs:EPSG::4326
+            coordinates:
+            - -118.4079
+            - 33.9434
+          articles: []

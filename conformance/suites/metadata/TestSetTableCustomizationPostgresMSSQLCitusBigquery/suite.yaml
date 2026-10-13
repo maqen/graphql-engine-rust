@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_metadata.py::TestSetTableCustomizationPostgresMSSQLCitusBigquery
+upstream:
+  file: test_metadata.py
+  class: TestSetTableCustomizationPostgresMSSQLCitusBigquery
+  dir: queries/v1/metadata
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none

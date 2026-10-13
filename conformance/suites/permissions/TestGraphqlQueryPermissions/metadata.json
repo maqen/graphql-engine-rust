@@ -1,0 +1,546 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "Artist",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "free_user_in",
+              "permission": {
+                "columns": "*",
+                "filter": {
+                  "name": {
+                    "_in": "X-Hasura-Free-Artists"
+                  }
+                }
+              }
+            },
+            {
+              "role": "free_user_nin",
+              "permission": {
+                "columns": "*",
+                "filter": {
+                  "name": {
+                    "_nin": "X-Hasura-Premium-Artists"
+                  }
+                }
+              }
+            },
+            {
+              "role": "user_iregex",
+              "permission": {
+                "columns": "*",
+                "filter": {
+                  "name": {
+                    "_iregex": "X-Hasura-IRegex-Artists"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "Track",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "Artist",
+              "using": {
+                "foreign_key_constraint_on": "artist_id"
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "Artist",
+              "permission": {
+                "columns": "*",
+                "filter": {
+                  "Artist": {
+                    "id": "X-Hasura-Artist-Id"
+                  }
+                },
+                "allow_aggregations": true
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "article",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "author",
+              "using": {
+                "foreign_key_constraint_on": "author_id"
+              }
+            }
+          ],
+          "insert_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "check": {
+                  "author_id": "X-Hasura-User-Id"
+                }
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "anonymous",
+              "permission": {
+                "columns": [
+                  "id",
+                  "title",
+                  "content",
+                  "is_published"
+                ],
+                "filter": {
+                  "is_published": true
+                }
+              }
+            },
+            {
+              "role": "critic",
+              "permission": {
+                "columns": [
+                  "title",
+                  "content",
+                  "is_published"
+                ],
+                "filter": {
+                  "id": {
+                    "_eq": "X-Hasura-Critic-Id"
+                  }
+                }
+              }
+            },
+            {
+              "role": "user",
+              "permission": {
+                "columns": [
+                  "id",
+                  "title",
+                  "content",
+                  "is_published"
+                ],
+                "filter": {
+                  "_or": [
+                    {
+                      "author_id": "X-HASURA-USER-ID"
+                    },
+                    {
+                      "is_published": true
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "auction",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "columns": [
+                  "id",
+                  "bid_price"
+                ],
+                "filter": {
+                  "bid_price": {
+                    "$cgt": "price"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "author",
+            "schema": "public"
+          },
+          "array_relationships": [
+            {
+              "name": "articles",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "author_id",
+                  "table": {
+                    "name": "article",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ],
+          "computed_fields": [
+            {
+              "name": "get_articles",
+              "definition": {
+                "function": {
+                  "name": "get_articles",
+                  "schema": "public"
+                },
+                "table_argument": "author_row"
+              }
+            }
+          ],
+          "insert_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "check": {
+                  "id": "X-HASURA-USER-ID"
+                }
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "anonymous",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name"
+                ],
+                "filter": {
+                  "articles": {
+                    "is_published": {
+                      "_eq": true
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "role": "critic",
+              "permission": {
+                "columns": [
+                  "name"
+                ],
+                "filter": {}
+              }
+            },
+            {
+              "role": "reader",
+              "permission": {
+                "columns": [
+                  "name"
+                ],
+                "filter": {
+                  "get_articles": {
+                    "is_published": true
+                  }
+                }
+              }
+            },
+            {
+              "role": "user",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name",
+                  "is_registered"
+                ],
+                "filter": {
+                  "_or": [
+                    {
+                      "id": "X-HASURA-USER-ID"
+                    },
+                    {
+                      "articles": {
+                        "is_published": {
+                          "_eq": true
+                        }
+                      }
+                    }
+                  ]
+                },
+                "limit": 10
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "books",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "columns": [
+                  "author_name",
+                  "book_name",
+                  "published_on"
+                ],
+                "filter": {}
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "geom_table",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "user1",
+              "permission": {
+                "columns": [
+                  "id",
+                  "type",
+                  "geom_col"
+                ],
+                "filter": {
+                  "geom_col": {
+                    "$st_d_within": {
+                      "distance": 1,
+                      "from": {
+                        "coordinates": [
+                          [
+                            [
+                              2,
+                              0
+                            ],
+                            [
+                              2,
+                              1
+                            ],
+                            [
+                              3,
+                              1
+                            ],
+                            [
+                              3,
+                              0
+                            ],
+                            [
+                              2,
+                              0
+                            ]
+                          ]
+                        ],
+                        "crs": {
+                          "properties": {
+                            "name": "urn:ogc:def:crs:EPSG::4326"
+                          },
+                          "type": "name"
+                        },
+                        "type": "Polygon"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "role": "user2",
+              "permission": {
+                "columns": [
+                  "id",
+                  "type",
+                  "geom_col"
+                ],
+                "filter": {
+                  "geom_col": {
+                    "$st_d_within": {
+                      "distance": "X-Hasura-Geom-Dist",
+                      "from": "X-Hasura-Geom-Val"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "gpa",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "staff",
+              "permission": {
+                "columns": [
+                  "id",
+                  "student_name"
+                ],
+                "filter": {}
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "jsonb_table",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "user1",
+              "permission": {
+                "columns": [
+                  "id",
+                  "jsonb_col"
+                ],
+                "filter": {
+                  "jsonb_col": {
+                    "$has_key": "age"
+                  }
+                }
+              }
+            },
+            {
+              "role": "user2",
+              "permission": {
+                "columns": [
+                  "id",
+                  "jsonb_col"
+                ],
+                "filter": {
+                  "jsonb_col": {
+                    "$has_key": "X-Hasura-Has-Key"
+                  }
+                }
+              }
+            },
+            {
+              "role": "user4",
+              "permission": {
+                "columns": [
+                  "id",
+                  "jsonb_col"
+                ],
+                "filter": {
+                  "jsonb_col": {
+                    "$has_keys_any": "X-Hasura-Json-Keys"
+                  }
+                }
+              }
+            },
+            {
+              "role": "user5",
+              "permission": {
+                "columns": [
+                  "id",
+                  "jsonb_col"
+                ],
+                "filter": {
+                  "jsonb_col": {
+                    "$has_keys_all": "X-Hasura-Json-Required-Keys"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "student_marks",
+            "schema": "public"
+          },
+          "computed_fields": [
+            {
+              "name": "total_marks",
+              "definition": {
+                "function": {
+                  "name": "student_total_marks",
+                  "schema": "public"
+                },
+                "table_argument": "student_row"
+              }
+            },
+            {
+              "name": "total_marks_offset",
+              "definition": {
+                "function": {
+                  "name": "student_total_marks_offset",
+                  "schema": "public"
+                },
+                "session_argument": "hasura_session",
+                "table_argument": "student_row"
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "tutor",
+              "permission": {
+                "columns": [
+                  "name"
+                ],
+                "filter": {
+                  "total_marks": {
+                    "_gte": 220
+                  }
+                }
+              }
+            },
+            {
+              "role": "tutor_session",
+              "permission": {
+                "columns": [
+                  "name"
+                ],
+                "computed_fields": [
+                  "total_marks",
+                  "total_marks_offset"
+                ],
+                "filter": {
+                  "total_marks_offset": {
+                    "_gte": 220
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "function": {
+            "name": "passed_students",
+            "schema": "public"
+          }
+        },
+        {
+          "function": {
+            "name": "search_tracks",
+            "schema": "public"
+          }
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

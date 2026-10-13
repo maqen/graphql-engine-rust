@@ -1,0 +1,42 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestSetTableCustomization
+  method: test_relationship_conflict_with_custom_column
+  fixtures:
+  - queries/v1/set_table_configuration/relationship_conflict_with_custom_column.yaml
+steps:
+- description: Try to define a relationship with custom column name
+  url: /v1/query
+  status: 400
+  query:
+    type: create_array_relationship
+    args:
+      name: AuthorId
+      table: author
+      using:
+        foreign_key_constraint_on:
+          table: article
+          column: author_id
+  response:
+    error: 'Inconsistent object: field definition conflicts with custom field name for postgres column
+      "id"'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        name: AuthorId
+        source: default
+        table:
+          name: author
+          schema: public
+        using:
+          foreign_key_constraint_on:
+            column: author_id
+            table:
+              name: article
+              schema: public
+      name: array_relation AuthorId in table author in source default
+      reason: 'Inconsistent object: field definition conflicts with custom field name for postgres column
+        "id"'
+      type: array_relation

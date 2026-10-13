@@ -1,0 +1,91 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "article",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "author",
+              "using": {
+                "foreign_key_constraint_on": "author_id"
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "author",
+            "schema": "public"
+          },
+          "array_relationships": [
+            {
+              "name": "articles",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "author_id",
+                  "table": {
+                    "name": "article",
+                    "schema": "public"
+                  }
+                }
+              },
+              "comment": "List all articles of the author"
+            }
+          ],
+          "computed_fields": [
+            {
+              "name": "get_articles",
+              "definition": {
+                "function": {
+                  "name": "fetch_articles",
+                  "schema": "public"
+                },
+                "table_argument": "author_row"
+              }
+            },
+            {
+              "name": "test_session",
+              "definition": {
+                "function": {
+                  "name": "test_session",
+                  "schema": "public"
+                },
+                "session_argument": "session"
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "table_to_customize",
+            "schema": "public"
+          }
+        }
+      ],
+      "functions": [
+        {
+          "function": {
+            "name": "search_articles",
+            "schema": "public"
+          }
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

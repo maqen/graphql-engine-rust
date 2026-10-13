@@ -1,0 +1,45 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpLtree
+  method: test_select_path_where_ancestor_array
+  fixtures:
+  - queries/graphql_query/boolexp/ltree/select_path_where_ancestor_array.yaml
+steps:
+- description: Select ancestors of an array of `ltree` arguments
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        tree (
+          where: {path: {_ancestor_any: ["Tree.Collections.Pictures", "Tree.Hobbies"]}}
+        ) {
+          path
+        }
+      }
+  response:
+    data:
+      tree:
+      - path: Tree
+      - path: Tree.Hobbies
+      - path: Tree.Collections
+      - path: Tree.Collections.Pictures
+- description: Select ancestors of an array of invalid `ltree` arguments
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        tree (
+          where: {path: {_ancestor_any: ["Tree.Collections.Pictures."]}}
+        ) {
+          path
+        }
+      }
+  response:
+    errors:
+    - message: 'Expecting label path: a sequence of zero or more labels separated by dots, for example
+        L1.L2.L3'
+      extensions:
+        path: $.selectionSet.tree.args.where.path._ancestor_any[0]
+        code: parse-failed

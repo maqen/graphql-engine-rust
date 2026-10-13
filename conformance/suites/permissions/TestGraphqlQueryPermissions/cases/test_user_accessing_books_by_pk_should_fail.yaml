@@ -1,0 +1,27 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphqlQueryPermissions
+  method: test_user_accessing_books_by_pk_should_fail
+  fixtures:
+  - queries/graphql_query/permissions/user_should_not_be_able_to_access_books_by_pk.yaml
+steps:
+- description: User cannot access books_by_pk
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: |
+      query {
+        books_by_pk(id:1,book_name:"Harry Porter") {
+          author_name
+          book_name
+          published_on
+        }
+      }
+  response:
+    errors:
+    - message: 'field ''books_by_pk'' not found in type: ''query_root'''
+      extensions:
+        path: $.selectionSet.books_by_pk
+        code: validation-failed

@@ -1,0 +1,35 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectBoolExpPostGIS
+  method: test_query_cast_geometry_to_geography
+  fixtures:
+  - queries/v1/select/boolexp/postgis/query_cast_geometry_to_geography.yaml
+steps:
+- description: Test casting from PostGIS geometry to geography in condition
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: geog_as_geom_table
+      columns:
+      - name
+      where:
+        geom_col:
+          $cast:
+            geography:
+              $st_d_within:
+                use_spheroid: true
+                distance: 1000000
+                from:
+                  type: Point
+                  crs:
+                    type: name
+                    properties:
+                      name: urn:ogc:def:crs:EPSG::4326
+                  coordinates:
+                  - 1
+                  - 50
+  response:
+  - name: London
+  - name: Paris

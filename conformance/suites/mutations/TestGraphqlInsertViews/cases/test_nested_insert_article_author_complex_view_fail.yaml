@@ -1,0 +1,75 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertViews
+  method: test_nested_insert_article_author_complex_view_fail
+  fixtures:
+  - queries/graphql_mutation/insert/views/nested_insert_article_author_complex_view_fail.yaml
+steps:
+- description: Insert article along with it's author_complex object (Error)
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation article_author_complex{
+        insert_article(
+          objects: [
+            {
+              title: "Article by author 1",
+              content: "Article content for article by author 1",
+              is_published: true,
+              author_complex: {
+                data: {
+                  author_id: 1
+                  article_title: "Article Title"
+                }
+              }
+            },
+            {
+              title: "Article by author 2",
+              content: "Article content for article by author 2",
+              is_published: true,
+              author_complex: {
+                data: {
+                  author_id: 2
+                  article_title: "Article title"
+                }
+              }
+            }
+          ]
+        ){
+          affected_rows
+          returning{
+            id
+            title
+            content
+            author_complex{
+              author_id
+              article_title
+            }
+          }
+        }
+      }
+  response:
+    errors:
+    - message: database query error
+      extensions:
+        path: $.selectionSet.insert_article.args.objects[0].author_complex.data
+        code: unexpected
+        internal:
+          arguments: []
+          error:
+            description: Views that do not select from a single table or view are not automatically updatable.
+            exec_status: FatalError
+            hint: To enable inserting into the view, provide an INSTEAD OF INSERT trigger or an unconditional
+              ON INSERT DO INSTEAD rule.
+            message: cannot insert into view "author_complex"
+            status_code: '55000'
+          prepared: false
+          statement: 'WITH "_mutres__author_complex" AS (INSERT INTO "public"."author_complex" ( "author_id",
+            "article_title" ) VALUES ((''1'')::integer, (''Article Title'')::text)  RETURNING * , (''true'')::boolean
+            AS "check__constraint") SELECT  json_build_object(''affected_rows'', (SELECT  COUNT(*)  FROM
+            "_mutres__author_complex"      ), ''returning_columns'', (SELECT  coalesce(json_agg("root"
+            ), ''[]'' ) AS "root" FROM  (SELECT  row_to_json((SELECT  "_e"  FROM  (SELECT  ("_root.base"."author_id")::text
+            AS "author_id", ("_root.base"."article_title")::text AS "article_title"       ) AS "_e"      )
+            ) AS "root" FROM  (SELECT  *  FROM "_mutres__author_complex" WHERE (''true'')     ) AS "_root.base"      )
+            AS "_root"      ) ) , (SELECT  coalesce(bool_and("check__constraint" ), ''true'' )  FROM "_mutres__author_complex"      )        '

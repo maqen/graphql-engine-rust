@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_v2_queries.py::TestV2SelectBasic
+upstream:
+  file: test_v2_queries.py
+  class: TestV2SelectBasic
+  dir: queries/v2/basic
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none

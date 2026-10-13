@@ -1,0 +1,66 @@
+upstream:
+  file: test_endpoints.py
+  class: TestCustomEndpoints
+  method: test_endpoint_conflicting
+  fixtures:
+  - queries/endpoints/endpoint_conflicting.yaml
+steps:
+- description: Add a conflicting endpoint
+  url: /v1/query
+  status: 400
+  query:
+    type: create_rest_endpoint
+    args:
+      url: :conflicting
+      name: conflicting
+      methods:
+      - GET
+      definition:
+        query:
+          collection_name: test_collection
+          query_name: simple_query
+  response:
+    error: 'Ambiguous URL paths: :conflicting, simple, simple_cached, with_arg, with_args'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - conflicts:
+      - comment: null
+        definition:
+          query: query { test_table { first_name last_name } }
+        methods:
+        - GET
+        name: conflicting
+        url: :conflicting
+      - comment: null
+        definition:
+          query: query { test_table { first_name last_name } }
+        methods:
+        - GET
+        name: simple
+        url: simple
+      - comment: null
+        definition:
+          query: 'query @cached(ttl: 5) { test_table { first_name last_name } }'
+        methods:
+        - GET
+        name: simple_cached
+        url: simple_cached
+      - comment: null
+        definition:
+          query: 'query ($first_name:String!) { test_table(where: {first_name: { _eq: $first_name } })
+            { first_name last_name } }'
+        methods:
+        - GET
+        - POST
+        name: with_arg
+        url: with_arg
+      - comment: null
+        definition:
+          query: 'query ($first_name: String!, $last_name:String!) { test_table(where: {first_name: {
+            _eq: $first_name } last_name: { _eq: $last_name }}) { first_name last_name } }'
+        methods:
+        - GET
+        name: with_args
+        url: with_args
+      reason: 'Ambiguous URL paths: :conflicting, simple, simple_cached, with_arg, with_args'

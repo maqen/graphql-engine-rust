@@ -1,0 +1,28 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlNestedInserts
+  method: test_author_one
+  fixtures:
+  - queries/graphql_mutation/insert/nested/author_one.yaml
+steps:
+- description: Insert a single row in author table
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        insert_author_one(
+          object: {
+            name: "Author 3"
+            is_registered: true
+          }
+        ){
+          id
+          name
+        }
+      }
+  response:
+    data:
+      insert_author_one:
+        id: 3
+        name: Author 3

@@ -1,0 +1,105 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "dml_rbp_grants",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "dml_rbp_projects",
+            "schema": "public"
+          },
+          "array_relationships": [
+            {
+              "name": "tasks",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "project_id",
+                  "table": {
+                    "name": "dml_rbp_tasks",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "columns": [
+                  "id",
+                  "min_level",
+                  "name"
+                ],
+                "filter": {}
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "dml_rbp_tasks",
+            "schema": "public"
+          },
+          "array_relationships": [
+            {
+              "name": "grants",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "task_id",
+                  "table": {
+                    "name": "dml_rbp_grants",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "columns": [
+                  "id",
+                  "project_id",
+                  "min_level",
+                  "title"
+                ],
+                "filter": {
+                  "grants": {
+                    "user_id": {
+                      "_eq": "X-Hasura-User-Id"
+                    },
+                    "user_level": {
+                      "_cgte": [
+                        "$",
+                        "min_level"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

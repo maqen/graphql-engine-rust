@@ -1,0 +1,38 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpPostGIS
+  method: test_query_cast_geography_to_geometry
+  fixtures:
+  - queries/graphql_query/boolexp/postgis/query_cast_geography_to_geometry.yaml
+steps:
+- description: Test casting from PostGIS geography to geometry in condition
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        geog_table(where: {
+          geog_col: {
+            _cast: {
+              geometry: {
+                _st_within: {
+                  type: "Polygon"
+                  coordinates:
+                    [[ [-75, 40]
+                     , [-74, 40]
+                     , [-74, 41]
+                     , [-75, 41]
+                     , [-75, 40] ]]
+                  crs: { type: "name", properties: { name: "EPSG:4326" } }
+                }
+              }
+            }
+          }
+        }){
+          name
+        }
+      }
+  response:
+    data:
+      geog_table:
+      - name: New York

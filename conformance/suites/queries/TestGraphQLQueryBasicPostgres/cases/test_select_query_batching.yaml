@@ -1,0 +1,32 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBasicPostgres
+  method: test_select_query_batching
+  fixtures:
+  - queries/graphql_query/basic/select_query_batching.yaml
+steps:
+- description: GraphQL query to test batching in the style of Apollo
+  url: /v1/graphql
+  status: 200
+  query:
+  - query: |
+      query {
+        user {
+          id
+        }
+      }
+  - query: |
+      query {
+        author {
+          id
+        }
+      }
+  response:
+  - data:
+      user:
+      - id: '1'
+      - id: '2'
+  - data:
+      author:
+      - id: 1
+      - id: 2

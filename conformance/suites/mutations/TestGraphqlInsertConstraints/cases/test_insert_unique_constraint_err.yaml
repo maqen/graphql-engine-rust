@@ -1,0 +1,20 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertConstraints
+  method: test_insert_unique_constraint_err
+  fixtures:
+  - queries/graphql_mutation/insert/constraints/author_unique_constraint_error.yaml
+steps:
+- description: Insert into author table as user role (Unique Constraint Error)
+  url: /v1/graphql
+  status: 200
+  query:
+    query: "mutation insert_author {\n  insert_author(\n    objects: [\n      {\n        name: \"Author\
+      \ 1\"\n      },\n      {\n        name: \"Author 1\"\n      }\n    ]\n  ) {\n    returning {\n \
+      \     id\n      name\n    }\n  }\n} \n"
+  response:
+    errors:
+    - message: Uniqueness violation. duplicate key value violates unique constraint "author_name_key"
+      extensions:
+        path: $.selectionSet.insert_author.args.objects
+        code: constraint-violation

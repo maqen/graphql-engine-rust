@@ -1,0 +1,38 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryOrderBy
+  method: test_employee_distinct_department_order_by_salary_asc
+  fixtures:
+  - queries/graphql_query/order_by/employee_distinct_department_order_by_salary_asc.yaml
+steps:
+- description: Fetch lowest salaried employee from each department and sort results on department descending
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        employee(
+          distinct_on: [department]
+          order_by: [{department: desc}, {salary: asc}]
+        ){
+          id
+          name
+          department
+          salary
+        }
+      }
+  response:
+    data:
+      employee:
+      - id: 2
+        name: Zara
+        department: Services
+        salary: 1234
+      - id: 6
+        name: Dara
+        department: Product
+        salary: 1209
+      - id: 1
+        name: Kai
+        department: Engineering
+        salary: 2345

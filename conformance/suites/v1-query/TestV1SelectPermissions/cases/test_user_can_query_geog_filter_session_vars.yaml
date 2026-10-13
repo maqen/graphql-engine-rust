@@ -1,0 +1,25 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectPermissions
+  method: test_user_can_query_geog_filter_session_vars
+  fixtures:
+  - queries/v1/select/permissions/user_can_query_geog_filter_session_vars.yaml
+steps:
+- description: Query data from geog_table using st_d_within and session vars
+  url: /v1/query
+  status: 200
+  headers:
+    X-Hasura-Role: postgis_user2
+    X-Hasura-Geog-Sph: 'false'
+    X-Hasura-Geog-Dist: '1000000'
+    X-Hasura-Geog-From: '{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::4326"}},
+      "type": "Point", "coordinates": [1, 50]}'
+  query:
+    type: select
+    args:
+      table: geog_table
+      columns:
+      - name
+  response:
+  - name: London
+  - name: Paris

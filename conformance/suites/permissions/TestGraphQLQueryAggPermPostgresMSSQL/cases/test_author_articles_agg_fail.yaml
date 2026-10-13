@@ -1,0 +1,29 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryAggPermPostgresMSSQL
+  method: test_author_articles_agg_fail
+  fixtures:
+  - queries/graphql_query/agg_perm/author_articles_agg_fail.yaml
+steps:
+- description: Select author with it's article aggregations with user role (Error)
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: |
+      query {
+        author{
+          articles_agg{
+            agg{
+              count
+            }
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'field ''articles_agg'' not found in type: ''author'''
+      extensions:
+        path: $.selectionSet.author.selectionSet.articles_agg
+        code: validation-failed

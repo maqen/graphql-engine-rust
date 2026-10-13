@@ -1,0 +1,21 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestRunSQL
+  method: test_sql_query_as_user_error_v2
+  fixtures:
+  - queries/v1/run_sql/sql_query_as_user_error_v2.yaml
+steps:
+- url: /v2/query
+  status: 400
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    type: run_sql
+    args:
+      sql: |
+        SELECT * from author
+  response:
+    error: 'restricted access : admin only'
+    path: $.args
+    code: access-denied

@@ -1,0 +1,23 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertPermission
+  method: test_user_role_on_conflict_ignore
+  fixtures:
+  - queries/graphql_mutation/insert/permissions/author_on_conflict_ignore_user_role.yaml
+steps:
+- description: Upserts author with id 1 as a user (Error)
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: "mutation insert_author {\n  insert_author (\n    objects: [\n      {\n        id: 1\n    \
+      \    name: \"Author 1 Updated\" \n      }\n      ],\n    on_conflict: {\n      constraint: author_pkey,\n\
+      \      update_columns: []\n    }\n  ) {\n    affected_rows\n    returning {\n        id\n      \
+      \  name\n      }\n    }\n  }\n"
+  response:
+    data:
+      insert_author:
+        affected_rows: 0
+        returning: []

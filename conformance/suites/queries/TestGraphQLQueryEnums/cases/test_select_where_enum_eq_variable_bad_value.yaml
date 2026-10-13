@@ -1,0 +1,24 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryEnums
+  method: test_select_where_enum_eq_variable_bad_value
+  fixtures:
+  - queries/graphql_query/enums/select_where_enum_eq_variable_bad_value.yaml
+steps:
+- description: Test validation of enum values in variables
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query ($color: colors_enum) {
+        users(where: { favorite_color: { _eq: $color }}) { name }
+      }
+    variables:
+      color: not_a_real_color
+  response:
+    errors:
+    - message: expected one of the values ['blue', 'green', 'orange', 'purple', 'red', 'yellow'] for type
+        'colors_enum', but found 'not_a_real_color'
+      extensions:
+        path: $.selectionSet.users.args.where.favorite_color._eq
+        code: validation-failed

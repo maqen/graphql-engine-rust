@@ -1,0 +1,29 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1InsertOnConflict
+  method: test_on_conflict_ignore
+  fixtures:
+  - queries/v1/insert/onconflict/article_on_conflict_ignore_constraint.yaml
+steps:
+- description: Upserts article data via GraphQL mutation
+  url: /v1/query
+  status: 200
+  query:
+    type: insert
+    args:
+      table: article
+      objects:
+      - content: Updated Article 1 content
+        id: 1
+      - content: Updated Article 2 content
+        id: 2
+      on_conflict:
+        constraint_on:
+        - id
+        action: ignore
+      returning:
+      - content
+      - id
+  response:
+    returning: []
+    affected_rows: 0

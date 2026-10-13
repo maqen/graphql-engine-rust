@@ -1,0 +1,47 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphqlQueryPermissions
+  method: test_jsonb_has_any
+  fixtures:
+  - queries/graphql_query/permissions/jsonb_has_any.yaml
+steps:
+- description: User can query jsonb values which satisfies filter in select permission with array session
+    variable
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user4
+    X-Hasura-Json-keys: '{age}'
+  query:
+    query: |
+      query {
+        jsonb_table{
+          id
+          jsonb_col
+        }
+      }
+  response:
+    data:
+      jsonb_table:
+      - id: 1
+        jsonb_col:
+          age: 7
+          name: Hasura
+- description: User can query jsonb values which satisfies filter in select permission with array session
+    variable
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user4
+    X-Hasura-Json-keys: '{}'
+  query:
+    query: |
+      query {
+        jsonb_table{
+          id
+          jsonb_col
+        }
+      }
+  response:
+    data:
+      jsonb_table: []

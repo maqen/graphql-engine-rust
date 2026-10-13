@@ -1,0 +1,31 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestCreatePermission
+  method: test_create_permission_user_role_error
+  fixtures:
+  - queries/v1/permissions/create_article_permission_role_user.yaml
+steps:
+- description: Create permission with user as role
+  url: /v1/query
+  status: 200
+  query:
+    type: create_select_permission
+    args:
+      table: author
+      role: user
+      permission:
+        columns: '*'
+        filter:
+          id: X-Hasura-User-Id
+  response:
+    message: success
+- description: Drop select permission
+  url: /v1/query
+  status: 200
+  query:
+    type: drop_select_permission
+    args:
+      table: author
+      role: user
+  response:
+    message: success

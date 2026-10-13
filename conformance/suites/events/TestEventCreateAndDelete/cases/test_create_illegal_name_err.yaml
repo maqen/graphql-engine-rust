@@ -1,0 +1,32 @@
+upstream:
+  file: test_events.py
+  class: TestEventCreateAndDelete
+  method: test_create_illegal_name_err
+  fixtures:
+  - queries/event_triggers/create-delete/create_trigger_illegal_name_err.yaml
+steps:
+- description: Track table test_t1
+  url: /v1/query
+  status: 200
+  query:
+    type: track_table
+    args:
+      schema: hge_tests
+      name: test_t1
+  response:
+    message: success
+- description: 'Create event trigger with an illegal name: Error'
+  url: /v1/query
+  status: 400
+  query:
+    type: create_event_trigger
+    args:
+      name: bad'name
+      table:
+        schema: hge_tests
+        name: test_t1
+      enable_manual: true
+  response:
+    error: only alphanumeric and underscore and hyphens allowed for name
+    path: $.args
+    code: parse-failed

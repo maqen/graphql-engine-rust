@@ -1,0 +1,23 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpPostGIS
+  method: test_query_illegal_cast_is_not_allowed
+  fixtures:
+  - queries/graphql_query/boolexp/postgis/query_illegal_cast_is_not_allowed.yaml
+steps:
+- description: Test that casting between incompatible types is rejected
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        geog_table(where: {geog_col: {_cast: {integer: {_eq: 0}}}}) {
+          name
+        }
+      }
+  response:
+    errors:
+    - message: 'field ''integer'' not found in type: ''geography_cast_exp'''
+      extensions:
+        path: $.selectionSet.geog_table.args.where.geog_col._cast.integer
+        code: validation-failed

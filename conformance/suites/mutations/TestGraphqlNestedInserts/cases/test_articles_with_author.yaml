@@ -1,0 +1,66 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlNestedInserts
+  method: test_articles_with_author
+  fixtures:
+  - queries/graphql_mutation/insert/nested/articles_with_author.yaml
+steps:
+- description: Insert article and it's author via nested mutation
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |-
+      mutation article_author{
+        insert_article(
+          objects: [
+            {
+              title: "Article 1 by Author 3",
+              content: "Article content for Article 1 by Author 3",
+              is_published: true
+              author: {
+                data: {
+                  name: "Author 3"
+                }
+              }
+            },
+            {
+              title: "Article 1 by Author 4",
+              content: "Article content for Article 1 by Author 4",
+              is_published: true
+              author: {
+                data: {
+                  name: "Author 4"
+                }
+              }
+            }
+          ]
+        ){
+          affected_rows
+          returning{
+            id
+            title
+            content
+            author{
+              id
+              name
+            }
+          }
+        }
+      }
+  response:
+    data:
+      insert_article:
+        affected_rows: 4
+        returning:
+        - id: 4
+          title: Article 1 by Author 3
+          content: Article content for Article 1 by Author 3
+          author:
+            id: 3
+            name: Author 3
+        - id: 5
+          title: Article 1 by Author 4
+          content: Article content for Article 1 by Author 4
+          author:
+            id: 4
+            name: Author 4

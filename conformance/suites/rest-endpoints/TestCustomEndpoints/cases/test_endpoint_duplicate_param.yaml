@@ -1,0 +1,39 @@
+upstream:
+  file: test_endpoints.py
+  class: TestCustomEndpoints
+  method: test_endpoint_duplicate_param
+  fixtures:
+  - queries/endpoints/endpoint_duplicate_param.yaml
+steps:
+- description: Try to add an endpoint with duplicate params
+  url: /v1/query
+  status: 400
+  query:
+    type: create_rest_endpoint
+    args:
+      url: foo/:id/bar/:id
+      name: duplicate
+      methods:
+      - GET
+      definition:
+        query:
+          collection_name: test_collection
+          query_name: simple_query
+  response:
+    error: 'Duplicate variables found in endpoint path: foo/:id/bar/:id'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          query:
+            collection_name: test_collection
+            query_name: simple_query
+        methods:
+        - GET
+        name: duplicate
+        url: foo/:id/bar/:id
+      name: rest_endpoint duplicate
+      reason: 'Duplicate variables found in endpoint path: foo/:id/bar/:id'
+      type: rest_endpoint

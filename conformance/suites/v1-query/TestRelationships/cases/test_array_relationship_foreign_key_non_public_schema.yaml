@@ -1,0 +1,37 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestRelationships
+  method: test_array_relationship_foreign_key_non_public_schema
+  fixtures:
+  - queries/v1/relationships/array_relationship_non_public_schema_foreign_key.yaml
+steps:
+- description: Create object relationship using foreign key
+  url: /v1/query
+  status: 200
+  query:
+    type: create_array_relationship
+    args:
+      table:
+        name: resident
+        schema: hge_tests
+      name: addresses
+      using:
+        foreign_key_constraint_on:
+          table:
+            name: address
+            schema: hge_tests
+          column: resident_id
+  response:
+    message: success
+- description: Drop object relationship
+  url: /v1/query
+  status: 200
+  query:
+    type: drop_relationship
+    args:
+      table:
+        name: resident
+        schema: hge_tests
+      relationship: addresses
+  response:
+    message: success

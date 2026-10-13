@@ -1,0 +1,16 @@
+upstream:
+  file: test_endpoints.py
+  class: TestCustomEndpoints
+  method: test_missing_endpoint
+  fixtures:
+  - queries/endpoints/endpoint_missing.yaml
+steps:
+- description: Call of an endpoint with a url template with the arg missing
+  url: /api/rest/void
+  method: GET
+  status: 404
+  query: null
+  response:
+    error: Endpoint not found
+    path: $
+    code: not-found

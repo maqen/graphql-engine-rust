@@ -1,0 +1,29 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1UpdatePermissions
+  method: test_user_cannot_update_published_version_col
+  fixtures:
+  - queries/v1/update/permissions/user_cannot_update_published_article_version.yaml
+steps:
+- description: Update mutation on author
+  url: /v1/query
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    type: update
+    args:
+      table: article
+      $set:
+        content: Article content version 1.0.2
+        version: 1.0.2
+      where:
+        id: 1
+      returning:
+      - id
+      - title
+      - content
+  response:
+    returning: []
+    affected_rows: 0

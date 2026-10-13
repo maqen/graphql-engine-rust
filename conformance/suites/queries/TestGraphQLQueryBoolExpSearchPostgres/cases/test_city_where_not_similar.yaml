@@ -1,0 +1,27 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpSearchPostgres
+  method: test_city_where_not_similar
+  fixtures:
+  - queries/graphql_query/boolexp/search/select_city_where_not_similar_postgres.yaml
+steps:
+- description: Select cities not ending with ham
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        city (
+        where: {name: {_nsimilar: "_*ham" }}
+        ) {
+          name
+          country
+        }
+      }
+  response:
+    data:
+      city:
+      - name: New York
+        country: USA
+      - name: New Orleans
+        country: USA

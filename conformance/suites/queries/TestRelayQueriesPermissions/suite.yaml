@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_graphql_queries.py::TestRelayQueriesPermissions
+upstream:
+  file: test_graphql_queries.py
+  class: TestRelayQueriesPermissions
+  dir: queries/graphql_query/relay/permissions
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none

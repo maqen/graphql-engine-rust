@@ -1,0 +1,30 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryOffsets
+  method: test_err_neg_offset_error
+  fixtures:
+  - queries/graphql_query/offset/select_query_article_neg_offset_error.yaml
+steps:
+- description: Nested select on article with negative offset. Expecting error. Currently 500. Idealy should
+    be 400
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        article(offset: -1) {
+          id
+          title
+          content
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: OFFSET must not be negative
+      extensions:
+        path: $
+        code: data-exception

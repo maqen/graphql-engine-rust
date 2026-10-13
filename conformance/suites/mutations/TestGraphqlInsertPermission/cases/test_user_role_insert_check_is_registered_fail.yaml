@@ -1,0 +1,24 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertPermission
+  method: test_user_role_insert_check_is_registered_fail
+  fixtures:
+  - queries/graphql_mutation/insert/permissions/author_user_role_insert_check_is_registered_fail.yaml
+steps:
+- description: Upserts author with id 1 as a user (Error)
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '5'
+  query:
+    query: "mutation insert_author {\n  insert_author (\n    objects: [\n      {\n        id: 5\n    \
+      \    name: \"Author 5\"\n        is_registered: true \n      }\n      ],\n    on_conflict: {\n \
+      \     constraint: author_pkey,\n      action: ignore\n    }\n  ) {\n    affected_rows\n    returning\
+      \ {\n        id\n        name\n        is_registered\n      }\n    }\n  }\n"
+  response:
+    errors:
+    - message: 'field ''action'' not found in type: ''author_on_conflict'''
+      extensions:
+        path: $.selectionSet.insert_author.args.on_conflict.action
+        code: validation-failed

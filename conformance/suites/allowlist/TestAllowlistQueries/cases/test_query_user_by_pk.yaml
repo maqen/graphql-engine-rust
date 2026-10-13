@@ -1,0 +1,29 @@
+upstream:
+  file: test_allowlist_queries.py
+  class: TestAllowlistQueries
+  method: test_query_user_by_pk
+  fixtures:
+  - queries/graphql_query/allowlist/query_user_by_pk.yaml
+steps:
+- description: Query user with id = 1
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    variables:
+      id: 1
+    query: |
+      query ($id: Int!){
+        user_by_pk(id: $id){
+          id
+          name
+          company
+        }
+      }
+  response:
+    data:
+      user_by_pk:
+        id: 1
+        name: clarke
+        company: Symons

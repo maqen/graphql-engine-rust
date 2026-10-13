@@ -1,0 +1,25 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpSearchPostgres
+  method: test_city_where_similar
+  fixtures:
+  - queries/graphql_query/boolexp/search/select_city_where_similar_postgres.yaml
+steps:
+- description: Select cities ending with gham
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        city (
+        where: {name: {_similar: "_*gham" }}
+        ) {
+          name
+          country
+        }
+      }
+  response:
+    data:
+      city:
+      - name: Framlingham
+        country: UK

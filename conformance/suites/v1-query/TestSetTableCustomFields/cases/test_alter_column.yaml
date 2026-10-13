@@ -1,0 +1,52 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestSetTableCustomFields
+  method: test_alter_column
+  fixtures:
+  - queries/v1/set_table_custom_fields/alter_column.yaml
+steps:
+- description: Set custom column names
+  url: /v1/query
+  status: 200
+  query:
+    type: set_table_custom_fields
+    version: 2
+    args:
+      table: author
+      custom_root_fields:
+        select: Authors
+      custom_column_names:
+        id: AuthorId
+        name: AuthorName
+  response:
+    message: success
+- description: Rename column 'id' and drop column 'name'
+  url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        ALTER TABLE author DROP COLUMN name;
+        ALTER TABLE author RENAME COLUMN id to author_id;
+  response:
+    result_type: CommandOk
+    result: null
+- description: Test if custom column names are updated
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        Authors{
+          AuthorId
+          age
+        }
+      }
+  response:
+    data:
+      Authors:
+      - AuthorId: 1
+        age: 23
+      - AuthorId: 2
+        age: null

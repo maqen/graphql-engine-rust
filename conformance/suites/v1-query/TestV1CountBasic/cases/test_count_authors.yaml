@@ -1,0 +1,16 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1CountBasic
+  method: test_count_authors
+  fixtures:
+  - queries/v1/count/basic/count_authors.yaml
+steps:
+- description: Count number of authors
+  url: /v1/query
+  status: 200
+  query:
+    type: count
+    args:
+      table: author
+  response:
+    count: 4

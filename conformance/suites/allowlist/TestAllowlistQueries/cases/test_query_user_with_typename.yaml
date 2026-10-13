@@ -1,0 +1,33 @@
+upstream:
+  file: test_allowlist_queries.py
+  class: TestAllowlistQueries
+  method: test_query_user_with_typename
+  fixtures:
+  - queries/graphql_query/allowlist/query_user_with_typename.yaml
+steps:
+- description: Allowlist query with typename
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: |
+      query {
+        user{
+          id
+          name
+          __typename
+          company
+        }
+      }
+  response:
+    data:
+      user:
+      - id: 1
+        name: clarke
+        __typename: user
+        company: Symons
+      - id: 2
+        name: reckler
+        __typename: user
+        company: null

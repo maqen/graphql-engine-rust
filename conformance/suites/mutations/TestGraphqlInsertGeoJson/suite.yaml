@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_graphql_mutations.py::TestGraphqlInsertGeoJson
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertGeoJson
+  dir: queries/graphql_mutation/insert/geojson
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: data

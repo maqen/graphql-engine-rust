@@ -1,0 +1,31 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpSearchPostgres
+  method: test_city_where_nregex
+  fixtures:
+  - queries/graphql_query/boolexp/search/select_city_where_nregex_postgres.yaml
+steps:
+- description: Select cities not starting with new (case-sensitively)
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        city (
+        where: {name: {_nregex: "new.*" }}
+        ) {
+          name
+          country
+        }
+      }
+  response:
+    data:
+      city:
+      - name: Durham
+        country: USA
+      - name: New York
+        country: USA
+      - name: Framlingham
+        country: UK
+      - name: New Orleans
+        country: USA

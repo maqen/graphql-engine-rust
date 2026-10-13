@@ -1,0 +1,68 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "area",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "compounds",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "drone_3d_location",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "geometry_collection",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "landmark",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "road",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "route",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "service_locations",
+            "schema": "public"
+          }
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryEnums
+  method: test_select_enum_field
+  fixtures:
+  - queries/graphql_query/enums/select_enum_field.yaml
+steps:
+- description: Test querying a table that references an enum table
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      {
+        users {
+          name
+          favorite_color
+        }
+      }
+  response:
+    data:
+      users:
+      - name: Alyssa
+        favorite_color: red
+      - name: Ben
+        favorite_color: blue

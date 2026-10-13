@@ -1,0 +1,24 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestFallbackUnauthorizedRoleCookie
+  method: test_fallback_unauth_role_jwt_cookie_not_set
+  fixtures:
+  - queries/unauthorized_role/cookie_header_absent_unauth_role_set.yaml
+admin_secret_header: false
+steps:
+- description: Make request with role header value as anonymous and cookie JWT header not set
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: anonymous
+  query:
+    query: |
+      query {
+        user{
+          id
+        }
+      }
+  response:
+    data:
+      user:
+      - id: 3

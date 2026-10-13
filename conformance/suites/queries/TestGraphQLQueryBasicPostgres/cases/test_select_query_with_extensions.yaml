@@ -1,0 +1,53 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBasicPostgres
+  method: test_select_query_with_extensions
+  fixtures:
+  - queries/graphql_query/basic/select_query_with_extensions.yaml
+steps:
+- description: Simple GraphQL object query on author, where the request includes extensions (normal request).
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: admin
+  query:
+    operationName: chooseThisOne
+    extensions: null
+    query: |
+      query chooseThisOne {
+        author {
+          id
+          name
+        }
+      }
+  response:
+    data:
+      author:
+      - id: 1
+        name: Author 1
+      - id: 2
+        name: Author 2
+- description: Simple GraphQL object query on author, where the request includes persisted query extension.
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: admin
+  query:
+    operationName: chooseThisOne
+    extensions:
+      persistedQuery:
+        version: 1
+        sha256Hash: randomhash
+    query: |
+      query chooseThisOne {
+        author {
+          id
+          name
+        }
+      }
+  response:
+    errors:
+    - message: PersistedQueryNotSupported
+      extensions:
+        path: $
+        code: not-supported

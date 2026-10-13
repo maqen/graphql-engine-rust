@@ -1,0 +1,28 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlUpdateBasic
+  method: test_no_operator_err
+  fixtures:
+  - queries/graphql_mutation/update/basic/person_error_no_operator.yaml
+steps:
+- description: Updated person data without any operator
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation update_person($value: jsonb) {
+        update_person(
+          where: {id: {_eq: 2}}
+        ){
+          affected_rows
+          returning{
+            id
+            details
+          }
+        }
+      }
+  response:
+    data:
+      update_person:
+        affected_rows: 0
+        returning: []

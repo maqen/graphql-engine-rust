@@ -1,0 +1,29 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryLimits
+  method: test_err_str_limit_error
+  fixtures:
+  - queries/graphql_query/limits/select_query_article_string_limit_error.yaml
+steps:
+- description: Nested select on article with limit expecting error
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        article(limit: "3", offset: 1) {
+          id
+          title
+          content
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: expected a non-negative 32-bit integer for type 'Int', but found a string
+      extensions:
+        path: $.selectionSet.article.args.limit
+        code: validation-failed

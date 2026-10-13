@@ -1,0 +1,27 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestTrackTables
+  method: test_track_table_function_same_name
+  fixtures:
+  - queries/v1/track_table/track_table_function_same_name.yaml
+steps:
+- description: Track table
+  url: /v1/query
+  status: 200
+  query:
+    type: track_table
+    args:
+      name: test1
+  response:
+    message: success
+- description: Track function
+  url: /v1/query
+  status: 400
+  query:
+    type: track_function
+    args:
+      name: test1
+  response:
+    error: table with name "test1" already exists
+    path: $.args
+    code: not-supported

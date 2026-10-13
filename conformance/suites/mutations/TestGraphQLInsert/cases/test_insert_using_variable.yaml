@@ -1,0 +1,40 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphQLInsert
+  method: test_insert_using_variable
+  fixtures:
+  - queries/graphql_mutation/insert/basic/person_jsonb_variable.yaml
+steps:
+- description: Inserts person data via GraphQL mutation
+  url: /v1/graphql
+  status: 200
+  query:
+    variables:
+      value:
+        name:
+          first: john
+          last: murphy
+    query: |
+      mutation insert_person($value: jsonb) {
+        insert_person(
+          objects: [
+            {
+              details: $value
+            }
+          ]
+        ) {
+          returning {
+            id
+            details
+          }
+        }
+      }
+  response:
+    data:
+      insert_person:
+        returning:
+        - id: 1
+          details:
+            name:
+              last: murphy
+              first: john

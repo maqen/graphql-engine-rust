@@ -1,0 +1,101 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "article",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "author",
+              "using": {
+                "foreign_key_constraint_on": "author_id"
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "author",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "detail_fk",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "id",
+                  "table": {
+                    "name": "author_detail",
+                    "schema": "public"
+                  }
+                }
+              }
+            },
+            {
+              "name": "detail_manual",
+              "using": {
+                "manual_configuration": {
+                  "column_mapping": {
+                    "id": "id"
+                  },
+                  "insertion_order": "after_parent",
+                  "remote_table": {
+                    "name": "author_detail",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ],
+          "array_relationships": [
+            {
+              "name": "articles",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "author_id",
+                  "table": {
+                    "name": "article",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ],
+          "computed_fields": [
+            {
+              "name": "fetch_articles",
+              "definition": {
+                "function": {
+                  "name": "fetch_articles",
+                  "schema": "public"
+                },
+                "table_argument": "author_row"
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "author_detail",
+            "schema": "public"
+          }
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

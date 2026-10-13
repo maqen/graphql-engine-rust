@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_tests.py::TestTests2
+upstream:
+  file: test_tests.py
+  class: TestTests2
+  dir: queries/graphql_query/permissions
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none

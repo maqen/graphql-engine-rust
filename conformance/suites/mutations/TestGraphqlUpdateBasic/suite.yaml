@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_graphql_mutations.py::TestGraphqlUpdateBasic
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlUpdateBasic
+  dir: queries/graphql_mutation/update/basic
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: data

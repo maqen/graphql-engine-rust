@@ -1,0 +1,16 @@
+upstream:
+  file: test_endpoints.py
+  class: TestCustomEndpoints
+  method: test_endpoint_with_query_args_missing_arg
+  fixtures:
+  - queries/endpoints/endpoint_with_query_arg_missing_arg.yaml
+steps:
+- description: Failing call with missing query arg
+  url: /api/rest/with_arg
+  method: GET
+  status: 400
+  query: null
+  response:
+    error: 'expecting a value for non-nullable variable: "first_name"'
+    path: $
+    code: validation-failed

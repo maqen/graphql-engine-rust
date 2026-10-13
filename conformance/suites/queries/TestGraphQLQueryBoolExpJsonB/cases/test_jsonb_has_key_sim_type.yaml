@@ -1,0 +1,38 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpJsonB
+  method: test_jsonb_has_key_sim_type
+  fixtures:
+  - queries/graphql_query/boolexp/jsonb/select_product_jsonb_has_key_sim_type.yaml
+steps:
+- description: Select products having key 'SIM type' in spec
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        product (
+        where: {spec: {_has_key: "SIM type" }}
+        ) {
+          id
+          category
+          name
+          spec
+
+        }
+      }
+  response:
+    data:
+      product:
+      - id: 3
+        category: Mobile
+        name: mobile1
+        spec:
+          RAM: 3GB
+          Weight: 200g
+          Sensors: Accelerometer sensor, E-compass, Proximity sensor
+          SIM type: DualSim
+          Processor: processor2
+          Touchscreen: true
+          Network type: 4G
+          Operating System Type: osType1

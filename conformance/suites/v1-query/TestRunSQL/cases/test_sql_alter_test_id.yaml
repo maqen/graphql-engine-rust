@@ -1,0 +1,60 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestRunSQL
+  method: test_sql_alter_test_id
+  fixtures:
+  - queries/v1/run_sql/sql_alter_test_id.yaml
+steps:
+- description: Query data from test table
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+          test{
+            id
+            name
+            bool_col
+          }
+      }
+  response:
+    data:
+      test:
+      - id: 1
+        name: name_1
+        bool_col: false
+      - id: 2
+        name: name_2
+        bool_col: false
+- description: Alter the data type of id column
+  url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        alter table test alter column id set data type text;
+  response:
+    result_type: CommandOk
+    result: null
+- description: Query data from test table; now id column is of text type
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+          test{
+            id
+            name
+            bool_col
+          }
+      }
+  response:
+    data:
+      test:
+      - id: '1'
+        name: name_1
+        bool_col: false
+      - id: '2'
+        name: name_2
+        bool_col: false

@@ -1,0 +1,25 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpJsonB
+  method: test_query_cast_geometry_to_geography
+  fixtures:
+  - queries/graphql_query/boolexp/jsonb/query_cast_jsonb_to_string.yaml
+steps:
+- description: Test casting from jsonb to string
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        article(where: {tags: {_cast: {String: {_like: "%bestseller%"}}}}){
+          id
+          tags
+        }
+      }
+  response:
+    data:
+      article:
+      - id: 2
+        tags:
+        - bestseller
+        - latest

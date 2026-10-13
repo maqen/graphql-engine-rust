@@ -1,0 +1,55 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryFragmentsPostgresCitus
+  method: test_select_query_top_level_fragment
+  fixtures:
+  - queries/graphql_query/basic/select_query_top_level_fragment.yaml
+steps:
+- url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query topLevelFragmentQuery {
+        author {
+          name
+        }
+        ...topLevelAuthorFieldFragment
+        article {
+          title
+        }
+        ...topLevelArticleFieldFragment
+      }
+
+      fragment topLevelAuthorFieldFragment on query_root {
+        author {
+          id
+        }
+      }
+
+      fragment topLevelArticleFieldFragment on query_root {
+        author {
+          name
+        }
+        article {
+          author {
+            name
+          }
+        }
+      }
+  response:
+    data:
+      author:
+      - name: Author 1
+        id: 1
+      - name: Author 2
+        id: 2
+      article:
+      - title: Article 1
+        author:
+          name: Author 1
+      - title: Article 2
+        author:
+          name: Author 1
+      - title: Article 3
+        author:
+          name: Author 2

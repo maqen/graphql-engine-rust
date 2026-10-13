@@ -1,0 +1,21 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectBasic
+  method: test_select_table_not_present
+  fixtures:
+  - queries/v1/select/basic/select_article_table_not_present_err.yaml
+steps:
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: foobar
+      columns:
+      - id
+      - name
+      - user
+  response:
+    error: table "foobar" does not exist
+    path: $.args.table
+    code: not-exists

@@ -1,0 +1,22 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1CountBasic
+  method: test_count_distinct_col_not_present_err
+  fixtures:
+  - queries/v1/count/basic/count_distinct_col_not_present_err.yaml
+steps:
+- description: Count number of authors with atleast one published article
+  url: /v1/query
+  status: 400
+  query:
+    type: count
+    args:
+      table: article
+      distinct:
+      - author_name
+      where:
+        is_published: true
+  response:
+    error: 'no such column exists: "author_name"'
+    path: $.args.distinct[0]
+    code: permission-denied

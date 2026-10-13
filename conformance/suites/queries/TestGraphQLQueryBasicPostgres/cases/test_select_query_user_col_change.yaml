@@ -1,0 +1,71 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBasicPostgres
+  method: test_select_query_user_col_change
+  fixtures:
+  - queries/graphql_query/basic/select_query_user_col_change_postgres.yaml
+steps:
+- description: Alter column id of user table to integer
+  url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        ALTER TABLE "user" ALTER COLUMN id set data type integer;
+  response:
+    result_type: CommandOk
+    result: null
+- description: Query data from user table
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        user{
+          id
+          name
+          number
+        }
+      }
+  response:
+    data:
+      user:
+      - id: 1
+        name: User 1
+        number: '123456789'
+      - id: 2
+        name: User 2
+        number: '123456780'
+- description: Alter column id of user table to bigint
+  url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        ALTER TABLE "user" ALTER COLUMN id set data type bigint;
+  response:
+    result_type: CommandOk
+    result: null
+- description: Query data from user table
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        user{
+          id
+          name
+          number
+        }
+      }
+  response:
+    data:
+      user:
+      - id: '1'
+        name: User 1
+        number: '123456789'
+      - id: '2'
+        name: User 2
+        number: '123456780'

@@ -1,0 +1,26 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1UpdateBasic
+  method: test_set_author_name
+  fixtures:
+  - queries/v1/update/basic/author_set_name.yaml
+steps:
+- description: Update mutation on author
+  url: /v1/query
+  status: 200
+  query:
+    type: update
+    args:
+      table: author
+      $set:
+        name: Jane
+      where:
+        id: 1
+      returning:
+      - id
+      - name
+  response:
+    returning:
+    - id: 1
+      name: Jane
+    affected_rows: 1

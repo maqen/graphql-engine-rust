@@ -1,0 +1,26 @@
+upstream:
+  file: test_validation.py
+  class: TestGraphQLValidation
+  method: test_null_value
+  fixtures:
+  - queries/graphql_validation/null_value_err.yaml
+steps:
+- description: Passing null value for non nullable type
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation update_author {
+        update_author(where: null _set: {name: ""}) {
+          returning {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: expected an object for type 'author_bool_exp', but found null
+      extensions:
+        path: $.selectionSet.update_author.args.where
+        code: validation-failed

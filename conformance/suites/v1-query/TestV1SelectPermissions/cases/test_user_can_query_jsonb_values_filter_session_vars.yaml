@@ -1,0 +1,26 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectPermissions
+  method: test_user_can_query_jsonb_values_filter_session_vars
+  fixtures:
+  - queries/v1/select/permissions/user_can_query_jsonb_values_filter_session_vars.yaml
+steps:
+- description: User can query geometry values which satisfies filter in select permission using session
+    variables
+  url: /v1/query
+  status: 200
+  headers:
+    X-Hasura-Role: user2
+    X-Hasura-Has-Key: age
+  query:
+    type: select
+    args:
+      table: jsonb_table
+      columns:
+      - id
+      - jsonb_col
+  response:
+  - id: 1
+    jsonb_col:
+      age: 7
+      name: Hasura

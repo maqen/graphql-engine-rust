@@ -1,0 +1,38 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "geog_as_geom_table",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "geog_table",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "geom_table",
+            "schema": "public"
+          }
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

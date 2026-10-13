@@ -1,0 +1,58 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectBoolExpPostGIS
+  method: test_query_st_contains
+  fixtures:
+  - queries/v1/select/boolexp/postgis/query_st_contains.yaml
+steps:
+- description: Query data from geom_table using postgis op $st_contains in bool exp
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: geom_table
+      where:
+        geom_col:
+          $st_contains:
+            type: Point
+            crs:
+              type: name
+              properties:
+                name: urn:ogc:def:crs:EPSG::4326
+            coordinates:
+            - 1
+            - 2
+      columns:
+      - id
+      - type
+      - geom_col
+  response:
+  - id: 1
+    type: point
+    geom_col:
+      type: Point
+      crs:
+        type: name
+        properties:
+          name: urn:ogc:def:crs:EPSG::4326
+      coordinates:
+      - 1
+      - 2
+  - id: 2
+    type: linestring
+    geom_col:
+      type: LineString
+      crs:
+        type: name
+        properties:
+          name: urn:ogc:def:crs:EPSG::4326
+      coordinates:
+      - - 0
+        - 0
+      - - 0.5
+        - 1
+      - - 1
+        - 2
+      - - 1.5
+        - 3

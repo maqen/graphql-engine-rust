@@ -1,0 +1,25 @@
+upstream:
+  file: test_endpoints.py
+  class: TestCustomEndpoints
+  method: test_endpoint_empty_path
+  fixtures:
+  - queries/endpoints/endpoint_empty_path.yaml
+steps:
+- description: Tries to create an endpoint with empty path
+  url: /v1/query
+  status: 400
+  query:
+    type: create_rest_endpoint
+    args:
+      url: ''
+      name: empty
+      methods:
+      - GET
+      definition:
+        query:
+          collection_name: test_collection
+          query_name: simple_query
+  response:
+    error: empty string not allowed
+    path: $.args.url
+    code: parse-failed

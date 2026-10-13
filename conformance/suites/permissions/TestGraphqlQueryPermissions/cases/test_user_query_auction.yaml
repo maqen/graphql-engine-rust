@@ -1,0 +1,28 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphqlQueryPermissions
+  method: test_user_query_auction
+  fixtures:
+  - queries/graphql_query/permissions/user_query_auction.yaml
+steps:
+- description: Query bid prices more than actual price
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: |
+      query {
+        auction(
+          order_by: {bid_price: asc}
+          limit: 1
+        ) {
+          id
+          bid_price
+        }
+      }
+  response:
+    data:
+      auction:
+      - id: 4
+        bid_price: 260

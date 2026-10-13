@@ -1,0 +1,112 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestTrackTables
+  method: test_track_untrack_materialized_view
+  fixtures:
+  - queries/v1/track_table/track_untrack_materialized_view.yaml
+steps:
+- description: Track materialized view
+  url: /v1/query
+  status: 200
+  query:
+    type: track_table
+    args:
+      name: articles
+  response:
+    message: success
+- description: Track already untracked materialized view
+  url: /v1/query
+  status: 400
+  query:
+    type: track_table
+    args:
+      name: articles
+  response:
+    error: 'view/table already tracked: "articles"'
+    path: $.args
+    code: already-tracked
+- description: Select query
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: articles
+      columns:
+      - title
+      - name
+  response:
+  - title: Lorem ipsum dolor sit amet
+    name: Author 1
+  - title: 'lolcats: an anthology'
+    name: Author 2
+  - title: consectetur adipiscing elit
+    name: Author 1
+- description: Checking query fields by introspection
+  url: /v1/graphql
+  status: 200
+  query:
+    query: query checkQuery {__type(name:"articles"){name}}
+  response:
+    data:
+      __type:
+        name: articles
+- description: Checking mutation fields for materialized view
+  url: /v1/graphql
+  status: 200
+  query:
+    query: 'mutation MyMutation { delete_articles(where: {title: {_eq: "Lorem ipsum dolor sit amet"}})
+      { affected_rows }}'
+  response:
+    errors:
+    - message: no mutations exist
+      extensions:
+        path: $
+        code: validation-failed
+- description: Checking mutation fields by introspection
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query checkMutation {
+        __type(name: "articles_insert_input") {
+          name
+        }
+      }
+  response:
+    data:
+      __type: null
+- description: Untrack materialized view
+  url: /v1/query
+  status: 200
+  query:
+    type: untrack_table
+    args:
+      table: articles
+  response:
+    message: success
+- description: Untrack materialized view
+  url: /v1/query
+  status: 400
+  query:
+    type: untrack_table
+    args:
+      table: articles
+  response:
+    error: 'view/table already untracked: "articles"'
+    path: $.args
+    code: already-untracked
+- description: Select query error
+  url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: articles
+      columns:
+      - title
+      - name
+  response:
+    error: table "articles" does not exist
+    path: $.args.table
+    code: not-exists

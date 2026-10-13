@@ -1,0 +1,23 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1InsertBasic
+  method: test_insert_author_col_not_present_err
+  fixtures:
+  - queries/v1/insert/basic/insert_author_col_not_present_err.yaml
+steps:
+- url: /v1/query
+  status: 400
+  query:
+    type: insert
+    args:
+      table: author
+      objects:
+      - name: Author 1
+        age: 23
+      returning:
+      - name
+      - id
+  response:
+    error: column "age" does not exist
+    path: $.args.objects[0]
+    code: not-exists

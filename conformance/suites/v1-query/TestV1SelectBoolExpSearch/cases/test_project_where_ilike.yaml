@@ -1,0 +1,22 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectBoolExpSearch
+  method: test_project_where_ilike
+  fixtures:
+  - queries/v1/select/boolexp/search/select_project_where_ilike.yaml
+steps:
+- description: Select projects with a given ID of type `character`
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: project
+      where:
+        id:
+          $ilike: b%
+      columns:
+      - id
+  response:
+  - id: bcd
+  - id: BCD

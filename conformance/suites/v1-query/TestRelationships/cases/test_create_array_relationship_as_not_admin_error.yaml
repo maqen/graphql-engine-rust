@@ -1,0 +1,26 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestRelationships
+  method: test_create_array_relationship_as_not_admin_error
+  fixtures:
+  - queries/v1/relationships/create_array_relationship_as_not_admin_error.yaml
+steps:
+- description: Create array relationship using foreign key
+  url: /v1/query
+  status: 400
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    type: create_array_relationship
+    args:
+      table: author
+      name: articles
+      using:
+        foreign_key_constraint_on:
+          table: article
+          column: author_id
+  response:
+    error: 'restricted access : admin only'
+    path: $.args
+    code: access-denied

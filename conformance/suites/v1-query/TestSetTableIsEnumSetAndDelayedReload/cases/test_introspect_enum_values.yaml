@@ -1,0 +1,54 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestSetTableIsEnumSetAndDelayedReload
+  method: test_introspect_enum_values
+  fixtures:
+  - queries/v1/set_table_is_enum/set_and_delayed_reload/introspect_enum_values.yaml
+steps:
+- description: Insert a new enum value without reloading
+  url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        INSERT INTO crust VALUES ('thick');
+  response:
+    result_type: CommandOk
+    result: null
+- description: Check that the previous enum values are cached
+  url: /v1/graphql
+  status: 200
+  query: &id001
+    query: |
+      {
+        crust: __type(name: "crust_enum") {
+          enumValues {
+            name
+          }
+        }
+      }
+  response:
+    data:
+      crust:
+        enumValues:
+        - name: thin
+- description: Reload the metadata
+  url: /v1/query
+  status: 200
+  query:
+    type: reload_metadata
+    args: {}
+  response:
+    is_consistent: true
+    message: success
+- description: Check that the enum values are updated
+  url: /v1/graphql
+  status: 200
+  query: *id001
+  response:
+    data:
+      crust:
+        enumValues:
+        - name: thick
+        - name: thin

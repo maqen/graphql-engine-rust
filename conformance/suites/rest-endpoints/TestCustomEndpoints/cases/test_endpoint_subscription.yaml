@@ -1,0 +1,39 @@
+upstream:
+  file: test_endpoints.py
+  class: TestCustomEndpoints
+  method: test_endpoint_subscription
+  fixtures:
+  - queries/endpoints/endpoint_subscription.yaml
+steps:
+- description: Try to add an endpoint with duplicate params
+  url: /v1/query
+  status: 400
+  query:
+    type: create_rest_endpoint
+    args:
+      url: foo/bar/subscribe
+      name: foo
+      methods:
+      - GET
+      definition:
+        query:
+          collection_name: test_collection
+          query_name: simple_subscription
+  response:
+    error: 'Inconsistent object: in endpoint foo: query with name simple_subscription is a subscription'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          query:
+            collection_name: test_collection
+            query_name: simple_subscription
+        methods:
+        - GET
+        name: foo
+        url: foo/bar/subscribe
+      name: rest_endpoint foo
+      reason: 'Inconsistent object: in endpoint foo: query with name simple_subscription is a subscription'
+      type: rest_endpoint

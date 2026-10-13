@@ -1,0 +1,41 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertOnConflict
+  method: test_err_unexpected_constraint
+  fixtures:
+  - queries/graphql_mutation/insert/onconflict/article_unexpected_on_conflict_constraint_error.yaml
+steps:
+- description: Upserts article data via GraphQL mutation (Error 03)
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation insert_article {
+        insert_article (
+          objects: [
+            {
+              content: "Updated Article 1 content",
+              id: 1
+            },
+            {
+              content: "Updated Article 2 content",
+              id: 2
+            }
+            ],
+          on_conflict: {
+            action: update,
+            constraint: random_constraint
+          }
+        ) {
+          returning {
+            title
+            content
+            }
+          }
+        }
+  response:
+    errors:
+    - message: 'field ''action'' not found in type: ''article_on_conflict'''
+      extensions:
+        path: $.selectionSet.insert_article.args.on_conflict.action
+        code: validation-failed

@@ -1,0 +1,182 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "test_table",
+            "schema": "public"
+          }
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ],
+  "query_collections": [
+    {
+      "name": "test_collection",
+      "definition": {
+        "queries": [
+          {
+            "name": "simple_query",
+            "query": "query { test_table { first_name last_name } }"
+          },
+          {
+            "name": "simple_query_cached",
+            "query": "query @cached(ttl: 5) { test_table { first_name last_name } }"
+          },
+          {
+            "name": "query_with_arg",
+            "query": "query ($first_name:String!) { test_table(where: {first_name: { _eq: $first_name } }) { first_name last_name } }"
+          },
+          {
+            "name": "query_with_args",
+            "query": "query ($first_name: String!, $last_name:String!) { test_table(where: {first_name: { _eq: $first_name } last_name: { _eq: $last_name }}) { first_name last_name } }"
+          },
+          {
+            "name": "query_with_uuid_arg",
+            "query": "query ($id: uuid!) { test_table(where: {id: { _neq: $id }}) { first_name last_name } }"
+          },
+          {
+            "name": "query_with_date_arg",
+            "query": "query ($date: date!, $point: geometry!) { test_table(where: {created_at: {_gt: $date}, point: {_st_equals: $point}}) { created_at } }"
+          },
+          {
+            "name": "query_with_uuid_args",
+            "query": "query ($ids: [uuid!]!) { test_table(where: {id: { _in: $ids }}) { first_name last_name } }"
+          },
+          {
+            "name": "simple_subscription",
+            "query": "subscription { test_table { first_name last_name } }"
+          }
+        ]
+      }
+    }
+  ],
+  "rest_endpoints": [
+    {
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "simple_query"
+        }
+      },
+      "methods": [
+        "GET"
+      ],
+      "name": "simple",
+      "url": "simple"
+    },
+    {
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "simple_query_cached"
+        }
+      },
+      "methods": [
+        "GET"
+      ],
+      "name": "simple_cached",
+      "url": "simple_cached"
+    },
+    {
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "query_with_arg"
+        }
+      },
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "name": "with_arg",
+      "url": "with_arg"
+    },
+    {
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "query_with_args"
+        }
+      },
+      "methods": [
+        "GET"
+      ],
+      "name": "with_args",
+      "url": "with_args"
+    },
+    {
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "query_with_date_arg"
+        }
+      },
+      "methods": [
+        "GET"
+      ],
+      "name": "with_date",
+      "url": "with_date/:date/:point"
+    },
+    {
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "query_with_arg"
+        }
+      },
+      "methods": [
+        "GET"
+      ],
+      "name": "with_template",
+      "url": "with_template/:first_name"
+    },
+    {
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "query_with_uuid_arg"
+        }
+      },
+      "methods": [
+        "GET"
+      ],
+      "name": "with_uuid",
+      "url": "with_uuid/:id"
+    },
+    {
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "query_with_uuid_args"
+        }
+      },
+      "methods": [
+        "POST"
+      ],
+      "name": "with_uuids",
+      "url": "with_uuids"
+    }
+  ]
+}

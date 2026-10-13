@@ -1,0 +1,26 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphqlQueryPermissions
+  method: test_artist_select_query_Track_fail
+  fixtures:
+  - queries/graphql_query/permissions/artist_select_query_Track_fail.yaml
+steps:
+- description: Artist can only select their tracks. Without sending header (Error)
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: Artist
+  query:
+    query: |
+      query {
+        Track {
+          id
+          name
+        }
+      }
+  response:
+    errors:
+    - message: 'missing session variable: "x-hasura-artist-id"'
+      extensions:
+        path: $
+        code: not-found

@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_graphql_mutations.py::TestGraphqlInsertNullPrefixedColumnOnConflict
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertNullPrefixedColumnOnConflict
+  dir: queries/graphql_mutation/insert/nullprefixcolumn
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none

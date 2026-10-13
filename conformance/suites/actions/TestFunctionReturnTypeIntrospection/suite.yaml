@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_actions.py::TestFunctionReturnTypeIntrospection
+upstream:
+  file: test_actions.py
+  class: TestFunctionReturnTypeIntrospection
+  dir: queries/actions/introspection/function_return_type
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none

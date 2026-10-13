@@ -1,0 +1,66 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlNestedInserts
+  method: test_articles_with_author_returning
+  fixtures:
+  - queries/graphql_mutation/insert/nested/articles_with_author_returning.yaml
+steps:
+- description: Insert article along with author and returning author with articles as relationship
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        insert_article(
+          objects: [{
+            id: 5
+            title: "Article by Author 3"
+            content: "Content for Article 5"
+            tags: "[]"
+            author: {
+              data: {
+                name: "Author 3"
+              }
+            }
+          }]
+        ){
+          affected_rows
+          returning{
+            id
+            title
+            content
+            tags
+            author{
+              id
+              name
+              articles_aggregate{
+                aggregate{count}
+              }
+              articles{
+                id
+                title
+                content
+              }
+            }
+          }
+        }
+      }
+  response:
+    data:
+      insert_article:
+        affected_rows: 2
+        returning:
+        - id: 5
+          title: Article by Author 3
+          content: Content for Article 5
+          tags: '[]'
+          author:
+            id: 3
+            name: Author 3
+            articles_aggregate:
+              aggregate:
+                count: 1
+            articles:
+            - id: 5
+              title: Article by Author 3
+              content: Content for Article 5

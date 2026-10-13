@@ -1,0 +1,31 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1InsertBasic
+  method: test_insert_nullable_enum_field
+  fixtures:
+  - queries/v1/insert/basic/insert_nullable_enum_field.yaml
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: insert
+    args:
+      table: posts
+      objects:
+      - title: Post 1
+        custom_color: blue
+      - title: Post 2
+      - title: Post 3
+        custom_color: null
+      returning:
+      - title
+      - custom_color
+  response:
+    returning:
+    - title: Post 1
+      custom_color: blue
+    - title: Post 2
+      custom_color: null
+    - title: Post 3
+      custom_color: null
+    affected_rows: 3

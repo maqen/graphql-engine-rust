@@ -1,0 +1,25 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphqlQueryPermissions
+  method: test_tutor_get_students
+  fixtures:
+  - queries/graphql_query/permissions/tutor_get_students.yaml
+steps:
+- description: Fetch student names with tutor role
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: tutor
+  query:
+    query: |
+      query {
+        student_marks{
+          name
+        }
+      }
+  response:
+    data:
+      student_marks:
+      - name: clarke
+      - name: blake
+      - name: leonel

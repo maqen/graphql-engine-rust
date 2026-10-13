@@ -1,0 +1,76 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "article",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "author_complex",
+              "using": {
+                "manual_configuration": {
+                  "column_mapping": {
+                    "author_id": "author_id"
+                  },
+                  "insertion_order": null,
+                  "remote_table": {
+                    "name": "author_complex",
+                    "schema": "public"
+                  }
+                }
+              }
+            },
+            {
+              "name": "author_simple",
+              "using": {
+                "manual_configuration": {
+                  "column_mapping": {
+                    "author_id": "id"
+                  },
+                  "insertion_order": null,
+                  "remote_table": {
+                    "name": "author_simple",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "author",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "author_complex",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "author_simple",
+            "schema": "public"
+          }
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

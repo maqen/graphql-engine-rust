@@ -1,0 +1,23 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectBoolExpSearch
+  method: test_city_where_similar
+  fixtures:
+  - queries/v1/select/boolexp/search/select_city_where_similar.yaml
+steps:
+- description: Select cities ending with gham
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: city
+      where:
+        name:
+          $similar: _*gham
+      columns:
+      - name
+      - country
+  response:
+  - name: Framlingham
+    country: UK

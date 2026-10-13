@@ -1,0 +1,40 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpJsonB
+  method: test_jsonb_contains_article_beststeller
+  fixtures:
+  - queries/graphql_query/boolexp/jsonb/select_author_article_jsonb_contains_bestseller.yaml
+steps:
+- description: Select author and their articles
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        author (
+        where: { articles: {tags: {_contains: "bestseller"}}}
+        ) {
+          id
+          name
+          articles(
+          where: {tags: {_contains: "bestseller"}}
+          ) {
+            id
+            title
+            content
+            tags
+          }
+        }
+      }
+  response:
+    data:
+      author:
+      - id: 1
+        name: Author 1
+        articles:
+        - id: 2
+          title: Article 2
+          content: Sample article content 2
+          tags:
+          - bestseller
+          - latest

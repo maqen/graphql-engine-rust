@@ -1,0 +1,37 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestBulkQuery
+  method: test_run_bulk
+  fixtures:
+  - queries/v1/bulk/basic.yaml
+steps:
+- description: Bulk query
+  url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: insert
+      args:
+        table: author
+        objects:
+        - name: author1
+          is_registered: true
+        - name: author2
+          is_registered: false
+    - type: run_sql
+      args:
+        sql: select * from author
+  response:
+  - affected_rows: 2
+  - result_type: TuplesOk
+    result:
+    - - id
+      - name
+      - is_registered
+    - - '1'
+      - author1
+      - t
+    - - '2'
+      - author2
+      - f

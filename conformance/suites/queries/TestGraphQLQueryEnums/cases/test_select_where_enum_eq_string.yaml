@@ -1,0 +1,21 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryEnums
+  method: test_select_where_enum_eq_string
+  fixtures:
+  - queries/graphql_query/enums/select_where_enum_eq_string.yaml
+steps:
+- description: Test enum input values cannot be string literals
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      {
+        users(where: { favorite_color: { _eq: "not_a_real_color" }}) { name }
+      }
+  response:
+    errors:
+    - message: expected an enum value for type 'colors_enum', but found a string
+      extensions:
+        path: $.selectionSet.users.args.where.favorite_color._eq
+        code: validation-failed

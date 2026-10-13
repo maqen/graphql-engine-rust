@@ -1,0 +1,45 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpBasicPostgres
+  method: test_author_article_where_nin_empty_array
+  fixtures:
+  - queries/graphql_query/boolexp/basic/select_author_article_where_nin_empty_array_postgres.yaml
+steps:
+- description: Select author and their articles (not in empty array)
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        author (
+        where: {name: {_nin: [] }}
+        ) {
+          name
+          articles{
+            id
+            title
+            content
+          }
+        }
+      }
+  response:
+    data:
+      author:
+      - name: Author 1
+        articles:
+        - id: 1
+          title: Article 1
+          content: Sample article content 1
+        - id: 2
+          title: Article 2
+          content: Sample article content 2
+      - name: Author 2
+        articles:
+        - id: 3
+          title: Article 3
+          content: Sample article content 3
+      - name: Author 3
+        articles:
+        - id: 4
+          title: Article 4
+          content: Sample article content 4

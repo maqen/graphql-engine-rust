@@ -1,0 +1,19 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlDeleteConstraints
+  method: test_author_delete_foreign_key_violation
+  fixtures:
+  - queries/graphql_mutation/delete/constraints/author_foreign_key_violation.yaml
+steps:
+- description: delete from author table (Foreign Key Violation Error)
+  url: /v1/graphql
+  status: 200
+  query:
+    query: "mutation {\n  delete_author(where: {id: {_eq: 2}}){\n    affected_rows\n  }\n} \n"
+  response:
+    errors:
+    - message: Foreign key violation. update or delete on table "author" violates foreign key constraint
+        "article_author_id_fkey" on table "article"
+      extensions:
+        path: $
+        code: constraint-violation

@@ -1,0 +1,18 @@
+upstream:
+  file: test_v2_queries.py
+  class: TestV2SelectBasic
+  method: test_select_query_author_with_user_role_success
+  fixtures:
+  - queries/v2/basic/select_article_role_success.yaml
+steps:
+- url: /v2/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - name
+  response:
+  - name: Author 1
+  - name: Author 2

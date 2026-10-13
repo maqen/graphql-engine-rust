@@ -1,0 +1,28 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1InsertOnConflict
+  method: test_err_missing_article_constraint
+  fixtures:
+  - queries/v1/insert/onconflict/article_on_conflict_error_missing_article_constraint.yaml
+steps:
+- description: Upserts article data via GraphQL mutation (Error 01)
+  url: /v1/query
+  status: 400
+  query:
+    type: insert
+    args:
+      table: article
+      objects:
+      - content: Updated Article 1 content
+        id: 1
+      - content: Updated Article 2 content
+        id: 2
+      on_conflict:
+        action: update
+      returning:
+      - name
+      - id
+  response:
+    error: 'no such column exists: "name"'
+    path: $.args.returning
+    code: permission-denied

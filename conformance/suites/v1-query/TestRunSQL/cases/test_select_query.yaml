@@ -1,0 +1,23 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestRunSQL
+  method: test_select_query
+  fixtures:
+  - queries/v1/run_sql/sql_select_query.yaml
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: |
+        SELECT * from author
+  response:
+    result_type: TuplesOk
+    result:
+    - - id
+      - name
+    - - '1'
+      - Author 1
+    - - '2'
+      - Author 2

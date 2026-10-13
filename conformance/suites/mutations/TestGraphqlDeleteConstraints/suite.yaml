@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_graphql_mutations.py::TestGraphqlDeleteConstraints
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlDeleteConstraints
+  dir: queries/graphql_mutation/delete/constraints
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: data

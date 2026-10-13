@@ -1,0 +1,68 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertViews
+  method: test_nested_insert_article_author_simple_view
+  fixtures:
+  - queries/graphql_mutation/insert/views/nested_insert_article_author_simple_view.yaml
+steps:
+- description: Insert article along with it's author_simple object
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |-
+      mutation article_author_simple{
+        insert_article(
+          objects: [
+            {
+              title: "Article by author 1",
+              content: "Article content for article by author 1",
+              is_published: true,
+              author_simple: {
+                data: {
+                  id: 1
+                  name: "Author 1"
+                }
+              }
+            },
+            {
+              title: "Article by author 2",
+              content: "Article content for article by author 2",
+              is_published: true,
+              author_simple: {
+                data: {
+                  id: 2
+                  name: "Author 2"
+                }
+              }
+            }
+          ]
+        ){
+          affected_rows
+          returning{
+            id
+            title
+            content
+            author_simple{
+              id
+              name
+            }
+          }
+        }
+      }
+  response:
+    data:
+      insert_article:
+        affected_rows: 4
+        returning:
+        - id: 1
+          title: Article by author 1
+          content: Article content for article by author 1
+          author_simple:
+            id: 1
+            name: Author 1
+        - id: 2
+          title: Article by author 2
+          content: Article content for article by author 2
+          author_simple:
+            id: 2
+            name: Author 2

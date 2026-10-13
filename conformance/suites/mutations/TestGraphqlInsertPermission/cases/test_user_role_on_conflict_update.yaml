@@ -1,0 +1,45 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertPermission
+  method: test_user_role_on_conflict_update
+  fixtures:
+  - queries/graphql_mutation/insert/permissions/article_on_conflict_user_role.yaml
+steps:
+- description: Upserts article data via GraphQL mutation as User role
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      mutation insert_article {
+        insert_article (
+          objects: [
+            {
+              id: 1
+              content: "Updated Article 1 content"
+              author_id: 1
+            }
+            ],
+          on_conflict: {
+            constraint: article_pkey
+            update_columns: [content]
+          }
+        ) {
+          affected_rows
+          returning {
+            title
+            content
+            author_id
+            }
+          }
+        }
+  response:
+    data:
+      insert_article:
+        affected_rows: 1
+        returning:
+        - title: Article 1
+          content: Updated Article 1 content
+          author_id: 1

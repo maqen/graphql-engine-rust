@@ -1,0 +1,16 @@
+upstream:
+  file: test_endpoints.py
+  class: TestCustomEndpoints
+  method: test_endpoint_dropped
+  fixtures:
+  - queries/endpoints/endpoint_dropped.yaml
+steps:
+- description: Call of an endpoint with a url template with the arg missing
+  url: /api/rest/top_be_dropped
+  method: GET
+  status: 404
+  query: null
+  response:
+    error: Endpoint not found
+    path: $
+    code: not-found

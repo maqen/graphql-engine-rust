@@ -1,0 +1,37 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectBoolExpBasic
+  method: test_author_article_where_in
+  fixtures:
+  - queries/v1/select/boolexp/basic/select_author_article_where_in.yaml
+steps:
+- description: Select author and their articles
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: author
+      where:
+        name:
+          $in:
+          - Author 2
+          - Author 3
+      columns:
+      - name
+      - name: articles
+        columns:
+        - id
+        - title
+        - content
+  response:
+  - name: Author 2
+    articles:
+    - id: 3
+      title: Article 3
+      content: Sample article content 3
+  - name: Author 3
+    articles:
+    - id: 4
+      title: Article 4
+      content: Sample article content 4

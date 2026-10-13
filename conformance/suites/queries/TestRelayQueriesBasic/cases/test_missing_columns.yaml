@@ -1,0 +1,28 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestRelayQueriesBasic
+  method: test_missing_columns
+  fixtures:
+  - queries/graphql_query/relay/basic/node_id_errors/missing_columns.yaml
+steps:
+- description: Query node interface with a missing column value in node id json array
+  url: /v1/relay
+  status: 200
+  query:
+    query: |
+      query {
+        node(id: "WzEsICJwdWJsaWMiLCAidXNlciIsICJmaXJzdF8yIl0K"){
+          ... on user{
+            first_name
+            last_name
+            age
+            address
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'invalid node id: primary key columns [''last_name''] are missing'
+      extensions:
+        path: $.selectionSet.node.args.id
+        code: validation-failed

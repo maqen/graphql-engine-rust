@@ -1,0 +1,27 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryAggPermPostgresMSSQL
+  method: test_article_agg_fail
+  fixtures:
+  - queries/graphql_query/agg_perm/article_agg_fail.yaml
+steps:
+- description: Query aggregations on article with user role (Error)
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: |
+      query {
+        article_agg {
+          agg {
+            count
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'field ''article_agg'' not found in type: ''query_root'''
+      extensions:
+        path: $.selectionSet.article_agg
+        code: validation-failed

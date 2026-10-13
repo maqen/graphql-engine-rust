@@ -1,0 +1,65 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestRelationships
+  method: test_object_relationship_foreign_key_non_public_schema
+  fixtures:
+  - queries/v1/relationships/object_relationship_non_public_schema_foreign_key.yaml
+steps:
+- description: Create object relationship using foreign key
+  url: /v1/query
+  status: 200
+  query:
+    type: create_object_relationship
+    args:
+      name: resident
+      table:
+        name: address
+        schema: hge_tests
+      using:
+        foreign_key_constraint_on: resident_id
+  response:
+    message: success
+- description: Nested select on address
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table:
+        name: address
+        schema: hge_tests
+      columns:
+      - door_no
+      - city
+      - name: resident
+        columns:
+        - name
+        - age
+  response:
+  - door_no: 12-21
+    city: Hyderabad
+    resident:
+      name: John
+      age: 23
+  - door_no: 11-19
+    city: Bangalore
+    resident:
+      name: John
+      age: 23
+  - door_no: 13-21
+    city: Chennai
+    resident:
+      name: Tom
+      age: 31
+- description: Drop object relationship
+  url: /v1/query
+  status: 200
+  query:
+    type: drop_relationship
+    args:
+      table:
+        name: address
+        schema: hge_tests
+      relationship: resident
+  response:
+    message: success

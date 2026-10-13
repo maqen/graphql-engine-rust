@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_endpoints.py::TestCustomEndpoints
+upstream:
+  file: test_endpoints.py
+  class: TestCustomEndpoints
+  dir: queries/endpoints
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none

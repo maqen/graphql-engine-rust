@@ -1,0 +1,25 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1InsertPermissions
+  method: test_role_has_no_permissions_err
+  fixtures:
+  - queries/v1/insert/permissions/address_permission_error.yaml
+steps:
+- description: Insert into order table as user role (Check Constraint Error)
+  url: /v1/query
+  status: 400
+  headers:
+    X-Hasura-Role: merchant
+  query:
+    type: insert
+    args:
+      table: address
+      objects:
+      - door_no: 12-21
+        street: Madhapur
+        city: Hyderabad
+        resident_id: 1
+  response:
+    error: 'insert on "address" for role "merchant" is not allowed. '
+    path: $.args
+    code: permission-denied

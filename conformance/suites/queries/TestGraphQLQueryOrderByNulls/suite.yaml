@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_graphql_queries.py::TestGraphQLQueryOrderByNulls
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryOrderByNulls
+  dir: queries/graphql_query/order_by_nulls
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none

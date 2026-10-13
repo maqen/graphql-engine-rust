@@ -1,0 +1,41 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectBasic
+  method: test_nested_select_article_author
+  fixtures:
+  - queries/v1/select/basic/nested_select_query_article_author.yaml
+steps:
+- description: Nested select on article
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      - title
+      - content
+      - name: author
+        columns:
+        - id
+        - name
+  response:
+  - id: 1
+    title: Article 1
+    content: Sample article content 1
+    author:
+      id: 1
+      name: Author 1
+  - id: 2
+    title: Article 2
+    content: Sample article content 2
+    author:
+      id: 1
+      name: Author 1
+  - id: 3
+    title: Article 3
+    content: Sample article content 3
+    author:
+      id: 2
+      name: Author 2

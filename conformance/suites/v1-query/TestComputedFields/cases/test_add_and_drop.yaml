@@ -1,0 +1,81 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestComputedFields
+  method: test_add_and_drop
+  fixtures:
+  - queries/v1/computed_fields/add_and_drop.yaml
+steps:
+- description: Add a computed field for author table
+  url: /v1/query
+  status: 200
+  query:
+    type: add_computed_field
+    args:
+      table: author
+      name: get_articles
+      definition:
+        function: fetch_articles
+        table_argument: author_row
+  response:
+    message: success
+- description: Drop computed field of a non existed table
+  url: /v1/query
+  status: 400
+  query:
+    type: drop_computed_field
+    args:
+      table: random
+      name: get_articles
+  response:
+    error: 'table "random" does not exist in source: default'
+    path: $.args.table
+    code: not-exists
+- description: Drop a non existed computed field
+  url: /v1/query
+  status: 400
+  query:
+    type: drop_computed_field
+    args:
+      table: author
+      name: random
+  response:
+    error: computed field "random" does not exist
+    path: $.args.name
+    code: not-exists
+- description: Drop a valid computed field
+  url: /v1/query
+  status: 200
+  query:
+    type: drop_computed_field
+    args:
+      table: author
+      name: get_articles
+  response:
+    message: success
+- description: Add a computed field, passing the Hasura session argument
+  url: /v1/query
+  status: 200
+  query:
+    type: add_computed_field
+    args:
+      table: author
+      name: test_session
+      definition:
+        function: test_session
+        session_argument: session
+  response:
+    message: success
+- description: obtain the session variable via computed fields
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        author_by_pk(id: 1) {
+          test_session(args:{key:"x-hasura-role"})
+        }
+      }
+  response:
+    data:
+      author_by_pk:
+        test_session: admin

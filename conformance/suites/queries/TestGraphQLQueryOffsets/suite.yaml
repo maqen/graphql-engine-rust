@@ -1,0 +1,9 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_graphql_queries.py::TestGraphQLQueryOffsets
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryOffsets
+  dir: queries/graphql_query/offset
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none

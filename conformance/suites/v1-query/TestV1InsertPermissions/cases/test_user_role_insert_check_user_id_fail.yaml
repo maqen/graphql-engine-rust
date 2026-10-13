@@ -1,0 +1,29 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1InsertPermissions
+  method: test_user_role_insert_check_user_id_fail
+  fixtures:
+  - queries/v1/insert/permissions/author_user_role_insert_check_user_id_fail.yaml
+steps:
+- description: Upserts author with id 1 as a user (Error)
+  url: /v1/query
+  status: 400
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '5'
+  query:
+    type: insert
+    args:
+      table: author
+      objects:
+      - id: 10
+        name: Author 10
+        is_registered: false
+      returning:
+      - id
+      - name
+      - is_registered
+  response:
+    error: check constraint of an insert/update permission has failed
+    path: $.args
+    code: permission-error

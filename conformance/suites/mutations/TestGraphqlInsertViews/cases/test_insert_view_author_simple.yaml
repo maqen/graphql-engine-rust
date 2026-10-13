@@ -1,0 +1,32 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlInsertViews
+  method: test_insert_view_author_simple
+  fixtures:
+  - queries/graphql_mutation/insert/views/insert_view_author_simple.yaml
+steps:
+- description: Insert into author_simple view
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation author_simple{
+        insert_author_simple(
+          objects: [{id: 1, name: "Clarke", is_registered: true}]
+        ){
+          affected_rows
+          returning{
+            id
+            name
+            is_registered
+          }
+        }
+      }
+  response:
+    data:
+      insert_author_simple:
+        affected_rows: 1
+        returning:
+        - id: 1
+          name: Clarke
+          is_registered: true

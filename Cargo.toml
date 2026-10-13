@@ -39,6 +39,7 @@ futures = "0.3"
 http = "1"
 indexmap = { version = "2", features = ["serde"] }
 postgres-types = "0.2"
+reqwest = { version = "0.12", default-features = false }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }

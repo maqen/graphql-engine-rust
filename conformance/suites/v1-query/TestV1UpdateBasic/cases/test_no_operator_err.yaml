@@ -1,0 +1,23 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1UpdateBasic
+  method: test_no_operator_err
+  fixtures:
+  - queries/v1/update/basic/person_error_no_operator.yaml
+steps:
+- description: Updated person data without any operator
+  url: /v1/query
+  status: 400
+  query:
+    type: update
+    args:
+      table: person
+      where:
+        id: 2
+      returning:
+      - id
+      - details
+  response:
+    error: atleast one of $set, $inc, $mul has to be present
+    path: $.args
+    code: unexpected-payload

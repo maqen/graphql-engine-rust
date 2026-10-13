@@ -1,0 +1,23 @@
+upstream:
+  file: test_graphql_mutations.py
+  class: TestGraphqlDeleteBasic
+  method: test_article_delete
+  fixtures:
+  - queries/graphql_mutation/delete/basic/article.yaml
+steps:
+- description: Delete mutation on article
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation delete_article {
+        delete_article (
+          where: {id: {_eq: 5}}
+        ) {
+          affected_rows
+        }
+      }
+  response:
+    data:
+      delete_article:
+        affected_rows: 1

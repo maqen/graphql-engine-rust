@@ -1,0 +1,26 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestRelayQueriesBasic
+  method: test_invalid_node_id_version
+  fixtures:
+  - queries/graphql_query/relay/basic/node_id_errors/invalid_node_id_version.yaml
+steps:
+- description: Query node interface with invalid node id version
+  url: /v1/relay
+  status: 200
+  query:
+    query: |
+      query {
+        node(id: "WzIsICJwdWJsaWMiLCAiYXV0aG9yIiwgMV0K"){
+          __typename
+          ... on author{
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'invalid node id: Error in $: unsupported GUID version: 2.0'
+      extensions:
+        path: $.selectionSet.node.args.id
+        code: validation-failed

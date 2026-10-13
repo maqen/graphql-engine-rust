@@ -1,0 +1,28 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestBulkQuery
+  method: test_run_bulk_with_select_and_reads
+  fixtures:
+  - queries/v1/bulk/select_with_reads.yaml
+steps:
+- description: Bulk query
+  url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: select
+      args:
+        table: author
+        columns:
+        - name
+    - type: run_sql
+      args:
+        sql: select count(*) from author
+        read_only: true
+  response:
+  - []
+  - result_type: TuplesOk
+    result:
+    - - count
+    - - '0'

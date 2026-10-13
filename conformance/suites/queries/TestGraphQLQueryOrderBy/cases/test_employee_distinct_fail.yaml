@@ -1,0 +1,29 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryOrderBy
+  method: test_employee_distinct_fail
+  fixtures:
+  - queries/graphql_query/order_by/employee_distinct_fail.yaml
+steps:
+- description: Fetch highest salaried employee from each department (fail)
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        employee(
+          distinct_on: [department]
+          order_by: [{salary: desc}]
+        ) {
+          id
+          name
+          department
+          salary
+        }
+      }
+  response:
+    errors:
+    - message: '"distinct_on" columns must match initial "order_by" columns'
+      extensions:
+        path: $.selectionSet.employee.args
+        code: validation-failed

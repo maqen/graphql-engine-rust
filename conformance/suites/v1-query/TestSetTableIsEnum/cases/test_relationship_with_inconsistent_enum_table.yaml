@@ -1,0 +1,68 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestSetTableIsEnum
+  method: test_relationship_with_inconsistent_enum_table
+  fixtures:
+  - queries/v1/set_table_is_enum/relationship_with_inconsistent_enum_table.yaml
+steps:
+- description: Setup enum table, create relationship, and insert invalid enum value
+  url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: set_table_is_enum
+      args:
+        table: weekdays
+        is_enum: true
+    - type: create_object_relationship
+      args:
+        table: employees
+        name: favorite_color_object
+        using:
+          foreign_key_constraint_on: favorite_color
+    - type: run_sql
+      args:
+        sql: INSERT INTO colors (value, comment) VALUES ('illegal+graphql+identifier', '')
+  response:
+  - message: success
+  - message: success
+  - result_type: CommandOk
+    result: null
+- description: Reload metadata
+  url: /v1/query
+  status: 200
+  query:
+    type: reload_metadata
+    args: {}
+  response:
+    inconsistent_objects:
+    - definition:
+        name: colors
+        schema: public
+      name: table colors in source default
+      reason: 'Inconsistent object: the table "colors" cannot be used as an enum because the value "illegal+graphql+identifier"
+        is not a valid GraphQL enum value name'
+      type: table
+    - definition:
+        comment: null
+        name: favorite_color_object
+        source: default
+        table:
+          name: employees
+          schema: public
+        using:
+          foreign_key_constraint_on: favorite_color
+      name: object_relation favorite_color_object in table employees in source default
+      reason: 'Inconsistent object: table "colors" is not tracked'
+      type: object_relation
+    is_consistent: false
+    message: success
+- description: Drop inconsistent objects
+  url: /v1/query
+  status: 200
+  query:
+    type: drop_inconsistent_metadata
+    args: {}
+  response:
+    message: success

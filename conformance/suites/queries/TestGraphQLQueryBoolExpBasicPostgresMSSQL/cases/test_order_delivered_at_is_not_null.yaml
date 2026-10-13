@@ -1,0 +1,25 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpBasicPostgresMSSQL
+  method: test_order_delivered_at_is_not_null
+  fixtures:
+  - queries/graphql_query/boolexp/basic/select_query_order_delivered_at_is_not_null.yaml
+steps:
+- description: Simple GraphQL object query on author
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        orders (where: {delivered_at: {_is_null: false}}) {
+          id
+          received_at
+          delivered_at
+        }
+      }
+  response:
+    data:
+      orders:
+      - id: 2
+        received_at: '2018-09-21T09:40:44'
+        delivered_at: '2018-09-21T09:50:44'

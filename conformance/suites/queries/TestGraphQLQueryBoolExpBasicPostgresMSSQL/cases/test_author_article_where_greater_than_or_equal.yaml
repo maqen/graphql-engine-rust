@@ -1,0 +1,40 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestGraphQLQueryBoolExpBasicPostgresMSSQL
+  method: test_author_article_where_greater_than_or_equal
+  fixtures:
+  - queries/graphql_query/boolexp/basic/select_author_article_where_gte.yaml
+steps:
+- description: Select author and their articles
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |-
+      query {
+        author (
+        where: {id: {_gte: 2}}
+        ) {
+          id
+          name
+          articles{
+            id
+            title
+            content
+          }
+        }
+      }
+  response:
+    data:
+      author:
+      - id: 2
+        name: Author 2
+        articles:
+        - id: 3
+          title: Article 3
+          content: Sample article content 3
+      - id: 3
+        name: Author 3
+        articles:
+        - id: 4
+          title: Article 4
+          content: Sample article content 4

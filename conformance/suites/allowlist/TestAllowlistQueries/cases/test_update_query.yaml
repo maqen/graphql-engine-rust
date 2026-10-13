@@ -1,0 +1,73 @@
+upstream:
+  file: test_allowlist_queries.py
+  class: TestAllowlistQueries
+  method: test_update_query
+  fixtures:
+  - queries/graphql_query/allowlist/update_query.yaml
+  - queries/graphql_query/allowlist/add_duplicate_query.yaml
+steps:
+- description: Delete query from collection
+  url: /v1/query
+  status: 200
+  query:
+    type: drop_query_from_collection
+    args:
+      collection_name: collection_1
+      query_name: query_1
+  response:
+    message: success
+- description: Add query to collection
+  url: /v1/query
+  status: 200
+  query:
+    type: add_query_to_collection
+    args:
+      collection_name: collection_1
+      query_name: query_1
+      query: |
+        query {
+          user{
+            id
+            name
+          }
+        }
+  response:
+    message: success
+- description: Query as user
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: |
+      query {
+        user{
+          id
+          name
+        }
+      }
+  response:
+    data:
+      user:
+      - id: 1
+        name: clarke
+      - id: 2
+        name: reckler
+- description: Adding query with duplicate query_name should fail
+  url: /v1/query
+  status: 400
+  query:
+    type: add_query_to_collection
+    args:
+      collection_name: collection_1
+      query_name: query_1
+      query: |
+        query {
+          user{
+            name
+          }
+        }
+  response:
+    error: query with name "query_1" already exists in collection "collection_1"
+    path: $.args
+    code: already-exists

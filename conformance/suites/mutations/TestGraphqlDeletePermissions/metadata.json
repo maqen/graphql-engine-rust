@@ -1,0 +1,217 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "account",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "columns": [
+                  "id",
+                  "account_no"
+                ],
+                "filter": {
+                  "_exists": {
+                    "_table": {
+                      "name": "user",
+                      "schema": "public"
+                    },
+                    "_where": {
+                      "id": "X-Hasura-User-Id",
+                      "is_admin": true
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "delete_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "filter": {
+                  "_exists": {
+                    "_table": {
+                      "name": "user",
+                      "schema": "public"
+                    },
+                    "_where": {
+                      "id": "X-Hasura-User-Id",
+                      "is_admin": true
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "article",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "author",
+              "using": {
+                "foreign_key_constraint_on": "author_id"
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "columns": [
+                  "id",
+                  "title",
+                  "content",
+                  "author_id"
+                ],
+                "filter": {
+                  "_and": [
+                    {
+                      "author_id": "X-HASURA-USER-ID"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "delete_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "filter": {
+                  "_and": [
+                    {
+                      "author_id": "X-HASURA-USER-ID"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "author",
+            "schema": "public"
+          },
+          "array_relationships": [
+            {
+              "name": "articles",
+              "using": {
+                "foreign_key_constraint_on": {
+                  "column": "author_id",
+                  "table": {
+                    "name": "article",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ],
+          "select_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name",
+                  "payments_done"
+                ],
+                "filter": {
+                  "id": "X-HASURA-USER-ID"
+                }
+              }
+            }
+          ],
+          "delete_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "filter": {
+                  "_and": [
+                    {
+                      "id": "X-HASURA-USER-ID"
+                    },
+                    {
+                      "payments_done": true
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "resident",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "agent",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name",
+                  "age"
+                ],
+                "filter": {
+                  "id": {
+                    "$in": "X-Hasura-Allowed-Resident-Ids"
+                  }
+                }
+              }
+            }
+          ],
+          "delete_permissions": [
+            {
+              "role": "agent",
+              "permission": {
+                "filter": {
+                  "id": {
+                    "$in": "X-Hasura-Allowed-Resident-Ids"
+                  }
+                }
+              }
+            },
+            {
+              "role": "resident",
+              "permission": {
+                "filter": {
+                  "id": "X-Hasura-Resident-Id"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "user",
+            "schema": "public"
+          }
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

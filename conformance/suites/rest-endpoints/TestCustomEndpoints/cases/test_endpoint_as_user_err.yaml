@@ -1,0 +1,18 @@
+upstream:
+  file: test_endpoints.py
+  class: TestCustomEndpoints
+  method: test_endpoint_as_user_err
+  fixtures:
+  - queries/endpoints/endpoint_as_user_err.yaml
+steps:
+- description: call the new custom endpoint with the wrong role
+  url: /api/rest/simple
+  method: GET
+  status: 400
+  headers:
+    X-Hasura-Role: user
+  query: null
+  response:
+    error: 'field ''test_table'' not found in type: ''query_root'''
+    path: $.selectionSet.test_table
+    code: validation-failed

@@ -1,0 +1,24 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestV1SelectBasic
+  method: test_select_query_user
+  fixtures:
+  - queries/v1/select/basic/select_user.yaml
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: user
+      columns:
+      - id
+      - name
+      - number
+  response:
+  - id: '1'
+    name: User 1
+    number: '123456789'
+  - id: '2'
+    name: User 2
+    number: '123456780'

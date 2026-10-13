@@ -1,0 +1,27 @@
+upstream:
+  file: test_v1_queries.py
+  class: TestGraphQLQueryBoolExpLtree
+  method: test_select_path_where_descendant_array
+  fixtures:
+  - queries/v1/select/boolexp/ltree/select_path_where_descendant_array.yaml
+steps:
+- description: Select descendants of an array of `ltree` arguments
+  url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: tree
+      where:
+        path:
+          $descendant_any:
+          - Tree.Science.Astronomy
+          - Tree.Hobbies
+      columns:
+      - path
+  response:
+  - path: Tree.Science.Astronomy
+  - path: Tree.Science.Astronomy.Astrophysics
+  - path: Tree.Science.Astronomy.Cosmology
+  - path: Tree.Hobbies
+  - path: Tree.Hobbies.Amateurs_Astronomy
