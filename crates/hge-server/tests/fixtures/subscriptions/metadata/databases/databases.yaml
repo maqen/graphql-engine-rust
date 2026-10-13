@@ -7,3 +7,9 @@
       pool_settings:
         max_connections: 10
   tables: "!include default/tables/tables.yaml"
+  functions:
+    - function:
+        name: my_messages
+        schema: public
+      configuration:
+        session_argument: hasura_session

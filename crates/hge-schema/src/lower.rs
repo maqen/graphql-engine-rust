@@ -5,14 +5,14 @@ use std::sync::Arc;
 use hge_core::{Code, ColumnType, Error};
 use hge_ir::{
     BoolExp, ColumnField, CompareOp, ComputedScalarField, DatabaseRootField, Field, FunctionCall,
-    JsonPathElement, NullsOrder, Operation, OrderBy, OrderByTarget, OrderDirection, QueryRoot,
-    RelationshipSelect, RootField, Select, SelectArgs, Value,
+    JsonPathElement, Mutation, MutationRootField, NullsOrder, Operation, OrderBy, OrderByTarget,
+    OrderDirection, QueryRoot, RelationshipSelect, RootField, Select, SelectArgs, Value,
 };
 use serde_json::{Map, Value as Json};
 
 use crate::aggregate::aggregate_relationship;
 use crate::build::RoleSchema;
-use crate::functions::{ComputedFieldInfo, ComputedReturn};
+use crate::functions::{ComputedFieldInfo, ComputedReturn, ExposedAs, FunctionInfo};
 use crate::introspection;
 use crate::model::FieldKind;
 use crate::normalize::{NormalizedOperation, Selected, SelectedField};
@@ -51,6 +51,8 @@ pub fn lower(rs: &RoleSchema, op: &NormalizedOperation<'_>) -> Result<Operation,
                     }))
                 }
                 FieldKind::Mutation(m) => crate::mutation::lower::root_field(&lw, m, field)?,
+                FieldKind::Function(f) => lw.function(f, field)?,
+                FieldKind::FunctionAggregate(f) => lw.function_aggregate(f, field)?,
                 FieldKind::Action(action) => crate::actions::lower_action(rs, action, field)?,
                 FieldKind::AsyncActionQuery(action) => {
                     crate::actions::lower_async_query(rs, action, field)?
@@ -298,6 +300,72 @@ impl Lowerer<'_> {
         }
         cf.call(&table.name, inputs)
             .map_err(|m| Error::new(Code::NotSupported, m).with_path(path.to_owned()))
+    }
+
+    /// A tracked function's root field: its rows, read in a query or (for mutations) in the
+    /// mutation transaction.
+    fn function(&self, f: &FunctionInfo, field: &SelectedField<'_>) -> Result<RootField, Error> {
+        let table = self.table(&f.source, &f.returns)?;
+        let mut select = self.select(table, field, true)?;
+        select.from_function = Some(self.function_call(f, field)?);
+        let query = if f.returns_set {
+            QueryRoot::Select(select)
+        } else {
+            QueryRoot::SelectOne(select)
+        };
+        Ok(match f.exposed_as {
+            ExposedAs::Query => RootField::Database(Box::new(DatabaseRootField {
+                source: f.source.clone(),
+                query,
+            })),
+            ExposedAs::Mutation => RootField::Mutation(Box::new(MutationRootField {
+                source: f.source.clone(),
+                mutation: Mutation::Function(Box::new(query)),
+            })),
+        })
+    }
+
+    /// `<function>_aggregate`: aggregates over the function's rows.
+    fn function_aggregate(
+        &self,
+        f: &FunctionInfo,
+        field: &SelectedField<'_>,
+    ) -> Result<RootField, Error> {
+        let table = self.table(&f.source, &f.returns)?;
+        let mut select = self.aggregate_select(table, field)?;
+        select.from_function = Some(self.function_call(f, field)?);
+        Ok(RootField::Database(Box::new(DatabaseRootField {
+            source: f.source.clone(),
+            query: QueryRoot::Aggregate(select),
+        })))
+    }
+
+    /// The call of a tracked function with the field's `args`.
+    fn function_call(
+        &self,
+        f: &FunctionInfo,
+        field: &SelectedField<'_>,
+    ) -> Result<FunctionCall, Error> {
+        let path = field.arg_path("args");
+        let user_args = match field.arg("args") {
+            Some(Json::Object(o)) => Some(o),
+            Some(Json::Null) => {
+                return Err(Error::validation(format!(
+                    "expected an object for type '{}', but found null",
+                    f.args_type_name()
+                ))
+                .with_path(path));
+            }
+            _ => None,
+        };
+        let mut inputs = vec![];
+        for (i, gql_name, arg) in f.input_args() {
+            if let Some(v) = user_args.and_then(|a| a.get(&gql_name)) {
+                inputs.push((i, to_value(v, &arg.ty, &format!("{path}.{gql_name}"))?));
+            }
+        }
+        f.call(inputs)
+            .map_err(|m| Error::new(Code::NotSupported, m).with_path(path))
     }
 
     pub(crate) fn select_args(

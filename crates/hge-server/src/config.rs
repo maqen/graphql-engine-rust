@@ -40,6 +40,8 @@ pub struct ServerConfig {
     pub stringify_numeric_types: bool,
     /// `HASURA_GRAPHQL_V1_BOOLEAN_NULL_COLLAPSE`
     pub v1_boolean_null_collapse: bool,
+    /// `HASURA_GRAPHQL_INFER_FUNCTION_PERMISSIONS` (default true)
+    pub infer_function_permissions: bool,
     /// `HASURA_GRAPHQL_CORS_DOMAIN` (`*` or comma-separated origins)
     pub cors_domain: String,
     /// `HASURA_GRAPHQL_DISABLE_CORS`
@@ -94,6 +96,7 @@ impl Default for ServerConfig {
             admin_internal_errors: true,
             stringify_numeric_types: false,
             v1_boolean_null_collapse: false,
+            infer_function_permissions: true,
             cors_domain: "*".to_owned(),
             disable_cors: false,
             enabled_apis: vec!["graphql".into(), "metadata".into()],

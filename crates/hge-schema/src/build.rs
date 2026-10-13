@@ -10,7 +10,7 @@ use hge_core::{ColumnType, QualifiedTable, RoleName};
 use indexmap::IndexMap;
 
 use crate::actions::ResolvedActions;
-use crate::functions::{ComputedFieldInfo, ComputedReturn};
+use crate::functions::{ComputedFieldInfo, ComputedReturn, ExposedAs, FunctionInfo};
 use crate::introspection;
 use crate::model::*;
 use crate::permissions::{SelectAccess, select_access};
@@ -18,12 +18,25 @@ use crate::scalars::{self, BUILTIN_SCALARS};
 use crate::tables::{RelationshipInfo, TableInfo, Tables};
 
 /// Engine options that change the schema or the lowering.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct SchemaOptions {
     /// `HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES`
     pub stringify_numeric_types: bool,
     /// `HASURA_GRAPHQL_V1_BOOLEAN_NULL_COLLAPSE`: treat `{_eq: null}` as `true`.
     pub dangerously_collapse_booleans: bool,
+    /// Not `HASURA_GRAPHQL_INFER_FUNCTION_PERMISSIONS=false`: query functions need no
+    /// function permission.
+    pub infer_function_permissions: bool,
+}
+
+impl Default for SchemaOptions {
+    fn default() -> Self {
+        SchemaOptions {
+            stringify_numeric_types: false,
+            dangerously_collapse_booleans: false,
+            infer_function_permissions: true,
+        }
+    }
 }
 
 /// The schema of one role plus what lowering needs alongside it.
@@ -60,7 +73,14 @@ pub fn build_role_schema(
 ) -> RoleSchema {
     let access = role_access(tables, role);
     let mutation_access = crate::mutation::access::access_map(tables, role, backend_only);
-    let schema = build_schema(tables, &access, &mutation_access, Some(actions), role);
+    let schema = build_schema(
+        tables,
+        &access,
+        &mutation_access,
+        Some(actions),
+        role,
+        options,
+    );
     RoleSchema {
         role: role.clone(),
         schema,
@@ -89,6 +109,7 @@ fn role_access(
 pub(crate) struct TableSchemaNames {
     pub query_fields: HashSet<String>,
     pub mutation_fields: HashSet<String>,
+    pub subscription_fields: HashSet<String>,
     /// Type name → whether it is a scalar.
     pub types: HashMap<String, bool>,
 }
@@ -97,7 +118,14 @@ pub(crate) fn table_schema_names(tables: &Tables) -> TableSchemaNames {
     let role = RoleName::admin();
     let access = role_access(tables, &role);
     let mutation_access = crate::mutation::access::access_map(tables, &role, true);
-    let schema = build_schema(tables, &access, &mutation_access, None, &role);
+    let schema = build_schema(
+        tables,
+        &access,
+        &mutation_access,
+        None,
+        &role,
+        &SchemaOptions::default(),
+    );
     let fields = |root: &str| -> HashSet<String> {
         match schema.types.get(root) {
             Some(TypeDef::Object(o)) => o
@@ -112,6 +140,7 @@ pub(crate) fn table_schema_names(tables: &Tables) -> TableSchemaNames {
     TableSchemaNames {
         query_fields: fields(QUERY_ROOT),
         mutation_fields: fields(MUTATION_ROOT),
+        subscription_fields: fields(crate::subscription::SUBSCRIPTION_ROOT),
         types: schema
             .types
             .iter()
@@ -132,6 +161,7 @@ fn build_schema(
     mutation_access: &HashMap<(Arc<str>, QualifiedTable), crate::mutation::MutationAccess>,
     actions: Option<&ResolvedActions>,
     role: &RoleName,
+    options: &SchemaOptions,
 ) -> Schema {
     let subscription_access = crate::subscription::subscription_access(access);
     let mut b = Builder {
@@ -163,6 +193,13 @@ fn build_schema(
     for table in &tables.ordered {
         b.add_table_mutation_root_fields(table, mutation_access, &mut mutation_root);
     }
+    for function in &tables.functions {
+        let root = match function.exposed_as {
+            ExposedAs::Query => &mut query_root,
+            ExposedAs::Mutation => &mut mutation_root,
+        };
+        b.add_function_root_field(function, role, options.infer_function_permissions, root);
+    }
     // Actions come last; `resolve_actions` has dropped those whose names conflict with
     // table root fields or types.
     if let Some(actions) = actions {
@@ -186,8 +223,15 @@ fn build_schema(
         b.add_table_aggregate_root_field(table, &mut subscription_root);
         b.add_table_stream_root_field(table, &mut subscription_root);
     }
+    for function in &tables.functions {
+        if function.exposed_as == ExposedAs::Query {
+            let infer = options.infer_function_permissions;
+            b.add_function_root_field(function, role, infer, &mut subscription_root);
+        }
+    }
     b.access = access;
     if !subscription_root.fields.is_empty() {
+        subscription_root.fields.sort_keys();
         b.schema.subscription_type = Some(crate::subscription::SUBSCRIPTION_ROOT.to_owned());
         b.schema.add(TypeDef::Object(subscription_root));
     }
@@ -199,6 +243,7 @@ fn build_schema(
             FieldKind::NoQueriesAvailable,
         ));
     }
+    query_root.fields.sort_keys();
     b.schema.add(TypeDef::Object(query_root));
     b.finish();
     b.schema
@@ -553,6 +598,82 @@ impl Builder<'_> {
         if !select_column.values.is_empty() {
             self.schema.add(TypeDef::Enum(select_column));
         }
+    }
+
+    /// A tracked function's root field, if `role` may call it.
+    /// A tracked function's root field, and for query functions `<function>_aggregate` when
+    /// the role may aggregate the returned table.
+    fn add_function_root_field(
+        &mut self,
+        f: &Arc<FunctionInfo>,
+        role: &RoleName,
+        infer: bool,
+        root: &mut ObjectDef,
+    ) {
+        let Some(table) = self.tables.get(&f.source, &f.returns).cloned() else {
+            return;
+        };
+        if self.access(&table).is_none() || !f.permits(role, infer) {
+            return;
+        }
+        self.ensure_table_types(&table);
+        let ty = if f.returns_set {
+            TypeRef::nn_list_nn(table.type_name())
+        } else {
+            TypeRef::named(table.type_name())
+        };
+        let field = FieldDef::new(f.root_field.clone(), ty, FieldKind::Function(f.clone()))
+            .describe(f.description.clone());
+        let field = self.with_select_args(field, &table);
+        let field = self.with_function_args(field, f);
+        root.fields.insert(field.name.clone(), field);
+
+        if f.exposed_as == ExposedAs::Query && self.may_aggregate(&table) {
+            let ty = self.ensure_aggregate_types(&table);
+            let field = FieldDef::new(
+                f.aggregate_root_field.clone(),
+                TypeRef::nn(ty),
+                FieldKind::FunctionAggregate(f.clone()),
+            )
+            .describe(format!(
+                "execute function \"{}\" and query aggregates on result of table type \"{}\"",
+                f.function.v2_text(),
+                table.display_name()
+            ));
+            let field = self.with_select_args(field, &table);
+            let field = self.with_function_args(field, f);
+            root.fields.insert(field.name.clone(), field);
+        }
+    }
+
+    /// The `args` argument of a function root field (when the function has input arguments).
+    fn with_function_args(&mut self, field: FieldDef, f: &FunctionInfo) -> FieldDef {
+        if !f.has_input_args() {
+            return field;
+        }
+        let name = f.args_type_name();
+        if !self.schema.types.contains_key(&name) {
+            let mut fields = IndexMap::new();
+            for (_, gql_name, arg) in f.input_args() {
+                self.note_scalar(&arg.ty);
+                fields.insert(
+                    gql_name.clone(),
+                    InputValueDef::new(gql_name, scalars::column_type_ref(&arg.ty, true)),
+                );
+            }
+            self.schema.add(TypeDef::InputObject(InputObjectDef {
+                name: name.clone(),
+                description: None,
+                fields,
+            }));
+        }
+        let ty = if f.args_required() {
+            TypeRef::nn(name)
+        } else {
+            TypeRef::named(name)
+        };
+        let description = format!("input parameters for function \"{}\"", field.name);
+        field.arg(InputValueDef::new("args", ty).describe(description))
     }
 
     /// `<field>_<table>_args`: the input arguments of a computed field.

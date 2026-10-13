@@ -26,6 +26,8 @@ pub enum Mutation {
     UpdateMany(Vec<Update>),
     /// `delete_t` / `delete_t_by_pk`.
     Delete(Box<Delete>),
+    /// A tracked `VOLATILE` function: its rows, selected inside the mutation transaction.
+    Function(Box<crate::QueryRoot>),
 }
 
 /// What a mutation returns.

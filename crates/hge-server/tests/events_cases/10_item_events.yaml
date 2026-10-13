@@ -74,3 +74,25 @@ cases:
             session_variables: null
           table: {name: flaky, schema: ev}
           trigger: {name: flaky-events}
+
+  - description: a GraphQL mutation records the role's session variables (sorted) and a trace
+    graphql:
+      query: 'mutation { insert_ev_item_one(object: {name: "g"}) { id } }'
+      headers:
+        - [x-hasura-user-id, '42']
+        - [x-hasura-role, user]
+        - [x-hasura-zz, '1']
+        - [x-hasura-a, first]
+    deliveries:
+      - path: ok
+        body:
+          delivery_info: {current_retry: 0, max_retries: 0}
+          event:
+            data:
+              new: {big: null, id: 2, info: 42, name: g, price: null}
+              old: null
+            op: INSERT
+            session_variables: {x-hasura-a: first, x-hasura-role: user, x-hasura-user-id: '42', x-hasura-zz: '1'}
+          table: {name: item, schema: ev}
+          trigger: {name: item_events}
+    hasura_user: '{"x-hasura-a":"first","x-hasura-role":"user","x-hasura-user-id":"42","x-hasura-zz":"1"}'

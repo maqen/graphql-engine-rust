@@ -1,18 +1,21 @@
-//! SQL functions in the schema: computed fields (functions attached to a table) and, later,
-//! tracked functions as root fields.
+//! SQL functions in the schema: computed fields (functions attached to a table) and tracked
+//! functions (root fields).
 //!
 //! Function metadata stays untyped in `hge-metadata` (`serde_json::Value`); it is parsed here,
 //! next to the code that resolves it against the function catalog.
 
 pub mod computed;
+pub mod tracked;
 
 use std::collections::BTreeSet;
 
 use hge_core::{ColumnType, FunctionArg, FunctionCatalog, QualifiedFunction, SourceCatalog};
+use hge_ir::{FunctionArgValue, FunctionArgument, FunctionCall, Value};
 use hge_metadata::Source;
 use serde::Deserialize;
 
 pub use computed::{ComputedFieldInfo, ComputedReturn};
+pub use tracked::{ExposedAs, FunctionInfo};
 
 /// `computed_fields[]` of a table.
 #[derive(Debug, Clone, Deserialize)]
@@ -80,6 +83,56 @@ pub(crate) fn type_text(ty: &ColumnType) -> String {
 
 pub(crate) fn is_json(arg: &FunctionArg) -> bool {
     arg.ty.dimensions == 0 && arg.ty.schema == "pg_catalog" && arg.ty.name == "json"
+}
+
+/// The arguments a user passes (`args: {…}`) with their GraphQL names: every argument but
+/// the `implicit` ones (table row, session), unnamed ones as `arg_<n>` (n counting unnamed
+/// arguments only).
+pub fn input_args<'a>(
+    args: &'a [FunctionArg],
+    implicit: impl Fn(usize) -> bool + 'a,
+) -> impl Iterator<Item = (usize, String, &'a FunctionArg)> + 'a {
+    let mut unnamed = 0;
+    args.iter().enumerate().filter_map(move |(i, a)| {
+        if implicit(i) {
+            return None;
+        }
+        let name = a.name.clone().unwrap_or_else(|| {
+            unnamed += 1;
+            format!("arg_{unnamed}")
+        });
+        Some((i, name, a))
+    })
+}
+
+/// A call of `function`: `implicit` and `inputs` give argument values by index into `args`;
+/// omitted arguments take their defaults.
+pub fn build_call(
+    function: &QualifiedFunction,
+    args: &[FunctionArg],
+    implicit: Vec<(usize, FunctionArgValue)>,
+    inputs: Vec<(usize, Value)>,
+) -> Result<FunctionCall, &'static str> {
+    let mut values: Vec<Option<FunctionArgValue>> = vec![None; args.len()];
+    for (i, v) in implicit {
+        values[i] = Some(v);
+    }
+    for (i, v) in inputs {
+        values[i] = Some(FunctionArgValue::Value(v));
+    }
+    Ok(FunctionCall {
+        function: function.clone(),
+        args: arrange_args(args, values)?
+            .into_iter()
+            .map(|p| match p {
+                Passing::Positional(value) => FunctionArgument { name: None, value },
+                Passing::Named(name, value) => FunctionArgument {
+                    name: Some(name),
+                    value,
+                },
+            })
+            .collect(),
+    })
 }
 
 /// One argument of a call as V2 passes it: positionally up to the first omitted argument,

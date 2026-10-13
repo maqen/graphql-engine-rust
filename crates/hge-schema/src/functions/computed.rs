@@ -9,9 +9,9 @@ use hge_core::{
 use hge_metadata::TableEntry;
 use serde::Deserialize;
 
-use hge_ir::{FunctionArgValue, FunctionArgument, FunctionCall, Value};
+use hge_ir::{FunctionArgValue, FunctionCall, Value};
 
-use super::{ComputedFieldMeta, Passing, arrange_args, is_json, lookup, type_text};
+use super::{ComputedFieldMeta, build_call, input_args, is_json, lookup, type_text};
 use crate::tables::is_valid_name;
 
 /// A resolved computed field.
@@ -42,19 +42,10 @@ pub enum ComputedReturn {
 }
 
 impl ComputedFieldInfo {
-    /// The arguments the user passes (`args: {…}`), with their GraphQL names (`arg_<n>`
-    /// for the n-th unnamed one).
+    /// The arguments the user passes (`args: {…}`), with their GraphQL names.
     pub fn input_args(&self) -> impl Iterator<Item = (usize, String, &FunctionArg)> + '_ {
-        let mut unnamed = 0;
-        self.args.iter().enumerate().filter_map(move |(i, a)| {
-            if i == self.table_arg || Some(i) == self.session_arg {
-                return None;
-            }
-            let name = a.name.clone().unwrap_or_else(|| {
-                unnamed += 1;
-                format!("arg_{unnamed}")
-            });
-            Some((i, name, a))
+        input_args(&self.args, move |i| {
+            i == self.table_arg || Some(i) == self.session_arg
         })
     }
 
@@ -65,31 +56,15 @@ impl ComputedFieldInfo {
         table: &QualifiedTable,
         inputs: Vec<(usize, Value)>,
     ) -> Result<FunctionCall, &'static str> {
-        let mut values: Vec<Option<FunctionArgValue>> = vec![None; self.args.len()];
-        values[self.table_arg] = Some(FunctionArgValue::Row {
-            table: table.clone(),
-            columns: self.row_columns.clone(),
-        });
-        if let Some(i) = self.session_arg {
-            values[i] = Some(FunctionArgValue::Session);
-        }
-        for (i, v) in inputs {
-            values[i] = Some(FunctionArgValue::Value(v));
-        }
-        let args = arrange_args(&self.args, values)?;
-        Ok(FunctionCall {
-            function: self.function.clone(),
-            args: args
-                .into_iter()
-                .map(|p| match p {
-                    Passing::Positional(value) => FunctionArgument { name: None, value },
-                    Passing::Named(name, value) => FunctionArgument {
-                        name: Some(name),
-                        value,
-                    },
-                })
-                .collect(),
-        })
+        let mut implicit = vec![(
+            self.table_arg,
+            FunctionArgValue::Row {
+                table: table.clone(),
+                columns: self.row_columns.clone(),
+            },
+        )];
+        implicit.extend(self.session_arg.map(|i| (i, FunctionArgValue::Session)));
+        build_call(&self.function, &self.args, implicit, inputs)
     }
 
     pub fn has_input_args(&self) -> bool {

@@ -3,7 +3,7 @@
 
 use hge_core::{ColumnType, QualifiedTable};
 
-use crate::{BoolExp, Field, SelectArgs};
+use crate::{BoolExp, Field, FunctionCall, SelectArgs};
 
 /// `author_aggregate(where: …) { aggregate { … } nodes { … } }`: one JSON object computed over
 /// the rows left after the filters, ordering, `limit` and `offset`.
@@ -18,6 +18,9 @@ pub struct AggregateSelect {
     /// Row limit from permissions. As in V2, it limits only `nodes` when an `aggregate` field
     /// is selected or the rows are ordered by an aggregate; otherwise it limits all rows.
     pub permission_limit: Option<u64>,
+    /// Read the rows from this function (returning rows of `table`) instead of the table:
+    /// `<function>_aggregate`.
+    pub from_function: Option<FunctionCall>,
 }
 
 impl AggregateSelect {

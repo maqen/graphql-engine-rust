@@ -210,6 +210,7 @@ async fn websockets() {
     cohorts_and_permissions(&server).await;
     streaming(&server).await;
     restrictions(&server).await;
+    function_live_query(&server).await;
     auth_failures(&server).await;
     server_close(&server).await;
     jwt_expiry(&server).await;
@@ -495,6 +496,34 @@ async fn cohorts_and_permissions(server: &Server) {
         err["payload"]["errors"][0]["message"],
         "field 'message_by_pk' not found in type: 'subscription_root'"
     );
+}
+
+/// Tracked functions are subscription root fields; one statement serves both users, and each
+/// cohort passes its own session to the function's session argument.
+async fn function_live_query(server: &Server) {
+    let sub = "subscription { my_messages(args: {min_priority: 2}, order_by: {id: asc}) { id } }";
+    let mut one = server.connect(None).await;
+    init(&mut one, user(1)).await;
+    let mut two = server.connect(None).await;
+    init(&mut two, user(2)).await;
+    for ws in [&mut one, &mut two] {
+        send(
+            ws,
+            json!({"id": "f", "type": "start", "payload": {"query": sub}}),
+        )
+        .await;
+    }
+    assert_eq!(
+        recv(&mut one).await,
+        data("f", "data", json!({"my_messages": [{"id": 3}]}))
+    );
+    assert_eq!(
+        recv(&mut two).await,
+        data("f", "data", json!({"my_messages": [{"id": 2}]}))
+    );
+    for ws in [&mut one, &mut two] {
+        send(ws, json!({"id": "f", "type": "stop"})).await;
+    }
 }
 
 async fn streaming(server: &Server) {

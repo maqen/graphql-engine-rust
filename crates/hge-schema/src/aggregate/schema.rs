@@ -98,7 +98,7 @@ impl Builder<'_> {
         ))
     }
 
-    fn may_aggregate(&self, table: &TableInfo) -> bool {
+    pub(crate) fn may_aggregate(&self, table: &TableInfo) -> bool {
         self.access(table)
             .is_some_and(|a| a.allow_aggregations && !a.columns.is_empty())
     }
@@ -118,7 +118,7 @@ impl Builder<'_> {
 
     /// `T_aggregate`, `T_aggregate_fields` and the `T_<function>_fields` objects; returns the
     /// name of `T_aggregate`.
-    fn ensure_aggregate_types(&mut self, table: &TableInfo) -> String {
+    pub(crate) fn ensure_aggregate_types(&mut self, table: &TableInfo) -> String {
         let name = table.aggregate_name();
         if self.schema.types.contains_key(&name) {
             return name;

@@ -97,7 +97,8 @@ impl<'s> Translator<'s> {
         self.b.push("SELECT ");
         self.row_json(&sel.fields, &base)?;
         self.b.push(" FROM (");
-        self.base(sel.into(), &inner, join, Some(1))?;
+        let limit = effective_limit(sel.args.limit, Some(1));
+        self.base(sel.into(), &inner, join, limit)?;
         self.b.push(") AS ").ident(&base);
         Ok(())
     }
@@ -449,7 +450,8 @@ impl<'s> Translator<'s> {
                         .ident(&table.name);
                 }
                 FunctionArgValue::Session => {
-                    let json = self.session.variables.to_json().to_string();
+                    // Sorted keys, as V2 passes them (and one cohort per distinct session).
+                    let json = self.session.variables.to_sorted_json_string();
                     self.b.param(Some(json), &ColumnType::builtin("json"));
                 }
             }

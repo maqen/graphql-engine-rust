@@ -1,0 +1,244 @@
+config:
+  fixture: functions
+  admin_internal_errors: false
+
+cases:
+  - description: a set-returning function with a required argument and select arguments
+    query:
+      query: '{ search_articles(args: {search: "tips"}, order_by: {id: desc}) { id title author { first_name } } }'
+    response:
+      data:
+        search_articles:
+        - id: 3
+          title: Go tips
+          author: {first_name: Bob}
+        - id: 1
+          title: Rust tips
+          author: {first_name: Alice}
+
+  - description: defaults, a custom root field name and named arguments after an omitted one
+    query:
+      query: '{ a: best_articles { id } b: best_articles(args: {min_rating: 3}) { id } c: best_articles(args: {published: false}) { id } }'
+    response:
+      data:
+        a:
+        - {id: 1}
+        - {id: 4}
+        b:
+        - {id: 1}
+        - {id: 3}
+        - {id: 4}
+        c: []
+
+  - description: a single-row function with an unnamed argument
+    query:
+      query: '{ a: first_article(args: {arg_1: "Go tips"}) { id title } b: first_article(args: {arg_1: "nope"}) { id } }'
+    response:
+      data:
+        a: {id: 3, title: Go tips}
+        b: {id: null}
+
+  - description: limit and offset apply to a single-row function
+    query:
+      query: '{ a: first_article(args: {arg_1: "Go tips"}, limit: 0) { id } b: first_article(args: {arg_1: "Go tips"}, offset: 1) { id } c: first_article(args: {arg_1: "Go tips"}, limit: 5) { id } }'
+    response:
+      data:
+        a: null
+        b: null
+        c: {id: 3}
+
+  - description: function aggregates
+    query:
+      query: '{ a: search_articles_aggregate(args: {search: "tips"}) { aggregate { count max { rating } } nodes { id } } b: top_rated_aggregate(where: {id: {_gt: 1}}) { aggregate { count } } c: first_article_aggregate(args: {arg_1: "Go tips"}) { aggregate { count } } }'
+    response:
+      data:
+        a:
+          aggregate:
+            count: 2
+            max: {rating: 5}
+          nodes:
+          - {id: 1}
+          - {id: 3}
+        b:
+          aggregate: {count: 1}
+        c:
+          aggregate: {count: 1}
+
+  - description: function aggregate fields and their arguments
+    query:
+      query: '{ __type(name: "query_root") { fields { name description args { name description } } } }'
+    response:
+      data:
+        __type:
+          fields:
+          - name: article
+            description: 'fetch data from the table: "article"'
+            args:
+            - {name: distinct_on, description: distinct select on columns}
+            - {name: limit, description: limit the number of rows returned}
+            - {name: offset, description: skip the first n rows. Use only with order_by}
+            - {name: order_by, description: sort the rows by one or more columns}
+            - {name: where, description: filter the rows returned}
+          - name: article_aggregate
+            description: 'fetch aggregated fields from the table: "article"'
+            args:
+            - {name: distinct_on, description: distinct select on columns}
+            - {name: limit, description: limit the number of rows returned}
+            - {name: offset, description: skip the first n rows. Use only with order_by}
+            - {name: order_by, description: sort the rows by one or more columns}
+            - {name: where, description: filter the rows returned}
+          - name: article_by_pk
+            description: 'fetch data from the table: "article" using primary key columns'
+            args:
+            - {name: id, description: null}
+          - name: author
+            description: 'fetch data from the table: "author"'
+            args:
+            - {name: distinct_on, description: distinct select on columns}
+            - {name: limit, description: limit the number of rows returned}
+            - {name: offset, description: skip the first n rows. Use only with order_by}
+            - {name: order_by, description: sort the rows by one or more columns}
+            - {name: where, description: filter the rows returned}
+          - name: author_aggregate
+            description: 'fetch aggregated fields from the table: "author"'
+            args:
+            - {name: distinct_on, description: distinct select on columns}
+            - {name: limit, description: limit the number of rows returned}
+            - {name: offset, description: skip the first n rows. Use only with order_by}
+            - {name: order_by, description: sort the rows by one or more columns}
+            - {name: where, description: filter the rows returned}
+          - name: author_by_pk
+            description: 'fetch data from the table: "author" using primary key columns'
+            args:
+            - {name: id, description: null}
+          - name: best_articles
+            description: The best articles
+            args:
+            - {name: args, description: input parameters for function "best_articles"}
+            - {name: distinct_on, description: distinct select on columns}
+            - {name: limit, description: limit the number of rows returned}
+            - {name: offset, description: skip the first n rows. Use only with order_by}
+            - {name: order_by, description: sort the rows by one or more columns}
+            - {name: where, description: filter the rows returned}
+          - name: first_article
+            description: execute function "first_article" which returns "article"
+            args:
+            - {name: args, description: input parameters for function "first_article"}
+            - {name: distinct_on, description: distinct select on columns}
+            - {name: limit, description: limit the number of rows returned}
+            - {name: offset, description: skip the first n rows. Use only with order_by}
+            - {name: order_by, description: sort the rows by one or more columns}
+            - {name: where, description: filter the rows returned}
+          - name: first_article_aggregate
+            description: execute function "first_article" and query aggregates on result of table type "article"
+            args:
+            - {name: args, description: input parameters for function "first_article_aggregate"}
+            - {name: distinct_on, description: distinct select on columns}
+            - {name: limit, description: limit the number of rows returned}
+            - {name: offset, description: skip the first n rows. Use only with order_by}
+            - {name: order_by, description: sort the rows by one or more columns}
+            - {name: where, description: filter the rows returned}
+          - name: my_articles
+            description: execute function "my_articles" which returns "article"
+            args:
+            - {name: distinct_on, description: distinct select on columns}
+            - {name: limit, description: limit the number of rows returned}
+            - {name: offset, description: skip the first n rows. Use only with order_by}
+            - {name: order_by, description: sort the rows by one or more columns}
+            - {name: where, description: filter the rows returned}
+          - name: my_articles_aggregate
+            description: execute function "my_articles" and query aggregates on result of table type "article"
+            args:
+            - {name: distinct_on, description: distinct select on columns}
+            - {name: limit, description: limit the number of rows returned}
+            - {name: offset, description: skip the first n rows. Use only with order_by}
+            - {name: order_by, description: sort the rows by one or more columns}
+            - {name: where, description: filter the rows returned}
+          - name: search_articles
+            description: execute function "search_articles" which returns "article"
+            args:
+            - {name: args, description: input parameters for function "search_articles"}
+            - {name: distinct_on, description: distinct select on columns}
+            - {name: limit, description: limit the number of rows returned}
+            - {name: offset, description: skip the first n rows. Use only with order_by}
+            - {name: order_by, description: sort the rows by one or more columns}
+            - {name: where, description: filter the rows returned}
+          - name: search_articles_aggregate
+            description: execute function "search_articles" and query aggregates on result of table type "article"
+            args:
+            - {name: args, description: input parameters for function "search_articles_aggregate"}
+            - {name: distinct_on, description: distinct select on columns}
+            - {name: limit, description: limit the number of rows returned}
+            - {name: offset, description: skip the first n rows. Use only with order_by}
+            - {name: order_by, description: sort the rows by one or more columns}
+            - {name: where, description: filter the rows returned}
+          - name: top_rated_aggregate
+            description: execute function "top_rated" and query aggregates on result of table type "article"
+            args:
+            - {name: args, description: input parameters for function "top_rated_aggregate"}
+            - {name: distinct_on, description: distinct select on columns}
+            - {name: limit, description: limit the number of rows returned}
+            - {name: offset, description: skip the first n rows. Use only with order_by}
+            - {name: order_by, description: sort the rows by one or more columns}
+            - {name: where, description: filter the rows returned}
+
+  - description: the session argument
+    headers: { x-hasura-role: user, x-hasura-user-id: "1" }
+    query:
+      query: '{ my_articles { id title } }'
+    response:
+      data:
+        my_articles:
+        - {id: 1, title: Rust tips}
+
+  - description: function rows are filtered by the returned table's permission
+    headers: { x-hasura-role: user, x-hasura-user-id: "1" }
+    query:
+      query: '{ search_articles(args: {search: ""}, order_by: {id: asc}) { id } }'
+    response:
+      data:
+        search_articles:
+        - {id: 1}
+        - {id: 3}
+        - {id: 4}
+
+  - description: required function arguments cannot be omitted
+    query:
+      query: '{ search_articles(args: {}) { id } }'
+    response:
+      errors:
+      - message: Non default arguments cannot be omitted
+        extensions: {path: $.selectionSet.search_articles.args.args, code: not-supported}
+
+  - description: args cannot be null
+    query:
+      query: '{ best_articles(args: null) { id } }'
+    response:
+      errors:
+      - message: expected an object for type 'top_rated_args', but found null
+        extensions: {path: $.selectionSet.best_articles.args.args, code: validation-failed}
+
+  - description: a role without a function permission cannot call a VOLATILE function
+    headers: { x-hasura-role: fan }
+    query:
+      query: 'mutation { publish_article(args: {article_id: 2}) { id } }'
+    response:
+      errors:
+      - message: no mutations exist
+        extensions: {path: $, code: validation-failed}
+
+  - description: a VOLATILE function is a mutation, run with the role's permissions
+    headers: { x-hasura-role: user, x-hasura-user-id: "1" }
+    query:
+      query: 'mutation { publish_article(args: {article_id: 2}) { id title is_published: title } }'
+    response:
+      data:
+        publish_article:
+        - {id: 2, title: Draft, is_published: Draft}
+
+  - description: the VOLATILE function's changes are committed
+    query:
+      query: '{ article_by_pk(id: 2) { id is_published } }'
+    response:
+      data:
+        article_by_pk: {id: 2, is_published: true}

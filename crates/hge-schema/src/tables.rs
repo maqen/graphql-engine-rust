@@ -131,6 +131,8 @@ pub struct Tables {
     pub by_name: HashMap<(Arc<str>, QualifiedTable), Arc<TableInfo>>,
     /// Tables in metadata order.
     pub ordered: Vec<Arc<TableInfo>>,
+    /// Tracked functions of all sources, in metadata order.
+    pub functions: Vec<Arc<crate::functions::FunctionInfo>>,
 }
 
 impl Tables {

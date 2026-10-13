@@ -348,6 +348,7 @@ pub fn schema_options(config: &ServerConfig) -> SchemaOptions {
     SchemaOptions {
         stringify_numeric_types: config.stringify_numeric_types,
         dangerously_collapse_booleans: config.v1_boolean_null_collapse,
+        infer_function_permissions: config.infer_function_permissions,
     }
 }
 
