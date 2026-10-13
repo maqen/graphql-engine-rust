@@ -68,6 +68,7 @@ pub use crate::mutation::MUTATION_ROOT;
 pub fn build_role_schema(
     tables: &Arc<Tables>,
     actions: &ResolvedActions,
+    remotes: &crate::remote::RemoteSchemas,
     role: &RoleName,
     backend_only: bool,
     options: &SchemaOptions,
@@ -79,6 +80,7 @@ pub fn build_role_schema(
         &access,
         &mutation_access,
         Some(actions),
+        remotes,
         role,
         options,
     );
@@ -124,6 +126,7 @@ pub(crate) fn table_schema_names(tables: &Tables) -> TableSchemaNames {
         &access,
         &mutation_access,
         None,
+        &crate::remote::RemoteSchemas::default(),
         &role,
         &SchemaOptions::default(),
     );
@@ -163,6 +166,7 @@ fn build_schema(
     access: &HashMap<(Arc<str>, QualifiedTable), SelectAccess>,
     mutation_access: &HashMap<(Arc<str>, QualifiedTable), crate::mutation::MutationAccess>,
     actions: Option<&ResolvedActions>,
+    remotes: &crate::remote::RemoteSchemas,
     role: &RoleName,
     options: &SchemaOptions,
 ) -> Schema {
@@ -211,6 +215,15 @@ fn build_schema(
     if let Some(actions) = actions {
         crate::actions::add_root_fields(&mut b, actions, role, &mut query_root, &mut mutation_root);
     }
+    // Remote schemas come after actions (their conflicts with the above were checked at
+    // load).
+    crate::remote::add_remote_schemas(
+        &mut b.schema,
+        &b.scalars,
+        remotes,
+        &mut query_root,
+        &mut mutation_root,
+    );
     // ------------------------------------------------------------------------------------
 
     if !mutation_root.fields.is_empty() {
@@ -950,8 +963,15 @@ impl Builder<'_> {
                         add_args(&mut used, &field.args);
                     }
                 }
+                TypeDef::Interface(i) => {
+                    for field in i.fields.values() {
+                        used.insert(field.ty.base().to_owned());
+                        add_args(&mut used, &field.args);
+                    }
+                }
                 TypeDef::InputObject(obj) => add_args(&mut used, &obj.fields),
-                TypeDef::Enum(_) | TypeDef::Scalar(_) => {}
+                // Union members are objects, which are never pruned.
+                TypeDef::Enum(_) | TypeDef::Union(_) | TypeDef::Scalar(_) => {}
             }
         }
         for directive in &self.schema.directives {
@@ -987,12 +1007,15 @@ impl Builder<'_> {
                         field.args.sort_keys();
                     }
                 }
-                TypeDef::InputObject(obj) => {
-                    obj.fields.sort_keys();
+                TypeDef::Interface(i) => {
+                    i.fields.sort_keys();
+                    for field in i.fields.values_mut() {
+                        field.args.sort_keys();
+                    }
                 }
+                TypeDef::InputObject(obj) => obj.fields.sort_keys(),
                 // Enum values keep definition order; introspection sorts them.
-                TypeDef::Enum(_) => {}
-                TypeDef::Scalar(_) => {}
+                TypeDef::Enum(_) | TypeDef::Union(_) | TypeDef::Scalar(_) => {}
             }
         }
     }

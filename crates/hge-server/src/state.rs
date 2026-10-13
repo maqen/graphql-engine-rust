@@ -170,6 +170,7 @@ impl AppState {
         let mut built = build_role_schema(
             &self.tables,
             &self.actions,
+            &self.prepared.remote_schemas,
             &build_as,
             backend_only,
             &self.options,

@@ -36,6 +36,26 @@ impl Schema {
         }
     }
 
+    /// The fields of an object or interface type.
+    pub fn fields_of(&self, name: &str) -> Option<&IndexMap<String, FieldDef>> {
+        match self.types.get(name) {
+            Some(TypeDef::Object(o)) => Some(&o.fields),
+            Some(TypeDef::Interface(i)) => Some(&i.fields),
+            _ => None,
+        }
+    }
+
+    /// The object types a value of type `name` can have: itself for an object, the members
+    /// of a union, the implementations of an interface; empty for other types.
+    pub fn possible_types<'a>(&'a self, name: &'a str) -> &'a [String] {
+        match self.types.get(name) {
+            Some(TypeDef::Object(o)) => std::slice::from_ref(&o.name),
+            Some(TypeDef::Interface(i)) => &i.possible_types,
+            Some(TypeDef::Union(u)) => &u.possible_types,
+            _ => &[],
+        }
+    }
+
     /// Add a type; returns `false` (and keeps the existing one) if the name is taken.
     pub fn add(&mut self, ty: TypeDef) -> bool {
         let name = ty.name().to_owned();
@@ -53,6 +73,8 @@ pub enum TypeDef {
     Object(ObjectDef),
     InputObject(InputObjectDef),
     Enum(EnumDef),
+    Interface(InterfaceDef),
+    Union(UnionDef),
 }
 
 impl TypeDef {
@@ -62,6 +84,8 @@ impl TypeDef {
             TypeDef::Object(t) => &t.name,
             TypeDef::InputObject(t) => &t.name,
             TypeDef::Enum(t) => &t.name,
+            TypeDef::Interface(t) => &t.name,
+            TypeDef::Union(t) => &t.name,
         }
     }
 
@@ -71,6 +95,8 @@ impl TypeDef {
             TypeDef::Object(t) => t.description.as_deref(),
             TypeDef::InputObject(t) => t.description.as_deref(),
             TypeDef::Enum(t) => t.description.as_deref(),
+            TypeDef::Interface(t) => t.description.as_deref(),
+            TypeDef::Union(t) => t.description.as_deref(),
         }
     }
 
@@ -80,6 +106,8 @@ impl TypeDef {
             TypeDef::Object(_) => "OBJECT",
             TypeDef::InputObject(_) => "INPUT_OBJECT",
             TypeDef::Enum(_) => "ENUM",
+            TypeDef::Interface(_) => "INTERFACE",
+            TypeDef::Union(_) => "UNION",
         }
     }
 
@@ -92,6 +120,11 @@ impl TypeDef {
 
     pub fn is_leaf(&self) -> bool {
         matches!(self, TypeDef::Scalar(_) | TypeDef::Enum(_))
+    }
+
+    /// An interface or union.
+    pub fn is_abstract(&self) -> bool {
+        matches!(self, TypeDef::Interface(_) | TypeDef::Union(_))
     }
 }
 
@@ -123,6 +156,22 @@ impl ObjectDef {
         self.fields.insert(field.name.clone(), field);
         self
     }
+}
+
+/// An interface type. `possible_types` lists the object types implementing it.
+#[derive(Debug, Clone)]
+pub struct InterfaceDef {
+    pub name: String,
+    pub description: Option<String>,
+    pub fields: IndexMap<String, FieldDef>,
+    pub possible_types: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UnionDef {
+    pub name: String,
+    pub description: Option<String>,
+    pub possible_types: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -215,6 +264,8 @@ pub enum FieldKind {
     ActionRelationship(Arc<ActionRelInfo>),
     /// A field of the result object of an asynchronous action.
     AsyncActionResult(AsyncResultField),
+    /// A remote schema root field, a namespace field, or a field of a remote type.
+    Remote(crate::remote::RemoteField),
 }
 
 #[derive(Debug, Clone)]

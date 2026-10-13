@@ -681,7 +681,7 @@ impl Connection {
                     }
                     // An error V2 would have raised while planning (such as a missing session
                     // variable) is an `error` message; one from running it is `data`.
-                    Err(e) if !has_actions && is_planning_error(&e) => {
+                    Err(graphql::Failure::Error(e)) if !has_actions && is_planning_error(&e) => {
                         out.control(error_message(
                             protocol,
                             endpoint,
@@ -689,8 +689,12 @@ impl Connection {
                             error_json(&e, endpoint),
                         ));
                     }
-                    Err(e) => {
+                    Err(graphql::Failure::Error(e)) => {
                         let errors = [error_json(&e, endpoint)];
+                        out.control(protocol.execution_error(&id, &errors));
+                    }
+                    // A remote schema's errors, verbatim.
+                    Err(graphql::Failure::Remote(errors)) => {
                         out.control(protocol.execution_error(&id, &errors));
                     }
                 }
@@ -937,6 +941,12 @@ fn subscription_plan(op: &hge_ir::Operation) -> Result<Plan<'_>, Error> {
                 return Err(Error::new(
                     Code::NotSupported,
                     "Introspection at root field level is not supported over subscriptions",
+                ));
+            }
+            RootField::Remote(_) => {
+                return Err(Error::new(
+                    Code::NotSupported,
+                    "subscription to remote server is not supported",
                 ));
             }
             RootField::Action(a) => actions.push((alias.as_str(), &**a)),

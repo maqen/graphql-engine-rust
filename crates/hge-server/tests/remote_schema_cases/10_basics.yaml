@@ -1,0 +1,247 @@
+config:
+  inconsistencies:
+    - "remote_schema conflicting: Duplicate remote field 'hello', Duplicate remote field 'greet', Duplicate remote field 'user', Duplicate remote field 'users', Duplicate remote field 'countIn', Duplicate remote field 'character', Duplicate remote field 'characters', Duplicate remote field 'search', Duplicate remote field 'fail', Duplicate remote field 'partial', Duplicate remote field 'headers', Duplicate remote field 'lastRequest', Duplicate remote field 'createUser'"
+    - "remote_schema unreachable: HTTP exception occurred while sending the request to \"http://127.0.0.1:1/graphql\""
+cases:
+  - description: a remote root field next to a table root field
+    query:
+      query: "{ profile { name } hello }"
+    response:
+      data:
+        profile: [{name: alice}, {name: bob}]
+        hello: world
+
+  - description: the request sent for a plain field
+    query:
+      query: "{ lastRequest }"
+    response:
+      data:
+        lastRequest: '{"query":"query  { hello  }"}'
+
+  - description: aliases, arguments and defaults are forwarded
+    query:
+      query: '{ hi: greet(name: "Max") }'
+    response:
+      data:
+        hi: Hello, Max!
+
+  - description: omitted arguments with defaults are sent explicitly
+    query:
+      query: "{ lastRequest }"
+    response:
+      data:
+        lastRequest: '{"query":"query  { hi: greet(name: \"Max\",greeting: \"Hello\")  }"}'
+
+  - description: variables are forwarded as variables, with the operation name
+    query:
+      query: "query Q($id: Int!) { user(id: $id) { id name } }"
+      variables: {id: 2}
+      operationName: Q
+    response:
+      data:
+        user: {id: 2, name: bob}
+
+  - description: the forwarded variables
+    query:
+      query: "{ lastRequest }"
+    response:
+      data:
+        lastRequest: '{"operationName":"Q","query":"query Q($id: Int!) { user(id: $id) { id  name  } }","variables":{"id":2}}'
+
+  - description: enum and input object arguments
+    query:
+      query: "{ users(order: DESC) { id } countIn(range: {low: 2, high: 7}) }"
+    response:
+      data:
+        users: [{id: 2}, {id: 1}]
+        countIn: 5
+
+  - description: interfaces with fragments
+    query:
+      query: >-
+        { characters { __typename id ... on Human { homePlanet } ...D } }
+        fragment D on Droid { primaryFunction }
+    response:
+      data:
+        characters:
+          - {__typename: Human, id: "1", homePlanet: Tatooine}
+          - {__typename: Droid, id: "2", primaryFunction: Astromech}
+
+  - description: the abstract selection is re-encoded with inline fragments
+    query:
+      query: "{ lastRequest }"
+    response:
+      data:
+        lastRequest: '{"query":"query  { characters { __typename  id  ... on Human{ homePlanet  } ... on Droid{ primaryFunction  } } }"}'
+
+  - description: unions
+    query:
+      query: "{ search { ... on User { name } ... on Droid { name primaryFunction } } }"
+    response:
+      data:
+        search:
+          - {name: alice}
+          - {name: R2-D2, primaryFunction: Astromech}
+
+  - description: mutation root fields
+    query:
+      query: 'mutation { createUser(name: "carol") { id name } }'
+    response:
+      data:
+        createUser: {id: 3, name: carol}
+
+  - description: remote GraphQL errors abort the operation with data null
+    query:
+      query: "{ profile { name } fail }"
+    response:
+      data: null
+      errors:
+        - message: intentional-error
+          locations: [{line: 1, column: 10}]
+          path: [fail]
+
+  - description: data with errors from the remote is an error by default
+    query:
+      query: "{ partial { ok bad } }"
+    response:
+      data: null
+      errors:
+        - message: partial-error
+          locations: [{line: 1, column: 24}]
+          path: [partial, bad]
+
+  - description: session variables, configured and forwarded client headers
+    headers:
+      x-hasura-role: user
+      x-hasura-user-id: "42"
+      authorization: Bearer abc
+      x-configured: from-client
+    query:
+      query: "{ headers }"
+    response:
+      data:
+        headers:
+          - "authorization: Bearer abc"
+          - "x-configured: from-config"
+          - "x-from-env: from-env"
+          - "x-hasura-role: user"
+          - "x-hasura-user-id: 42"
+    set_cookies: ["remote=1; Path=/"]
+
+  - description: remote fields in the role's schema without remote schema permissions
+    headers:
+      x-hasura-role: user
+    query:
+      query: "{ profile { id } hello }"
+    response:
+      data:
+        profile: [{id: 1}, {id: 2}]
+        hello: world
+
+  - description: unknown fields of remote types are validation errors
+    query:
+      query: "{ user(id: 1) { nope } }"
+    response:
+      errors:
+        - extensions: {path: "$.selectionSet.user.selectionSet.nope", code: validation-failed}
+          message: "field 'nope' not found in type: 'User'"
+
+  - description: fields on a union must be selected in fragments
+    query:
+      query: "{ search { name } }"
+    response:
+      errors:
+        - extensions: {path: "$.selectionSet.search.selectionSet.name", code: validation-failed}
+          message: "field 'name' not found in type: 'SearchResult'"
+
+  - description: unknown fields on an interface name the interface
+    query:
+      query: "{ characters { homePlanet } }"
+    response:
+      errors:
+        - extensions: {path: "$.selectionSet.characters.selectionSet.homePlanet", code: validation-failed}
+          message: "field 'homePlanet' not found in type: 'Character'"
+
+  - description: remote subscription fields are not exposed yet
+    query:
+      query: "subscription { hello }"
+    response:
+      errors:
+        - extensions: {path: "$.selectionSet.hello", code: validation-failed}
+          message: "field 'hello' not found in type: 'subscription_root'"
+
+  - description: introspection shows interfaces and their implementations
+    query:
+      query: >-
+        { __type(name: "Character") { kind name fields { name } possibleTypes { name } }
+          human: __type(name: "Human") { interfaces { name } } }
+    response:
+      data:
+        __type:
+          kind: INTERFACE
+          name: Character
+          fields: [{name: id}, {name: name}]
+          possibleTypes: [{name: Human}, {name: Droid}]
+        human:
+          interfaces: [{name: Character}]
+
+  - description: customized remote under a namespace with renamed types and fields
+    query:
+      query: >-
+        { r2 { __typename hi user(id: 1) { __typename u_id u_name }
+               characters { __typename ... on Android { name } } } }
+    response:
+      data:
+        r2:
+          __typename: r2Query
+          hi: world
+          user: {__typename: R2_User, u_id: 1, u_name: alice}
+          characters:
+            - {__typename: R2_Human}
+            - {__typename: Android, name: R2-D2}
+
+  - description: a single customized field
+    query:
+      query: "{ r2 { characters { ... on Android { name } } } }"
+    response:
+      data:
+        r2:
+          characters: [{}, {name: R2-D2}]
+
+  - description: customized types are sent under their original names
+    query:
+      query: "{ lastRequest }"
+    response:
+      data:
+        lastRequest: '{"query":"query  { characters { ... on Droid{ name  } } }"}'
+
+  - description: customized fields are sent under their original names, aliased
+    query:
+      query: "{ r2 { user(id: 2) { u_name } } }"
+    response:
+      data:
+        r2:
+          user: {u_name: bob}
+
+  - description: the aliased field names
+    query:
+      query: "{ lastRequest }"
+    response:
+      data:
+        lastRequest: '{"query":"query  { user(id: 2) { u_name: name  } }"}'
+
+  - description: variables of customized types are declared with the original type names
+    query:
+      query: "query ($o: R2_Order) { r2 { users(order: $o) { u_id } } }"
+      variables: {o: DESC}
+    response:
+      data:
+        r2:
+          users: [{u_id: 2}, {u_id: 1}]
+
+  - description: the variable type sent to the remote
+    query:
+      query: "{ lastRequest }"
+    response:
+      data:
+        lastRequest: '{"query":"query ($o: Order) { users(order: $o) { u_id: id  } }","variables":{"o":"DESC"}}'

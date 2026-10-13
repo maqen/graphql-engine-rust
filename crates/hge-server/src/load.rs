@@ -214,6 +214,10 @@ pub struct Prepared {
     pub rest: Arc<hge_rest::RestEndpoints>,
     /// The allowlist, when `HASURA_GRAPHQL_ENABLE_ALLOWLIST` is set.
     pub allowlist: Option<Arc<hge_rest::allowlist::Allowlist>>,
+    /// Introspected remote schemas, by name.
+    pub remotes: HashMap<String, crate::remote::PreparedRemote>,
+    /// The remote schemas in the GraphQL schema.
+    pub remote_schemas: hge_schema::RemoteSchemas,
     pub inconsistencies: Vec<InconsistentObject>,
 }
 
@@ -350,17 +354,31 @@ pub async fn prepare(
     let registry = action_registry(metadata, &mut actions, config, &mut inconsistencies);
     let (rest, rest_issues) = hge_rest::build(metadata);
     inconsistencies.extend(rest_issues);
+    let tables = Arc::new(tables);
+    let (remotes, remote_schemas, remote_issues) = crate::remote::prepare(
+        metadata,
+        config,
+        base.map(|b| &b.remotes),
+        reload,
+        &tables,
+        &actions,
+        &schema_options(config),
+    )
+    .await;
+    inconsistencies.extend(remote_issues);
     Prepared {
         rest: Arc::new(rest),
         allowlist: config
             .enable_allowlist
             .then(|| Arc::new(hge_rest::allowlist::Allowlist::build(metadata))),
         sources,
-        tables: Arc::new(tables),
+        tables,
         event_triggers: Arc::new(event_triggers),
         scheduled_triggers: Arc::new(scheduled_triggers),
         actions: Arc::new(actions),
         action_registry: Arc::new(registry),
+        remotes,
+        remote_schemas,
         inconsistencies,
     }
 }

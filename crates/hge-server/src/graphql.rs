@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use hge_core::{Code, Error, Session};
 use hge_ir::{Mutation, Operation, OperationKind, QueryRoot, RootField, SourceExecutor};
+use hge_remote_schema::{RemoteError, RemoteSettings, RequestContext};
 use http::HeaderMap;
 use serde::Deserialize;
 use serde_json::{Map, Value as Json};
@@ -38,7 +39,7 @@ pub enum GraphQLBody {
 #[derive(Debug, Default)]
 pub struct GraphQLResponse {
     pub body: String,
-    /// `Set-Cookie` values from mutation action handlers.
+    /// `Set-Cookie` values from mutation action handlers and remote schemas.
     pub set_cookies: Vec<String>,
     /// The error of a single request (for `http-log`).
     pub error: Option<Error>,
@@ -90,6 +91,29 @@ pub async fn execute_body(
     }
 }
 
+/// Why executing a request failed.
+#[derive(Debug)]
+pub enum Failure {
+    Error(Error),
+    /// A remote schema's GraphQL errors: `{"data": null, "errors": [...]}` (spec 08 §6.5).
+    Remote(Vec<Json>),
+}
+
+impl From<Error> for Failure {
+    fn from(e: Error) -> Self {
+        Failure::Error(e)
+    }
+}
+
+impl From<RemoteError> for Failure {
+    fn from(e: RemoteError) -> Self {
+        match e {
+            RemoteError::Hasura(e) => Failure::Error(e),
+            RemoteError::Graphql(errors) => Failure::Remote(errors),
+        }
+    }
+}
+
 /// The response body, plus `Set-Cookie` values (only for a successful response) and the
 /// error.
 async fn execute_one(
@@ -101,10 +125,15 @@ async fn execute_one(
 ) -> (String, Vec<String>, Option<Error>) {
     match run(engine, state, session, headers, req).await {
         Ok((body, cookies)) => (body, cookies, None),
-        Err(e) => {
+        Err(Failure::Error(e)) => {
             let body = error_body(&e, include_internal(engine, session));
             (body, vec![], Some(e))
         }
+        Err(Failure::Remote(errors)) => (
+            serde_json::json!({ "data": null, "errors": errors }).to_string(),
+            vec![],
+            None,
+        ),
     }
 }
 
@@ -114,6 +143,12 @@ pub(crate) struct StateSources<'a>(pub(crate) &'a AppState);
 impl hge_actions::Sources for StateSources<'_> {
     fn executor(&self, source: &str) -> Option<&dyn SourceExecutor> {
         source_executor(self.0, source).ok()
+    }
+}
+
+pub fn remote_settings(engine: &Engine) -> RemoteSettings {
+    RemoteSettings {
+        prioritize_data: engine.config.remote_schema_prioritize_data,
     }
 }
 
@@ -132,14 +167,15 @@ async fn run(
     session: &Session,
     client_headers: &HeaderMap,
     req: GraphQLRequest,
-) -> Result<(String, Vec<String>), Error> {
+) -> Result<(String, Vec<String>), Failure> {
     let query = req.query.clone();
     let op = plan(state, session, req)?;
     if op.kind == OperationKind::Subscription {
         return Err(Error::new(
             Code::UnexpectedPayload,
             "subscriptions are not supported over HTTP, use websockets instead",
-        ));
+        )
+        .into());
     }
     execute(
         engine,
@@ -168,7 +204,7 @@ pub fn plan(state: &AppState, session: &Session, req: GraphQLRequest) -> Result<
     let doc = hge_schema::parse_query(query)?;
     crate::policies::check_allowlist(state, session, &doc, query)?;
     let op = hge_schema::plan(&rs, &doc, req.operation_name.as_deref(), &variables)?;
-    if req.read_only && op.kind == hge_ir::OperationKind::Mutation {
+    if req.read_only && op.kind == OperationKind::Mutation {
         return Err(Error::new(
             Code::NotSupported,
             "mutations are not supported over GET requests",
@@ -178,8 +214,8 @@ pub fn plan(state: &AppState, session: &Session, req: GraphQLRequest) -> Result<
 }
 
 /// Execute a planned query or mutation; returns the response body (`{"data":{...}}`) and
-/// the `Set-Cookie` values of mutation actions. `query` is the request's query text, which
-/// action handlers receive.
+/// the `Set-Cookie` values of mutation actions and remote schemas. `query` is the request's
+/// query text, which action handlers receive.
 pub async fn execute(
     engine: &Engine,
     state: &AppState,
@@ -187,20 +223,28 @@ pub async fn execute(
     client_headers: &HeaderMap,
     query: Option<&str>,
     op: &Operation,
-) -> Result<(String, Vec<String>), Error> {
-    let ctx = hge_actions::RequestContext {
+) -> Result<(String, Vec<String>), Failure> {
+    let ctx = Context {
         session,
-        client_headers,
-        query,
-        action_log: engine.action_log.as_deref(),
-        include_internal: include_internal(engine, session),
+        actions: hge_actions::RequestContext {
+            session,
+            client_headers,
+            query,
+            action_log: engine.action_log.as_deref(),
+            include_internal: include_internal(engine, session),
+        },
+        sources: StateSources(state),
+        remote: RequestContext {
+            session,
+            client_headers,
+        },
+        settings: remote_settings(engine),
     };
-    let sources = StateSources(state);
     let mut set_cookies = vec![];
     let results = if op.kind == OperationKind::Mutation {
-        run_mutations(state, session, op, &ctx, &sources, &mut set_cookies).await?
+        run_mutations(state, op, &ctx, &mut set_cookies).await?
     } else {
-        run_concurrently(state, session, &op.root_fields, &ctx, &sources).await?
+        run_concurrently(state, &op.root_fields, &ctx, &mut set_cookies).await?
     };
 
     let mut body =
@@ -213,7 +257,10 @@ pub async fn execute(
         write!(body, "{}:", Json::String(alias.clone())).expect("write to string");
         match rf {
             RootField::Static(v) => body.push_str(&v.to_string()),
-            RootField::Database(_) | RootField::Mutation(_) | RootField::Action(_) => {
+            RootField::Database(_)
+            | RootField::Mutation(_)
+            | RootField::Action(_)
+            | RootField::Remote(_) => {
                 body.push_str(results[i].as_deref().unwrap_or("null"));
             }
         }
@@ -230,15 +277,25 @@ fn source_executor<'a>(state: &'a AppState, source: &str) -> Result<&'a dyn Sour
         .ok_or_else(|| Error::unexpected(format!("source \"{source}\" is not available")))
 }
 
-/// Query root fields: database fields grouped into one round trip per source, and actions,
-/// all concurrently. Query actions' `Set-Cookie` headers are discarded.
+/// What executing root fields needs besides the state.
+struct Context<'a> {
+    session: &'a Session,
+    actions: hge_actions::RequestContext<'a>,
+    sources: StateSources<'a>,
+    remote: RequestContext<'a>,
+    settings: RemoteSettings,
+}
+
+/// Query root fields: database fields grouped into one round trip per source, actions and
+/// remote schema fields, all concurrently. Errors are reported in root field order. Query
+/// actions' `Set-Cookie` headers are discarded (remote schemas' are kept, like V2).
 async fn run_concurrently(
     state: &AppState,
-    session: &Session,
     root_fields: &[(String, RootField)],
-    ctx: &hge_actions::RequestContext<'_>,
-    sources: &StateSources<'_>,
-) -> Result<Vec<Option<String>>, Error> {
+    ctx: &Context<'_>,
+    set_cookies: &mut Vec<String>,
+) -> Result<Vec<Option<String>>, Failure> {
+    let session = ctx.session;
     let mut by_source: HashMap<&str, Vec<(usize, &QueryRoot)>> = HashMap::new();
     for (i, (_, rf)) in root_fields.iter().enumerate() {
         if let RootField::Database(db) = rf {
@@ -250,17 +307,38 @@ async fn run_concurrently(
     }
     let mut results: Vec<Option<String>> = vec![None; root_fields.len()];
     let futures = by_source.into_iter().map(|(source, fields)| async move {
-        let executor = source_executor(state, source)?;
-        let roots: Vec<&QueryRoot> = fields.iter().map(|(_, q)| *q).collect();
-        let out = executor.execute_query(&roots, session).await?;
-        Ok::<_, Error>(
-            fields
-                .into_iter()
-                .map(|(i, _)| i)
-                .zip(out)
-                .collect::<Vec<_>>(),
-        )
+        // A source's error is reported at its first field.
+        let first = fields.first().map_or(0, |(i, _)| *i);
+        let run = async {
+            let executor = source_executor(state, source)?;
+            let roots: Vec<&QueryRoot> = fields.iter().map(|(_, q)| *q).collect();
+            executor.execute_query(&roots, session).await
+        };
+        match run.await {
+            Ok(out) => Ok(fields.iter().map(|(i, _)| *i).zip(out).collect::<Vec<_>>()),
+            Err(e) => Err((first, e)),
+        }
     });
+    let remote_futures = root_fields
+        .iter()
+        .enumerate()
+        .filter_map(|(i, (_, rf))| match rf {
+            RootField::Remote(r) => Some((i, r)),
+            _ => None,
+        })
+        .map(|(i, r)| async move {
+            let mut cookies = vec![];
+            let out = crate::remote::execute(
+                &state.prepared.remotes,
+                r,
+                &ctx.remote,
+                ctx.settings,
+                false,
+                &mut cookies,
+            )
+            .await;
+            (i, out, cookies)
+        });
     let action_futures = root_fields
         .iter()
         .enumerate()
@@ -269,23 +347,50 @@ async fn run_concurrently(
             _ => None,
         })
         .map(|(i, a)| async move {
-            hge_actions::execute(&state.action_registry, a, ctx, sources)
-                .await
-                .map(|r| (i, r.value))
+            let out =
+                hge_actions::execute(&state.action_registry, a, &ctx.actions, &ctx.sources).await;
+            (i, out)
         });
-    let (db_results, action_results) = futures::future::join(
+    let (db_results, remote_results, action_results) = futures::future::join3(
         futures::future::join_all(futures),
+        futures::future::join_all(remote_futures),
         futures::future::join_all(action_futures),
     )
     .await;
+    // The first failing root field, in query order, decides the error.
+    let mut first_error: Option<(usize, Failure)> = None;
+    let mut fail = |i: usize, f: Failure| {
+        if first_error.as_ref().is_none_or(|(j, _)| i < *j) {
+            first_error = Some((i, f));
+        }
+    };
     for res in db_results {
-        for (i, json) in res? {
-            results[i] = Some(json);
+        match res {
+            Ok(rows) => {
+                for (i, json) in rows {
+                    results[i] = Some(json);
+                }
+            }
+            Err((i, e)) => fail(i, e.into()),
         }
     }
-    for res in action_results {
-        let (i, value) = res?;
-        results[i] = Some(value.to_string());
+    for (i, res, cookies) in remote_results {
+        match res {
+            Ok(json) => {
+                results[i] = Some(json);
+                set_cookies.extend(cookies);
+            }
+            Err(e) => fail(i, e.into()),
+        }
+    }
+    for (i, res) in action_results {
+        match res {
+            Ok(r) => results[i] = Some(r.value.to_string()),
+            Err(e) => fail(i, e.into()),
+        }
+    }
+    if let Some((_, f)) = first_error {
+        return Err(f);
     }
     Ok(results)
 }
@@ -293,15 +398,15 @@ async fn run_concurrently(
 /// Run the root fields of a mutation operation in order; the first error stops the
 /// operation (spec 03 §1). Like V2, when every root field is a database mutation on the same
 /// source they share one transaction (a failure rolls back all of them); otherwise each runs
-/// on its own. Action handlers' `Set-Cookie` headers are collected into `set_cookies`.
+/// on its own. Action handlers' and remote schemas' `Set-Cookie` headers are collected into
+/// `set_cookies`.
 async fn run_mutations(
     state: &AppState,
-    session: &Session,
     op: &Operation,
-    ctx: &hge_actions::RequestContext<'_>,
-    sources: &StateSources<'_>,
+    ctx: &Context<'_>,
     set_cookies: &mut Vec<String>,
-) -> Result<Vec<Option<String>>, Error> {
+) -> Result<Vec<Option<String>>, Failure> {
+    let session = ctx.session;
     let mut results: Vec<Option<String>> = vec![None; op.root_fields.len()];
     let mutations: Vec<(&str, &Mutation)> = op
         .root_fields
@@ -336,10 +441,22 @@ async fn run_mutations(
                 .await?
                 .pop(),
             RootField::Action(a) => {
-                let r = hge_actions::execute(&state.action_registry, a, ctx, sources).await?;
+                let r = hge_actions::execute(&state.action_registry, a, &ctx.actions, &ctx.sources)
+                    .await?;
                 set_cookies.extend(r.set_cookies);
                 Some(r.value.to_string())
             }
+            RootField::Remote(r) => Some(
+                crate::remote::execute(
+                    &state.prepared.remotes,
+                    r,
+                    &ctx.remote,
+                    ctx.settings,
+                    true,
+                    set_cookies,
+                )
+                .await?,
+            ),
         };
     }
     Ok(results)

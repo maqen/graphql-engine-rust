@@ -66,6 +66,7 @@ pub fn lower(rs: &RoleSchema, op: &NormalizedOperation<'_>) -> Result<Operation,
                         query: QueryRoot::Aggregate(lw.aggregate_select(table, field)?),
                     }))
                 }
+                FieldKind::Remote(r) => crate::remote::lower_root(op, field, r)?,
                 other => {
                     return Err(Error::unexpected(format!(
                         "unexpected root field kind {other:?}"

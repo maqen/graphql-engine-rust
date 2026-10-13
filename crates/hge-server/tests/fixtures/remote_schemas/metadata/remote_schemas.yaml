@@ -1,0 +1,33 @@
+- name: my-remote
+  definition:
+    url: "{{REMOTE_URL}}/graphql"
+    timeout_seconds: 5
+    forward_client_headers: true
+    headers:
+      - name: X-Configured
+        value: from-config
+      - name: X-From-Env
+        value_from_env: REMOTE_HEADER
+  comment: the main test remote
+- name: custom
+  definition:
+    url_from_env: REMOTE_GRAPHQL_URL
+    customization:
+      root_fields_namespace: r2
+      type_names:
+        prefix: R2_
+        mapping:
+          Droid: Android
+      field_names:
+        - parent_type: Query
+          mapping:
+            hello: hi
+        - parent_type: User
+          prefix: u_
+- name: conflicting
+  definition:
+    url: "{{REMOTE_URL}}/graphql"
+- name: unreachable
+  definition:
+    url: http://127.0.0.1:1/graphql
+    timeout_seconds: 1
