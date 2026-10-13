@@ -515,6 +515,10 @@ fn for_each_value(exp: &mut BoolExp, f: &mut impl FnMut(&mut Value)) {
             }
         }
         BoolExp::Not(e) | BoolExp::Rooted(e) => for_each_value(e, f),
+        BoolExp::Redacted { condition, exp } => {
+            for_each_value(condition, f);
+            for_each_value(exp, f);
+        }
         BoolExp::Relationship { exp, .. } | BoolExp::Exists { exp, .. } => for_each_value(exp, f),
         BoolExp::CompareColumns { .. } => {}
         BoolExp::Compare { op, .. } => match op {
