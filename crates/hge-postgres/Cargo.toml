@@ -1,0 +1,30 @@
+[package]
+name = "hge-postgres"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hge-core.workspace = true
+hge-ir.workspace = true
+hge-metadata.workspace = true
+indexmap.workspace = true
+async-trait.workspace = true
+deadpool-postgres.workspace = true
+futures.workspace = true
+postgres-types.workspace = true
+rustls.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-postgres.workspace = true
+tokio-postgres-rustls.workspace = true
+tracing.workspace = true
+webpki-roots.workspace = true
+bytes.workspace = true
+
+[lints]
+workspace = true

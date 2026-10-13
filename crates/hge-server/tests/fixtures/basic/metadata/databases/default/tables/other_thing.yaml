@@ -1,0 +1,9 @@
+table:
+  name: thing
+  schema: other
+configuration:
+  custom_root_fields:
+    select: things
+  column_config:
+    label:
+      custom_name: displayLabel

@@ -1,0 +1,154 @@
+cases:
+  - description: healthz
+    url: /healthz
+    response: OK
+
+  - description: select with nested object and array relationships
+    query:
+      query: |
+        { author(order_by: {id: asc}) {
+            id name tags mood createdAt
+            articles(where: {is_published: {_eq: true}}, order_by: {id: asc}) { title author { name } }
+        } }
+    response:
+      data:
+        author:
+          - id: 1
+            name: Alice
+            tags: [a, b]
+            mood: happy
+            createdAt: "2020-01-01T00:00:00+00:00"
+            articles:
+              - { title: Rust in production, author: { name: Alice } }
+          - id: 2
+            name: Bob
+            tags: []
+            mood: sad
+            createdAt: "2020-01-01T00:00:00+00:00"
+            articles:
+              - { title: Go concurrency, author: { name: Bob } }
+              - { title: Lima travel, author: { name: Bob } }
+          - id: 3
+            name: Carol
+            tags: null
+            mood: null
+            createdAt: "2020-01-01T00:00:00+00:00"
+            articles: []
+
+  - description: numbers are JSON numbers by default
+    query:
+      query: "{ author(where: {id: {_eq: 1}}) { rating big } }"
+    response:
+      data:
+        author: [{ rating: 4.5, big: 9223372036854775807 }]
+
+  - description: by_pk, custom root field, custom column name, __typename
+    query:
+      query: |
+        { article_by_pk(id: 4) { title content }
+          missing: article_by_pk(id: 99) { id }
+          things(order_by: {code: asc}) { code displayLabel __typename }
+          __typename }
+    response:
+      data:
+        article_by_pk: { title: Lima travel, content: "it's \"quoted\"" }
+        missing: null
+        things:
+          - { code: x, displayLabel: Ex, __typename: other_thing }
+          - { code: y, displayLabel: null, __typename: other_thing }
+        __typename: query_root
+
+  - description: limit, offset, order_by desc, variables, fragments
+    query:
+      query: |
+        query Q($names: [String!]) {
+          author(where: {name: {_in: $names}}, order_by: {name: desc}, limit: 1, offset: 1) { ...F }
+        }
+        fragment F on author { id name }
+      variables: { names: [Alice, Bob, Carol] }
+    response:
+      data:
+        author: [{ id: 2, name: Bob }]
+
+  - description: boolean expressions over relationships, _or, _not, _ilike
+    query:
+      query: |
+        { author(where: {_or: [{id: {_eq: 3}}, {articles: {title: {_ilike: "%lima%"}}}]}, order_by: {id: asc}) { id }
+          notAlice: author(where: {_not: {name: {_eq: "Alice"}}}, order_by: {id: asc}) { id }
+          withNull: author(where: {rating: {_is_null: true}}) { id } }
+    response:
+      data:
+        author: [{ id: 2 }, { id: 3 }]
+        notAlice: [{ id: 2 }, { id: 3 }]
+        withNull: [{ id: 3 }]
+
+  - description: jsonb operators and json path argument
+    query:
+      query: |
+        { author(where: {info: {_contains: {city: "Oslo"}}}) { id info(path: "langs[0]") }
+          hasKey: author(where: {info: {_has_key: "langs"}}) { id } }
+    response:
+      data:
+        author: [{ id: 1, info: rust }]
+        hasKey: [{ id: 1 }]
+
+  - description: order by object relationship column
+    query:
+      query: "{ article(order_by: [{author: {name: desc}}, {id: asc}], limit: 2) { id } }"
+    response:
+      data:
+        article: [{ id: 3 }, { id: 4 }]
+
+  - description: distinct_on must match the leading order_by
+    query:
+      query: "{ article(distinct_on: [author_id], order_by: {id: asc}) { id } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.article.args.distinct_on", code: validation-failed }
+          message: '"distinct_on" columns must match initial "order_by" columns'
+
+  - description: distinct_on
+    query:
+      query: "{ article(distinct_on: [author_id], order_by: [{author_id: asc}, {id: desc}]) { id } }"
+    response:
+      data:
+        article: [{ id: 2 }, { id: 4 }]
+
+  - description: unknown field
+    query:
+      query: "{ author { nope } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.selectionSet.nope", code: validation-failed }
+          message: "field 'nope' not found in type: 'author'"
+
+  - description: null in a comparison is rejected
+    query:
+      query: "{ author(where: {name: {_eq: null}}) { id } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.args.where.name._eq", code: validation-failed }
+          message: "unexpected null value for type 'String'"
+
+  - description: parse error
+    query:
+      query: "{ author { id "
+    response:
+      errors:
+        - extensions: { path: "$.query", code: validation-failed }
+          message: not a valid graphql query
+
+  - description: introspection root
+    query:
+      query: "{ __schema { queryType { name } mutationType { name } } __type(name: \"author\") { name kind } }"
+    response:
+      data:
+        __schema: { queryType: { name: query_root }, mutationType: null }
+        __type: { name: author, kind: OBJECT }
+
+  - description: aliases longer than Postgres identifiers stay distinct
+    query:
+      query: "{ author(where: {id: {_eq: 1}}) { aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: id aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab: name } }"
+    response:
+      data:
+        author: [{ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: 1, aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab: Alice }]

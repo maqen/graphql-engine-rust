@@ -1,0 +1,38 @@
+[package]
+name = "hge-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hge-core.workspace = true
+hge-ir.workspace = true
+hge-schema.workspace = true
+hge-metadata.workspace = true
+hge-postgres.workspace = true
+hge-auth.workspace = true
+anyhow.workspace = true
+arc-swap.workspace = true
+axum.workspace = true
+bytes.workspace = true
+http.workspace = true
+indexmap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+serde_yaml.workspace = true
+tokio-postgres.workspace = true
+tower = { workspace = true, features = ["util"] }

@@ -1,0 +1,62 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/maqen/graphql-engine-rust"
+rust-version = "1.88"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[workspace.dependencies]
+# internal crates
+hge-core = { path = "crates/hge-core" }
+hge-metadata = { path = "crates/hge-metadata" }
+hge-ir = { path = "crates/hge-ir" }
+hge-schema = { path = "crates/hge-schema" }
+hge-postgres = { path = "crates/hge-postgres" }
+hge-auth = { path = "crates/hge-auth" }
+hge-server = { path = "crates/hge-server" }
+
+# external crates
+anyhow = "1"
+arc-swap = "1"
+async-graphql-parser = "7"
+async-graphql-value = "7"
+async-trait = "0.1"
+axum = { version = "0.8", features = ["http1", "http2", "json", "tokio", "ws"] }
+bytes = "1"
+clap = { version = "4", features = ["derive", "env"] }
+deadpool-postgres = "0.14"
+futures = "0.3"
+http = "1"
+indexmap = { version = "2", features = ["serde"] }
+postgres-types = "0.2"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+serde_yaml = "0.9"
+sha2 = "0.10"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "net", "time", "sync"] }
+tokio-postgres = "0.7"
+tokio-postgres-rustls = "0.14"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "compression-gzip", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+webpki-roots = "1"
+subtle = "2"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
