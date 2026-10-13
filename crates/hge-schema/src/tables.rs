@@ -4,7 +4,10 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use hge_core::{ColumnType, QualifiedTable, RoleName, SourceCatalog, TableCatalog};
+use hge_core::{
+    ColumnType, QualifiedTable, RoleName, SourceCatalog, TableCatalog, TableMutability,
+    UniqueConstraint,
+};
 use hge_ir::TablePermissions;
 use hge_metadata::{
     ArrayRelUsing, ManualRelConfig, ObjectFkOn, ObjectRelUsing, Source, TableEntry,
@@ -19,6 +22,8 @@ pub struct ColumnInfo {
     pub ty: ColumnType,
     pub nullable: bool,
     pub description: Option<String>,
+    /// Can be inserted / updated (not generated, not `GENERATED ALWAYS AS IDENTITY`).
+    pub mutable: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,6 +67,9 @@ pub struct TableInfo {
     /// Columns in table order, keyed by database name.
     pub columns: IndexMap<String, ColumnInfo>,
     pub primary_key: Option<Vec<String>>,
+    /// Primary key and unique indexes (`on_conflict` targets).
+    pub constraints: Vec<UniqueConstraint>,
+    pub mutability: TableMutability,
     pub object_relationships: Vec<Arc<RelationshipInfo>>,
     pub array_relationships: Vec<Arc<RelationshipInfo>>,
     pub root_fields: RootFieldNames,
@@ -202,6 +210,7 @@ fn resolve_table(
                 ty: col.ty.clone(),
                 nullable: col.nullable,
                 description,
+                mutable: col.is_mutable(),
             },
         );
     }
@@ -294,6 +303,8 @@ fn resolve_table(
         description: config.comment.clone().or_else(|| cat.description.clone()),
         columns,
         primary_key: cat.primary_key.clone(),
+        constraints: cat.constraints.clone(),
+        mutability: cat.mutability,
         object_relationships,
         array_relationships,
         root_fields,
@@ -401,6 +412,15 @@ const TYPE_SUFFIXES: &[&str] = &[
     "_on_conflict",
     "_constraint",
     "_update_column",
+    "_obj_rel_insert_input",
+    "_arr_rel_insert_input",
+    "_inc_input",
+    "_append_input",
+    "_prepend_input",
+    "_delete_key_input",
+    "_delete_elem_input",
+    "_delete_at_path_input",
+    "_updates",
     "_stream_cursor_input",
 ];
 

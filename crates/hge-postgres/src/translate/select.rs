@@ -24,7 +24,7 @@ pub struct Translator<'s> {
 const MAX_IDENTIFIER_LEN: usize = 63;
 
 /// `json_build_object` takes at most 100 arguments.
-const MAX_JSON_BUILD_PAIRS: usize = 50;
+pub(crate) const MAX_JSON_BUILD_PAIRS: usize = 50;
 
 /// How a nested select is joined to its parent row: `(parent alias, [(parent col, child col)])`.
 pub type Join<'a> = Option<(&'a str, &'a [(String, String)])>;
@@ -50,7 +50,7 @@ impl<'s> Translator<'s> {
         self.next_alias = n;
 
         self.b.push("SELECT coalesce(json_agg(");
-        self.row_json(sel, &base)?;
+        self.row_json(&sel.fields, &base)?;
         let order = &sel.args.order_by;
         if !order.is_empty() {
             self.b.push(" ORDER BY ");
@@ -83,7 +83,7 @@ impl<'s> Translator<'s> {
         self.next_alias = n;
 
         self.b.push("SELECT ");
-        self.row_json(sel, &base)?;
+        self.row_json(&sel.fields, &base)?;
         self.b.push(" FROM (");
         self.base(sel, &inner, join, Some(1))?;
         self.b.push(") AS ").ident(&base);
@@ -220,20 +220,20 @@ impl<'s> Translator<'s> {
     /// The JSON object for one row of `alias`. `row_to_json` keeps key order, has no
     /// argument limit, and produces compact output. Postgres truncates identifiers to 63
     /// bytes, so objects with longer keys use `json_build_object` with literal keys.
-    fn row_json(&mut self, sel: &Select, alias: &str) -> Result<(), Error> {
-        if sel
-            .fields
-            .iter()
-            .any(|(key, _)| key.len() > MAX_IDENTIFIER_LEN)
-        {
-            if sel.fields.len() > MAX_JSON_BUILD_PAIRS {
+    pub(crate) fn row_json(
+        &mut self,
+        fields: &[(String, Field)],
+        alias: &str,
+    ) -> Result<(), Error> {
+        if fields.iter().any(|(key, _)| key.len() > MAX_IDENTIFIER_LEN) {
+            if fields.len() > MAX_JSON_BUILD_PAIRS {
                 return Err(Error::validation(format!(
                     "a selection with more than {MAX_JSON_BUILD_PAIRS} fields cannot use \
                      aliases longer than {MAX_IDENTIFIER_LEN} bytes"
                 )));
             }
             self.b.push("json_build_object(");
-            for (i, (key, field)) in sel.fields.iter().enumerate() {
+            for (i, (key, field)) in fields.iter().enumerate() {
                 if i > 0 {
                     self.b.push(", ");
                 }
@@ -249,7 +249,7 @@ impl<'s> Translator<'s> {
             .push("row_to_json((SELECT ")
             .ident(&e)
             .push(" FROM (SELECT ");
-        for (i, (key, field)) in sel.fields.iter().enumerate() {
+        for (i, (key, field)) in fields.iter().enumerate() {
             if i > 0 {
                 self.b.push(", ");
             }

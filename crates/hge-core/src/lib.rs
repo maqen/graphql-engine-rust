@@ -10,7 +10,8 @@ pub mod names;
 pub mod session;
 
 pub use catalog::{
-    ColumnInfo, ColumnType, ForeignKey, SourceCatalog, TableCatalog, TableKind, TypeKind,
+    ColumnInfo, ColumnType, ForeignKey, SourceCatalog, TableCatalog, TableKind, TableMutability,
+    TypeKind, UniqueConstraint,
 };
 pub use error::{Code, Error, Result};
 pub use names::QualifiedTable;

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use hge_core::{Code, Error};
 use hge_metadata::{Metadata, PgConnectionInfo, Source, SourceConfiguration, UrlConfig, load_dir};
-use hge_postgres::{PgSource, PoolConfig};
+use hge_postgres::{IsolationLevel, PgSource, PoolConfig};
 use hge_schema::{SchemaOptions, resolve_tables};
 use serde_json::json;
 use tracing::{info, warn};
@@ -141,6 +141,11 @@ fn pool_config(info: &PgConnectionInfo, config: &ServerConfig) -> PoolConfig {
         use_prepared_statements: info
             .use_prepared_statements
             .unwrap_or(config.use_prepared_statements),
+        isolation_level: info
+            .isolation_level
+            .as_deref()
+            .and_then(IsolationLevel::from_metadata)
+            .unwrap_or_default(),
     }
 }
 

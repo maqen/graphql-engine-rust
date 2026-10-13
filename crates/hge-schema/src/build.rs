@@ -31,6 +31,7 @@ pub struct RoleSchema {
     pub schema: Schema,
     pub tables: Arc<Tables>,
     pub access: HashMap<(Arc<str>, QualifiedTable), SelectAccess>,
+    pub mutation_access: HashMap<(Arc<str>, QualifiedTable), crate::mutation::MutationAccess>,
     pub options: SchemaOptions,
 }
 
@@ -80,6 +81,21 @@ pub fn build_role_schema(
     }
     // ------------------------------------------------------------------------------------
 
+    let mutation_access = crate::mutation::access::access_map(tables, role);
+    let mut mutation_root = ObjectDef::new(
+        crate::mutation::MUTATION_ROOT,
+        Some("mutation root".to_owned()),
+    );
+    for table in &tables.ordered {
+        b.add_table_mutation_root_fields(table, &mutation_access, &mut mutation_root);
+    }
+    if !mutation_root.fields.is_empty() {
+        // V2 lists fields sorted by name.
+        mutation_root.fields.sort_keys();
+        b.schema.mutation_type = Some(crate::mutation::MUTATION_ROOT.to_owned());
+        b.schema.add(TypeDef::Object(mutation_root));
+    }
+
     if query_root.fields.is_empty() {
         query_root = query_root.field(FieldDef::new(
             "no_queries_available",
@@ -95,19 +111,20 @@ pub fn build_role_schema(
         schema: b.schema,
         tables: tables.clone(),
         access,
+        mutation_access,
         options: options.clone(),
     }
 }
 
-struct Builder<'a> {
-    schema: Schema,
-    tables: &'a Tables,
-    access: &'a HashMap<(Arc<str>, QualifiedTable), SelectAccess>,
-    scalars: BTreeSet<String>,
+pub(crate) struct Builder<'a> {
+    pub(crate) schema: Schema,
+    pub(crate) tables: &'a Tables,
+    pub(crate) access: &'a HashMap<(Arc<str>, QualifiedTable), SelectAccess>,
+    pub(crate) scalars: BTreeSet<String>,
 }
 
 impl Builder<'_> {
-    fn access(&self, table: &TableInfo) -> Option<&SelectAccess> {
+    pub(crate) fn access(&self, table: &TableInfo) -> Option<&SelectAccess> {
         self.access.get(&(table.source.clone(), table.name.clone()))
     }
 
@@ -202,12 +219,12 @@ impl Builder<'_> {
             )
     }
 
-    fn note_scalar(&mut self, ty: &ColumnType) {
+    pub(crate) fn note_scalar(&mut self, ty: &ColumnType) {
         self.scalars.insert(scalars::scalar_name(&ty.element()));
     }
 
     /// Object, bool_exp, order_by and select_column types of a table (once per table).
-    fn ensure_table_types(&mut self, table: &Arc<TableInfo>) {
+    pub(crate) fn ensure_table_types(&mut self, table: &Arc<TableInfo>) {
         if self.schema.types.contains_key(table.type_name()) {
             return;
         }

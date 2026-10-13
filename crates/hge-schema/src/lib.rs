@@ -8,6 +8,7 @@ pub mod build;
 pub mod introspection;
 pub mod lower;
 pub mod model;
+pub mod mutation;
 pub mod normalize;
 pub mod permissions;
 pub mod scalars;

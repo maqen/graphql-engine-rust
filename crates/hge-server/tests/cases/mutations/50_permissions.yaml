@@ -1,0 +1,225 @@
+config:
+  fixture: mutation_permissions
+  admin_internal_errors: false
+
+cases:
+  - description: an insert preset fills the owner from the session
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: 'mutation { insert_author_one(object: {name: "Bo", rating: 5}) { id name owner_id rating } }'
+    response:
+      data:
+        insert_author_one: { id: 4, name: Bo, owner_id: 2, rating: 5 }
+
+  - description: a preset column cannot be given
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: 'mutation { insert_author(objects: [{name: "Bx", owner_id: 1}]) { affected_rows } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_author.args.objects[0].owner_id", code: validation-failed }
+          message: "field 'owner_id' not found in type: 'author_insert_input'"
+
+  - description: a failing insert check rolls back
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: 'mutation { insert_author(objects: [{name: "B1", rating: 1}, {name: "B2", rating: 9}]) { affected_rows } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_author.args.objects", code: permission-error }
+          message: check constraint of an insert/update permission has failed
+
+  - description: an insert check through a relationship
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: 'mutation { insert_article(objects: [{title: "mine", author_id: 2}, {title: "theirs", author_id: 1}]) { affected_rows } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_article.args.objects", code: permission-error }
+          message: check constraint of an insert/update permission has failed
+
+  - description: a nested insert applies each table's permission
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: 'mutation { insert_author(objects: [{name: "Bel", articles: {data: [{title: "Bel 1"}]}}]) { affected_rows returning { name owner_id articles { title } } } }'
+    response:
+      data:
+        insert_author:
+          affected_rows: 2
+          returning: [{ name: Bel, owner_id: 2, articles: [{ title: Bel 1 }] }]
+
+  - description: an upsert does not update rows outside the update filter
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: 'mutation { insert_author(objects: [{name: "Alice", rating: 4}], on_conflict: {constraint: author_name_key, update_columns: [rating]}) { affected_rows } }'
+    response:
+      data:
+        insert_author: { affected_rows: 0 }
+
+  - description: an upsert of an own row applies the update preset
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: 'mutation { insert_author_one(object: {name: "Bob", rating: 4}, on_conflict: {constraint: author_name_key, update_columns: [rating]}) { id rating note } }'
+    response:
+      data:
+        insert_author_one: { id: 2, rating: 4, note: "2" }
+
+  - description: an update check failure rolls back
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: 'mutation { update_author(where: {}, _inc: {rating: 1}) { affected_rows } }'
+    response:
+      errors:
+        - extensions: { path: "$", code: permission-error }
+          message: check constraint of an insert/update permission has failed
+
+  - description: an update only reaches rows in the update filter
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: 'mutation { update_author(where: {rating: {_lt: 5}}, _inc: {rating: 1}) { affected_rows returning { id rating note } } }'
+    response:
+      data:
+        update_author:
+          affected_rows: 3
+          returning:
+            - { id: 3, rating: 4, note: "2" }
+            - { id: 7, rating: 1, note: "2" }
+            - { id: 2, rating: 5, note: "2" }
+
+  - description: rows outside the update filter are untouched
+    query:
+      query: "{ author(order_by: {id: asc}) { id rating } }"
+    response:
+      data:
+        author:
+          - { id: 1, rating: 1 }
+          - { id: 2, rating: 5 }
+          - { id: 3, rating: 4 }
+          - { id: 4, rating: 5 }
+          - { id: 7, rating: 1 }
+
+  - description: a column outside the update permission cannot be set
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: 'mutation { update_author(where: {}, _set: {name: "x"}) { affected_rows } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.update_author.args._set.name", code: validation-failed }
+          message: "field 'name' not found in type: 'author_set_input'"
+
+  - description: a delete only reaches rows in the delete filter
+    headers: { x-hasura-role: user, x-hasura-user-id: "2" }
+    query:
+      query: 'mutation { delete_author(where: {name: {_in: ["Alice", "Bea"]}}) { affected_rows returning { id } } missing: delete_author_by_pk(id: 1) { id } }'
+    response:
+      data:
+        delete_author: { affected_rows: 1, returning: [{ id: 3 }] }
+        missing: null
+
+  - description: a missing session variable
+    headers: { x-hasura-role: user }
+    query:
+      query: 'mutation { delete_author(where: {}) { affected_rows } }'
+    response:
+      errors:
+        - extensions: { path: "$", code: not-found }
+          message: 'missing session variable: "x-hasura-user-id"'
+
+  - description: a role without select permission gets affected_rows only
+    headers: { x-hasura-role: writer }
+    query:
+      query: 'mutation { insert_author(objects: [{name: "W", owner_id: 9}, {name: "Alice", owner_id: 9}], on_conflict: {constraint: author_name_key, update_columns: []}) { affected_rows } }'
+    response:
+      data:
+        insert_author: { affected_rows: 1 }
+
+  - description: the placeholder update column is not a column
+    headers: { x-hasura-role: writer }
+    query:
+      query: 'mutation { insert_author(objects: [{name: "W1", owner_id: 9}], on_conflict: {constraint: author_name_key, update_columns: [_PLACEHOLDER]}) { affected_rows } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_author.args.on_conflict", code: validation-failed }
+          message: erroneous column name
+
+  - description: a role without select permission has no insert_one
+    headers: { x-hasura-role: writer }
+    query:
+      query: 'mutation { insert_author_one(object: {name: "W2", owner_id: 9}) { id } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_author_one", code: validation-failed }
+          message: "field 'insert_author_one' not found in type: 'mutation_root'"
+
+  - description: a role without select permission cannot ask for returning
+    headers: { x-hasura-role: writer }
+    query:
+      query: 'mutation { insert_author(objects: [{name: "W3", owner_id: 9}]) { returning { id } } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_author.selectionSet.returning", code: validation-failed }
+          message: "field 'returning' not found in type: 'author_mutation_response'"
+
+  - description: a role without update permission has no update fields
+    headers: { x-hasura-role: writer }
+    query:
+      query: 'mutation { update_author(where: {}, _set: {name: "x"}) { affected_rows } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.update_author", code: validation-failed }
+          message: "field 'update_author' not found in type: 'mutation_root'"
+
+  - description: a role without select permission still deletes, filtering only with logical operators
+    headers: { x-hasura-role: pruner }
+    query:
+      query: 'mutation { delete_article(where: {_not: {_and: []}}) { affected_rows } }'
+    response:
+      data:
+        delete_article: { affected_rows: 0 }
+
+  - description: its bool_exp has no columns
+    headers: { x-hasura-role: pruner }
+    query:
+      query: 'mutation { delete_article(where: {title: {_eq: "x"}}) { affected_rows } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.delete_article.args.where.title", code: validation-failed }
+          message: "field 'title' not found in type: 'article_bool_exp'"
+
+  - description: its permission filter still applies
+    headers: { x-hasura-role: pruner }
+    query:
+      query: 'mutation { delete_article(where: {}) { affected_rows } }'
+    response:
+      data:
+        delete_article: { affected_rows: 3 }
+
+  - description: its schema has the delete field, a bare bool_exp and affected_rows only
+    headers: { x-hasura-role: pruner }
+    query:
+      query: '{ __schema { mutationType { fields { name } } } b: __type(name: "article_bool_exp") { description inputFields { name } } r: __type(name: "article_mutation_response") { fields { name } } }'
+    response:
+      data:
+        __schema: { mutationType: { fields: [{ name: delete_article }] } }
+        b:
+          description: Boolean expression to filter rows from the table "article". All fields are combined with a logical 'AND'.
+          inputFields: [{ name: _and }, { name: _not }, { name: _or }]
+        r: { fields: [{ name: affected_rows }] }
+
+  - description: an always-true update check replaces the insert check for upserted rows
+    headers: { x-hasura-role: editor }
+    query:
+      query: 'mutation { insert_author(objects: [{name: "Alice", rating: 9, owner_id: 5}], on_conflict: {constraint: author_name_key, update_columns: [rating]}) { affected_rows } }'
+    response:
+      data:
+        insert_author: { affected_rows: 1 }
+
+  - description: inserted rows still get the insert check
+    headers: { x-hasura-role: editor }
+    query:
+      query: 'mutation { insert_author(objects: [{name: "Ed", rating: 9, owner_id: 5}], on_conflict: {constraint: author_name_key, update_columns: [rating]}) { affected_rows } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_author.args.objects", code: permission-error }
+          message: check constraint of an insert/update permission has failed
+

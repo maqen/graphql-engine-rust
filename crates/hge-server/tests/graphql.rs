@@ -33,6 +33,8 @@ struct FileConfig {
     stringify_numeric_types: bool,
     v1_boolean_null_collapse: bool,
     preserve_401_errors: bool,
+    /// `HASURA_GRAPHQL_ADMIN_INTERNAL_ERRORS` (default `true`).
+    admin_internal_errors: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -83,7 +85,10 @@ fn case_files() -> Vec<PathBuf> {
         for entry in std::fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
             if path.is_dir() {
-                walk(&path, out);
+                // `cases/events/` has its own format and runner (`tests/events.rs`).
+                if !path.ends_with("events") {
+                    walk(&path, out);
+                }
             } else if path.extension().is_some_and(|e| e == "yaml") {
                 out.push(path);
             }
@@ -111,6 +116,9 @@ async fn run_file(path: &Path, database_url: &str) -> Vec<String> {
         stringify_numeric_types: c.stringify_numeric_types,
         v1_boolean_null_collapse: c.v1_boolean_null_collapse,
         preserve_401_errors: c.preserve_401_errors,
+        admin_internal_errors: c
+            .admin_internal_errors
+            .unwrap_or(ServerConfig::default().admin_internal_errors),
         ..ServerConfig::default()
     };
     let engine = hge_server::build_engine(config)

@@ -5,7 +5,7 @@ use std::fmt::Write;
 use std::sync::Arc;
 
 use hge_core::{Code, Error, Session};
-use hge_ir::{QueryRoot, RootField, SourceExecutor};
+use hge_ir::{Mutation, Operation, QueryRoot, RootField, SourceExecutor};
 use serde::Deserialize;
 use serde_json::{Map, Value as Json};
 
@@ -20,6 +20,9 @@ pub struct GraphQLRequest {
     pub variables: Option<Json>,
     #[serde(default)]
     pub operation_name: Option<String>,
+    /// Received over `GET`: mutations are refused (they would be open to CSRF).
+    #[serde(skip)]
+    pub read_only: bool,
 }
 
 /// A request body: one request or a batch.
@@ -84,6 +87,12 @@ async fn run(state: &AppState, session: &Session, req: GraphQLRequest) -> Result
     let rs = state.role_schema(&session.role);
     let doc = hge_schema::parse_query(query)?;
     let op = hge_schema::plan(&rs, &doc, req.operation_name.as_deref(), &variables)?;
+    if req.read_only && op.kind == hge_ir::OperationKind::Mutation {
+        return Err(Error::new(
+            Code::NotSupported,
+            "mutations are not supported over GET requests",
+        ));
+    }
 
     // Group database root fields by source; one round trip per source.
     let mut by_source: HashMap<&str, Vec<(usize, &QueryRoot)>> = HashMap::new();
@@ -96,6 +105,7 @@ async fn run(state: &AppState, session: &Session, req: GraphQLRequest) -> Result
         }
     }
     let mut results: Vec<Option<String>> = vec![None; op.root_fields.len()];
+    run_mutations(state, session, &op, &mut results).await?;
     let futures = by_source.into_iter().map(|(source, fields)| async move {
         let executor = state
             .sources
@@ -127,11 +137,57 @@ async fn run(state: &AppState, session: &Session, req: GraphQLRequest) -> Result
         write!(body, "{}:", Json::String(alias.clone())).expect("write to string");
         match rf {
             RootField::Static(v) => body.push_str(&v.to_string()),
-            RootField::Database(_) => {
+            RootField::Database(_) | RootField::Mutation(_) => {
                 body.push_str(results[i].as_deref().unwrap_or("null"));
             }
         }
     }
     body.push_str("}}");
     Ok(body)
+}
+
+/// Run the mutation root fields of `op` in order. Like V2, when every root field is a
+/// mutation on the same source they share one transaction (a failure rolls back all of them);
+/// otherwise each runs in its own transaction.
+async fn run_mutations(
+    state: &AppState,
+    session: &Session,
+    op: &Operation,
+    results: &mut [Option<String>],
+) -> Result<(), Error> {
+    let fields: Vec<(usize, &str, &Mutation)> = op
+        .root_fields
+        .iter()
+        .enumerate()
+        .filter_map(|(i, (_, rf))| match rf {
+            RootField::Mutation(m) => Some((i, &*m.source, &m.mutation)),
+            _ => None,
+        })
+        .collect();
+    let Some(&(_, first_source, _)) = fields.first() else {
+        return Ok(());
+    };
+    let executor = |source: &str| {
+        state
+            .sources
+            .get(source)
+            .ok_or_else(|| Error::unexpected(format!("source \"{source}\" is not available")))
+    };
+    let one_transaction = fields.len() == op.root_fields.len()
+        && fields.iter().all(|(_, source, _)| *source == first_source);
+    if one_transaction {
+        let mutations: Vec<&Mutation> = fields.iter().map(|(_, _, m)| *m).collect();
+        let out = executor(first_source)?
+            .execute_mutations(&mutations, session)
+            .await?;
+        for ((i, _, _), json) in fields.iter().zip(out) {
+            results[*i] = Some(json);
+        }
+    } else {
+        for (i, source, m) in fields {
+            let mut out = executor(source)?.execute_mutations(&[m], session).await?;
+            results[i] = out.pop();
+        }
+    }
+    Ok(())
 }

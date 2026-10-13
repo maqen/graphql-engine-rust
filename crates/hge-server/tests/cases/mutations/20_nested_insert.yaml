@@ -1,0 +1,134 @@
+config:
+  admin_internal_errors: false
+
+cases:
+  - description: author with array relationship articles; affected_rows counts every table
+    query:
+      query: |
+        mutation {
+          insert_author(objects: [
+            {name: "Ann", articles: {data: [{title: "A1"}, {title: "A2", is_published: true}]}},
+            {name: "Ben"}
+          ]) {
+            affected_rows
+            returning { id name articles(order_by: {id: asc}) { id title is_published author_id } }
+          }
+        }
+    response:
+      data:
+        insert_author:
+          affected_rows: 4
+          returning:
+            - id: 4
+              name: Ann
+              articles:
+                - { id: 5, title: A1, is_published: false, author_id: 4 }
+                - { id: 6, title: A2, is_published: true, author_id: 4 }
+            - { id: 5, name: Ben, articles: [] }
+
+  - description: article with object relationship author is inserted after its author
+    query:
+      query: |
+        mutation {
+          insert_article_one(object: {title: "Solo", author: {data: {name: "Cid"}}}) {
+            id title author { id name }
+          }
+        }
+    response:
+      data:
+        insert_article_one: { id: 7, title: Solo, author: { id: 6, name: Cid } }
+
+  - description: object relationship with an upsert that does nothing cannot provide the parent's columns
+    query:
+      query: |
+        mutation {
+          insert_article(objects: [{title: "x", author: {data: {name: "Alice"}, on_conflict: {constraint: author_name_key}}}]) {
+            affected_rows
+          }
+        }
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_article.args.objects[0].author", code: not-supported }
+          message: cannot proceed to insert object relation "author" since insert to table "author" affects zero rows
+
+  - description: object relationship with an upsert that updates provides the parent's columns
+    query:
+      query: |
+        mutation {
+          insert_article(objects: [{title: "y", author: {data: {name: "Alice", rating: 5}, on_conflict: {constraint: author_name_key, update_columns: [rating]}}}]) {
+            affected_rows
+            returning { title author { id name rating } }
+          }
+        }
+    response:
+      data:
+        insert_article:
+          affected_rows: 2
+          returning: [{ title: y, author: { id: 1, name: Alice, rating: 5.0 } }]
+
+  - description: a child column determined by the parent cannot be given
+    query:
+      query: |
+        mutation {
+          insert_author(objects: [{name: "Dee", articles: {data: [{title: "t", author_id: 1}]}}]) { affected_rows }
+        }
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_author.args.objects[0].articles.data[0]", code: validation-failed }
+          message: cannot insert "author_id" columns as their values are already being determined by parent insert
+
+  - description: an object relationship cannot be combined with its mapped column
+    query:
+      query: |
+        mutation {
+          insert_article(objects: [{title: "t", author_id: 1, author: {data: {name: "Eli"}}}]) { affected_rows }
+        }
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_article.args.objects[0].author", code: validation-failed }
+          message: cannot insert object relationship "author" as "author_id" column values are already determined
+
+  - description: a failing nested row rolls back the whole mutation
+    query:
+      query: |
+        mutation {
+          insert_author(objects: [{name: "Fio", articles: {data: [{title: "t", published_on: "bad"}]}}]) { affected_rows }
+        }
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_author.args.objects[0].articles.data", code: data-exception }
+          message: 'invalid input syntax for type date: "bad"'
+
+  - description: a parent row that conflicts cannot take array relationships
+    query:
+      query: |
+        mutation {
+          insert_author(objects: [{name: "Alice", articles: {data: [{title: "t"}]}}], on_conflict: {constraint: author_name_key}) {
+            affected_rows
+          }
+        }
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_author.args.objects[0]", code: not-supported }
+          message: cannot proceed to insert array relations since insert to table "author" affects zero rows
+
+  - description: a uniqueness violation inside an object relationship is reported at its data
+    query:
+      query: 'mutation { insert_article(objects: [{title: "t", author: {data: {name: "Alice"}}}]) { affected_rows } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_article.args.objects[0].author.data", code: constraint-violation }
+          message: Uniqueness violation. duplicate key value violates unique constraint "author_name_key"
+
+  - description: nothing from the failed mutations was kept
+    query:
+      query: '{ author(where: {name: {_in: ["Dee", "Eli", "Fio"]}}) { id } article(where: {title: {_in: ["x", "t"]}}) { id } }'
+    response:
+      data: { author: [], article: [] }
+
+  - description: an empty array relationship inserts nothing for it
+    query:
+      query: 'mutation { insert_author(objects: [{name: "Empty1", articles: {data: []}}]) { affected_rows returning { name articles { id } } } }'
+    response:
+      data:
+        insert_author: { affected_rows: 1, returning: [{ name: Empty1, articles: [] }] }

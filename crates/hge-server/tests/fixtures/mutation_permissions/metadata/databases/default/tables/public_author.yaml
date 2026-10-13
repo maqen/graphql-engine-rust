@@ -1,0 +1,64 @@
+table:
+  name: author
+  schema: public
+array_relationships:
+  - name: articles
+    using:
+      foreign_key_constraint_on:
+        column: author_id
+        table:
+          name: article
+          schema: public
+select_permissions:
+  - role: user
+    permission:
+      columns: [id, name, owner_id, rating, note]
+      filter:
+        owner_id:
+          _eq: X-Hasura-User-Id
+insert_permissions:
+  # Users own what they insert; ratings above 5 are refused.
+  - role: user
+    permission:
+      columns: [name, rating]
+      set:
+        owner_id: X-Hasura-User-Id
+      check:
+        rating:
+          _lte: 5
+  # Writers may insert but not read back.
+  - role: writer
+    permission:
+      columns: [name, owner_id]
+      check: {}
+  # Editors' upserts are checked by the (always true) update check, not the insert check.
+  - role: editor
+    permission:
+      columns: [name, rating, owner_id]
+      check:
+        rating:
+          _lte: 5
+update_permissions:
+  - role: editor
+    permission:
+      columns: [rating]
+      filter: {}
+      check: {}
+  # Users update their own rows; `note` records who did it.
+  - role: user
+    permission:
+      columns: [rating]
+      filter:
+        owner_id:
+          _eq: X-Hasura-User-Id
+      check:
+        rating:
+          _lte: 5
+      set:
+        note: X-Hasura-User-Id
+delete_permissions:
+  - role: user
+    permission:
+      filter:
+        owner_id:
+          _eq: X-Hasura-User-Id

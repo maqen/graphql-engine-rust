@@ -1,0 +1,78 @@
+config:
+  admin_internal_errors: false
+
+cases:
+  - description: root fields run in order in one transaction
+    query:
+      query: |
+        mutation {
+          a: insert_author_one(object: {name: "Tx1"}) { id }
+          b: update_author(where: {name: {_eq: "Tx1"}}, _set: {rating: 2}) { affected_rows returning { name rating } }
+          c: delete_author(where: {name: {_eq: "Tx1"}}) { affected_rows }
+        }
+    response:
+      data:
+        a: { id: 4 }
+        b: { affected_rows: 1, returning: [{ name: Tx1, rating: 2.0 }] }
+        c: { affected_rows: 1 }
+
+  - description: a failing root field rolls back the earlier ones (V2 transaction_revert_http)
+    query:
+      query: |
+        mutation {
+          a: insert_author_one(object: {name: "Tx2"}) { id }
+          b: insert_author_one(object: {name: "Alice"}) { id }
+        }
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.insert_author_one.args.object", code: constraint-violation }
+          message: Uniqueness violation. duplicate key value violates unique constraint "author_name_key"
+
+  - description: the rolled back insert is gone
+    query:
+      query: '{ author(where: {name: {_eq: "Tx2"}}) { id } }'
+    response:
+      data: { author: [] }
+
+  - description: errors of a later update are reported at $
+    query:
+      query: |
+        mutation {
+          x: insert_author(objects: [{name: "q"}]) { affected_rows }
+          y: update_author(where: {id: {_eq: 1}}, _set: {name: "q"}) { affected_rows }
+        }
+    response:
+      errors:
+        - extensions: { path: "$", code: constraint-violation }
+          message: Uniqueness violation. duplicate key value violates unique constraint "author_name_key"
+
+  - description: mutation __typename at the root
+    query:
+      query: "mutation { __typename }"
+    response:
+      data: { __typename: mutation_root }
+
+  - description: hasura.user is set for triggers and functions
+    query:
+      query: |
+        mutation {
+          insert_author_one(object: {name: "Who"}) { id }
+        }
+    response:
+      data: { insert_author_one: { id: 8 } }
+
+  - description: the trigger recorded the session variables
+    query:
+      query: '{ author(where: {name: {_eq: "Who"}}) { info } }'
+    response:
+      data: { author: [{ info: { x-hasura-role: admin } }] }
+
+  - description: batched requests run independently
+    query:
+      - query: 'mutation { insert_author_one(object: {name: "B1"}) { name } }'
+      - query: 'mutation { insert_author_one(object: {name: "B1"}) { name } }'
+    response:
+      - data: { insert_author_one: { name: B1 } }
+      - errors:
+          - extensions: { path: "$.selectionSet.insert_author_one.args.object", code: constraint-violation }
+            message: Uniqueness violation. duplicate key value violates unique constraint "author_name_key"

@@ -4,6 +4,7 @@
 //! with one text column per root field, each holding the field's final JSON.
 
 mod boolexp;
+pub mod mutation;
 mod select;
 
 use hge_core::{Error, Session};
