@@ -17,6 +17,10 @@ use hge_schema::{ResolvedActions, RoleSchema, SchemaOptions, Tables, build_role_
 use crate::config::ServerConfig;
 use crate::load::{self, Prepared};
 
+/// A known role and whether the request uses backend-only permissions; `None` for every
+/// unknown role.
+type SchemaKey = Option<(RoleName, bool)>;
+
 /// Everything derived from one metadata version.
 pub struct AppState {
     pub metadata: Arc<Metadata>,
@@ -36,11 +40,15 @@ pub struct AppState {
     pub scheduled_triggers: Arc<hge_events::scheduled::ScheduledTriggers>,
     /// Roles named anywhere in metadata; every other role sees the same empty schema.
     known_roles: HashSet<RoleName>,
+    /// Roles with a `backend_only` mutation permission: the only ones whose schema depends
+    /// on whether a request uses backend-only permissions.
+    backend_only_roles: HashSet<RoleName>,
     /// `graphql_schema_introspection.disabled_for_roles`
     introspection_disabled: HashSet<RoleName>,
     /// Built on first use. Keys are known roles (bounded by metadata) or `None` for all
     /// unknown roles, so request headers cannot grow this map.
-    schemas: RwLock<HashMap<Option<RoleName>, Arc<RoleSchema>>>,
+    /// Known roles are keyed with whether the request uses backend-only permissions.
+    schemas: RwLock<HashMap<SchemaKey, Arc<RoleSchema>>>,
 }
 
 fn known_roles(metadata: &Metadata) -> HashSet<RoleName> {
@@ -74,6 +82,20 @@ fn known_roles(metadata: &Metadata) -> HashSet<RoleName> {
     roles
 }
 
+fn backend_only_roles(tables: &Tables) -> HashSet<RoleName> {
+    tables
+        .ordered
+        .iter()
+        .flat_map(|t| t.permissions.iter())
+        .filter(|(_, p)| {
+            p.insert.as_ref().is_some_and(|i| i.backend_only)
+                || p.update.as_ref().is_some_and(|u| u.backend_only)
+                || p.delete.as_ref().is_some_and(|d| d.backend_only)
+        })
+        .map(|(role, _)| role.clone())
+        .collect()
+}
+
 fn introspection_disabled(metadata: &Metadata) -> HashSet<RoleName> {
     metadata
         .graphql_schema_introspection
@@ -101,8 +123,10 @@ impl AppState {
         let mut known_roles = known_roles(&metadata);
         // These need a schema of their own (without introspection), even with no permissions.
         known_roles.extend(introspection_disabled.iter().cloned());
+        let backend_only_roles = backend_only_roles(&prepared.tables);
         let state = AppState {
             known_roles,
+            backend_only_roles,
             introspection_disabled,
             metadata: Arc::new(metadata),
             resource_version,
@@ -122,19 +146,33 @@ impl AppState {
             schemas: RwLock::new(HashMap::new()),
         };
         // Build the admin schema eagerly so the first request is fast and errors surface early.
-        state.role_schema(&RoleName::admin());
+        state.role_schema(&RoleName::admin(), false);
         state
     }
 
     /// The schema for a role, built on first use and cached for this metadata version.
-    pub fn role_schema(&self, role: &RoleName) -> Arc<RoleSchema> {
-        let key = self.known_roles.contains(role).then(|| role.clone());
+    /// `backend_only`: the request uses backend-only permissions ([`Session::backend_only`]).
+    ///
+    /// [`Session::backend_only`]: hge_core::Session::backend_only
+    pub fn role_schema(&self, role: &RoleName, backend_only: bool) -> Arc<RoleSchema> {
+        let key = self.known_roles.contains(role).then(|| {
+            (
+                role.clone(),
+                backend_only && self.backend_only_roles.contains(role),
+            )
+        });
         if let Some(s) = self.schemas.read().expect("lock").get(&key) {
             return s.clone();
         }
         // Unknown roles have no permissions; build for a name no permission can use.
-        let build_as = key.clone().unwrap_or_else(|| RoleName::new(""));
-        let mut built = build_role_schema(&self.tables, &self.actions, &build_as, &self.options);
+        let (build_as, backend_only) = key.clone().unwrap_or_else(|| (RoleName::new(""), false));
+        let mut built = build_role_schema(
+            &self.tables,
+            &self.actions,
+            &build_as,
+            backend_only,
+            &self.options,
+        );
         built.schema.introspection_enabled = !self.introspection_disabled.contains(&build_as);
         let built = Arc::new(built);
         let mut schemas = self.schemas.write().expect("lock");

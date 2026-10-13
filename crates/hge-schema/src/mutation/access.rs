@@ -106,15 +106,37 @@ pub fn mutation_access(table: &TableInfo, role: &RoleName) -> MutationAccess {
     }
 }
 
-/// Mutation access of `role` on every table it can mutate.
+impl MutationAccess {
+    /// Without the `backend_only` permissions: what a request that does not use backend-only
+    /// permissions (`x-hasura-use-backend-only-permissions`) may do.
+    fn frontend(self) -> Self {
+        MutationAccess {
+            insert: self.insert.filter(|a| !a.backend_only),
+            update: self.update.filter(|a| !a.backend_only),
+            delete: self.delete.filter(|a| !a.backend_only),
+        }
+    }
+}
+
+/// Mutation access of `role` on every table it can mutate. `backend_only` requests also get
+/// the `backend_only` permissions; other requests only the rest.
 pub fn access_map(
     tables: &crate::tables::Tables,
     role: &RoleName,
+    backend_only: bool,
 ) -> std::collections::HashMap<(std::sync::Arc<str>, hge_core::QualifiedTable), MutationAccess> {
     tables
         .ordered
         .iter()
-        .map(|t| ((t.source.clone(), t.name.clone()), mutation_access(t, role)))
+        .map(|t| {
+            let access = mutation_access(t, role);
+            let access = if backend_only {
+                access
+            } else {
+                access.frontend()
+            };
+            ((t.source.clone(), t.name.clone()), access)
+        })
         .filter(|(_, a)| a.insert.is_some() || a.update.is_some() || a.delete.is_some())
         .collect()
 }

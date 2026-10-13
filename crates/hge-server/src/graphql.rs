@@ -134,7 +134,7 @@ pub fn plan(state: &AppState, session: &Session, req: GraphQLRequest) -> Result<
             return Err(Error::validation("variables must be an object").with_path("$.variables"));
         }
     };
-    let rs = state.role_schema(&session.role);
+    let rs = state.role_schema(&session.role, session.backend_only);
     let doc = hge_schema::parse_query(query)?;
     let op = hge_schema::plan(&rs, &doc, req.operation_name.as_deref(), &variables)?;
     if req.read_only && op.kind == hge_ir::OperationKind::Mutation {

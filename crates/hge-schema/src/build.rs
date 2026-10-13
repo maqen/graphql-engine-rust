@@ -46,14 +46,19 @@ pub const QUERY_ROOT: &str = "query_root";
 
 pub use crate::mutation::MUTATION_ROOT;
 
+/// The schema of `role`. `backend_only` builds it for requests that use backend-only
+/// permissions (`x-hasura-use-backend-only-permissions: true`, honoured with the admin secret
+/// or when no auth is configured), which also see mutations whose permission is
+/// `backend_only`.
 pub fn build_role_schema(
     tables: &Arc<Tables>,
     actions: &ResolvedActions,
     role: &RoleName,
+    backend_only: bool,
     options: &SchemaOptions,
 ) -> RoleSchema {
     let access = role_access(tables, role);
-    let mutation_access = crate::mutation::access::access_map(tables, role);
+    let mutation_access = crate::mutation::access::access_map(tables, role, backend_only);
     let schema = build_schema(tables, &access, &mutation_access, Some(actions), role);
     RoleSchema {
         role: role.clone(),
@@ -90,7 +95,7 @@ pub(crate) struct TableSchemaNames {
 pub(crate) fn table_schema_names(tables: &Tables) -> TableSchemaNames {
     let role = RoleName::admin();
     let access = role_access(tables, &role);
-    let mutation_access = crate::mutation::access::access_map(tables, &role);
+    let mutation_access = crate::mutation::access::access_map(tables, &role, true);
     let schema = build_schema(tables, &access, &mutation_access, None, &role);
     let fields = |root: &str| -> HashSet<String> {
         match schema.types.get(root) {
