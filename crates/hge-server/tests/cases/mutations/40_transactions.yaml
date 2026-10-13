@@ -13,7 +13,7 @@ cases:
     response:
       data:
         a: { id: 4 }
-        b: { affected_rows: 1, returning: [{ name: Tx1, rating: 2 }] }
+        b: { affected_rows: 1, returning: [{ name: Tx1, rating: 2.0 }] }
         c: { affected_rows: 1 }
 
   - description: a failing root field rolls back the earlier ones (V2 transaction_revert_http)

@@ -64,7 +64,7 @@ cases:
       data:
         insert_article:
           affected_rows: 2
-          returning: [{ title: y, author: { id: 1, name: Alice, rating: 5 } }]
+          returning: [{ title: y, author: { id: 1, name: Alice, rating: 5.0 } }]
 
   - description: a child column determined by the parent cannot be given
     query:
@@ -125,3 +125,10 @@ cases:
       query: '{ author(where: {name: {_in: ["Dee", "Eli", "Fio"]}}) { id } article(where: {title: {_in: ["x", "t"]}}) { id } }'
     response:
       data: { author: [], article: [] }
+
+  - description: an empty array relationship inserts nothing for it
+    query:
+      query: 'mutation { insert_author(objects: [{name: "Empty1", articles: {data: []}}]) { affected_rows returning { name articles { id } } } }'
+    response:
+      data:
+        insert_author: { affected_rows: 1, returning: [{ name: Empty1, articles: [] }] }

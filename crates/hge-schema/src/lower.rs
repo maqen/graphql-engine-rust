@@ -497,10 +497,21 @@ fn to_text(v: &Json, ty: &ColumnType, path: &str) -> Result<Option<String>, Erro
     }
     Ok(Some(match v {
         Json::String(s) => s.clone(),
+        Json::Number(n) if ty.name == "numeric" => numeric_text(n),
         Json::Number(n) => n.to_string(),
         Json::Bool(b) => b.to_string(),
         other => other.to_string(),
     }))
+}
+
+/// V2 reads JSON numbers as Haskell `Scientific`s and sends them to Postgres in its `show`
+/// form, which writes integers below 10^7 with a `.0`: `2` is stored in a `numeric` column as
+/// `2.0` (and read back as `2.0`).
+fn numeric_text(n: &serde_json::Number) -> String {
+    match n.as_i64() {
+        Some(i) if i.unsigned_abs() < 10_000_000 => format!("{i}.0"),
+        _ => n.to_string(),
+    }
 }
 
 /// Parse a V2 JSON path argument (`$.a.b[0]`, `a`, `['key']`, `objs[0]["k"]`).

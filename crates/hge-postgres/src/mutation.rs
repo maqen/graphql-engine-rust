@@ -149,6 +149,9 @@ impl Tx<'_> {
         into: &InsertInto,
         parent: &[(String, Value)],
     ) -> Result<(u64, Rows), Error> {
+        if into.objects.is_empty() {
+            return Ok((0, vec![]));
+        }
         if !into.is_nested() {
             let rows: Vec<Row<'_>> = into
                 .objects

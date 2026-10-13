@@ -20,6 +20,9 @@ pub struct GraphQLRequest {
     pub variables: Option<Json>,
     #[serde(default)]
     pub operation_name: Option<String>,
+    /// Received over `GET`: mutations are refused (they would be open to CSRF).
+    #[serde(skip)]
+    pub read_only: bool,
 }
 
 /// A request body: one request or a batch.
@@ -84,6 +87,12 @@ async fn run(state: &AppState, session: &Session, req: GraphQLRequest) -> Result
     let rs = state.role_schema(&session.role);
     let doc = hge_schema::parse_query(query)?;
     let op = hge_schema::plan(&rs, &doc, req.operation_name.as_deref(), &variables)?;
+    if req.read_only && op.kind == hge_ir::OperationKind::Mutation {
+        return Err(Error::new(
+            Code::NotSupported,
+            "mutations are not supported over GET requests",
+        ));
+    }
 
     // Group database root fields by source; one round trip per source.
     let mut by_source: HashMap<&str, Vec<(usize, &QueryRoot)>> = HashMap::new();

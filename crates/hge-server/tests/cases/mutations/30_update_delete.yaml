@@ -106,8 +106,8 @@ cases:
     response:
       data:
         update_author_many:
-          - { affected_rows: 1, returning: [{ id: 3, rating: 1 }] }
-          - { affected_rows: 1, returning: [{ id: 3, rating: 2 }] }
+          - { affected_rows: 1, returning: [{ id: 3, rating: 1.0 }] }
+          - { affected_rows: 1, returning: [{ id: 3, rating: 2.0 }] }
           - { affected_rows: 0, returning: [] }
 
   - description: returning with a relationship sees the update
@@ -167,3 +167,30 @@ cases:
       errors:
         - extensions: { path: "$.selectionSet.delete_author.args.where", code: validation-failed }
           message: missing required field 'where'
+
+  - description: an unprovided variable inside where is null, not "no condition"
+    query:
+      query: "mutation ($x: Int) { delete_article(where: {id: {_eq: $x}}) { affected_rows } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.delete_article.args.where.id._eq", code: validation-failed }
+          message: unexpected null value for type 'Int'
+
+  - description: a nullable variable with a default can fill the required where
+    query:
+      query: "mutation ($w: article_bool_exp = {id: {_eq: -1}}) { delete_article(where: $w) { affected_rows } }"
+    response:
+      data: { delete_article: { affected_rows: 0 } }
+
+  - description: an unprovided variable in _set sets null
+    query:
+      query: "mutation ($x: jsonb) { update_author_by_pk(pk_columns: {id: 3}, _set: {info: $x}) { id info } }"
+    response:
+      data: { update_author_by_pk: { id: 3, info: null } }
+
+  - description: mutations are refused over GET
+    url: "/v1/graphql?query=mutation%7Bdelete_article(where%3A%7B%7D)%7Baffected_rows%7D%7D"
+    response:
+      errors:
+        - extensions: { path: "$", code: not-supported }
+          message: mutations are not supported over GET requests

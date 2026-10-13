@@ -94,7 +94,7 @@ cases:
         insert_author:
           affected_rows: 2
           returning:
-            - { id: 1, name: Alice, rating: 9 }
+            - { id: 1, name: Alice, rating: 9.0 }
             - { id: 9, name: Gus, rating: null }
 
   - description: upsert with a where clause that does not match skips the update

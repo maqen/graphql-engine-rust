@@ -201,6 +201,7 @@ async fn graphql_get(
         query: params.query,
         variables,
         operation_name: params.operation_name,
+        read_only: true,
     };
     let resp = run(&engine, &auth.session, GraphQLBody::Single(req), rid).await;
     with_cookies(resp, auth.set_cookies)

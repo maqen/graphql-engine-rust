@@ -120,8 +120,9 @@ fn select_operation<'d>(
     }
 }
 
-/// Coerced variable values. `None` means "not provided and no default".
-type Variables = HashMap<String, (TypeRef, Option<Json>)>;
+/// Coerced variable values (`None`: not provided and no default), and whether the variable
+/// has a default value.
+type Variables = HashMap<String, (TypeRef, Option<Json>, bool)>;
 
 fn coerce_variables(
     schema: &Schema,
@@ -170,7 +171,7 @@ fn coerce_variables(
                 None => None,
             },
         };
-        out.insert(name, (ty, value));
+        out.insert(name, (ty, value, def.default_value.is_some()));
     }
     Ok(out)
 }
@@ -466,15 +467,25 @@ impl<'s, 'd> Context<'s, 'd> {
     fn resolve(&self, value: &GqlValue, ty: &TypeRef, path: &str) -> Result<Option<Json>, Error> {
         match value {
             GqlValue::Variable(name) => {
-                let (var_ty, var_value) = self.variables.get(name.as_str()).ok_or_else(|| {
-                    Error::validation(format!("unbound variable '{name}'"))
-                        .with_path(path.to_owned())
-                })?;
-                if !variable_usage_allowed(var_ty, ty) {
+                let (var_ty, var_value, has_default) =
+                    self.variables.get(name.as_str()).ok_or_else(|| {
+                        Error::validation(format!("unbound variable '{name}'"))
+                            .with_path(path.to_owned())
+                    })?;
+                // A nullable variable with a default may be used in a non-null position
+                // (GraphQL spec 5.8.5).
+                let usage_ty = match ty {
+                    TypeRef::NonNull(inner) if *has_default && !var_ty.is_non_null() => inner,
+                    _ => ty,
+                };
+                if !variable_usage_allowed(var_ty, usage_ty) {
                     return Err(Error::validation(format!(
                         "variable '{name}' is declared as '{var_ty}', but used where '{ty}' is expected"
                     ))
                     .with_path(path.to_owned()));
+                }
+                if ty.is_non_null() && matches!(var_value, Some(Json::Null)) {
+                    return Err(null_error(ty, path));
                 }
                 Ok(var_value.clone())
             }
@@ -533,8 +544,18 @@ impl<'s, 'd> Context<'s, 'd> {
                         Error::validation(format!("field '{k}' not found in type: '{name}'"))
                             .with_path(field_path.clone())
                     })?;
-                    if let Some(v) = self.resolve(v, &fdef.ty, &field_path)? {
-                        out.insert(k.to_string(), v);
+                    // An unprovided variable inside an input object is null (as in V2):
+                    // dropping the field would turn `{id: {_eq: $x}}` into "every row".
+                    match self.resolve(v, &fdef.ty, &field_path)? {
+                        Some(v) => {
+                            out.insert(k.to_string(), v);
+                        }
+                        None if fdef.ty.is_non_null() => {
+                            return Err(null_error(&fdef.ty, &field_path));
+                        }
+                        None => {
+                            out.insert(k.to_string(), Json::Null);
+                        }
                     }
                 }
                 check_required_fields(obj, &out, path)?;
