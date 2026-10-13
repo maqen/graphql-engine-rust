@@ -6,6 +6,7 @@ use std::time::Duration;
 use anyhow::Context;
 use clap::{Args, Parser, Subcommand};
 use hge_server::ServerConfig;
+use hge_server::telemetry::{Level, LogConfig, LogTypes};
 
 #[derive(Parser)]
 #[command(
@@ -336,14 +337,147 @@ struct ServeArgs {
     enable_triggers_error_log_level: bool,
 }
 
-fn init_logging(level: &str) {
-    let filter = tracing_subscriber::EnvFilter::try_from_env("RUST_LOG")
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(level));
-    tracing_subscriber::fmt()
-        .json()
-        .with_env_filter(filter)
-        .with_current_span(false)
-        .init();
+/// The log filter from `HASURA_GRAPHQL_LOG_LEVEL` / `HASURA_GRAPHQL_ENABLED_LOG_TYPES`, with
+/// V2's error messages, plus the EE-only log types that were ignored.
+fn log_config(args: &ServeArgs) -> anyhow::Result<(LogConfig, Vec<String>)> {
+    let level = Level::parse(&args.log_level)
+        .map_err(|e| anyhow::anyhow!("Environment variable HASURA_GRAPHQL_LOG_LEVEL: {e}"))?;
+    let (types, ignored) = match &args.enabled_log_types {
+        None => (LogTypes::DEFAULT, vec![]),
+        Some(s) => LogTypes::parse(s).map_err(|e| {
+            anyhow::anyhow!("Environment variable HASURA_GRAPHQL_ENABLED_LOG_TYPES: {e}")
+        })?,
+    };
+    Ok((LogConfig { level, types }, ignored))
+}
+
+/// The `server_configuration` startup log (spec 11 §5.4), keys in V2's order.
+fn server_configuration(
+    args: &ServeArgs,
+    config: &ServerConfig,
+    log: &LogConfig,
+) -> serde_json::Value {
+    use serde_json::{Value, json};
+    let jwt_secret: Vec<Value> = config
+        .jwt_secret
+        .iter()
+        .filter_map(|s| serde_json::from_str::<Value>(s).ok())
+        .chain(
+            config
+                .jwt_secrets
+                .iter()
+                .filter_map(|s| serde_json::from_str::<Vec<Value>>(s).ok())
+                .flatten(),
+        )
+        .map(|mut v| {
+            if let Some(o) = v.as_object_mut() {
+                if o.contains_key("type") {
+                    o.insert("type".into(), "<TYPE REDACTED>".into());
+                }
+                if o.contains_key("key") {
+                    o.insert("key".into(), "<JWK REDACTED>".into());
+                }
+            }
+            v
+        })
+        .collect();
+    let allowed_origins: Value = if config.disable_cors {
+        Value::Null
+    } else if config.cors_domain.trim() == "*" {
+        "*".into()
+    } else {
+        config
+            .cors_domain
+            .split(',')
+            .map(|d| Value::from(d.trim()))
+            .collect()
+    };
+    let secs = |d: std::time::Duration| d.as_secs_f64();
+    json!({
+        "port": config.port,
+        "server_host": if args.server_host == "*" { "HostAny".to_owned() } else { format!("Host {:?}", args.server_host) },
+        "transaction_isolation": "ReadCommitted",
+        "admin_secret_set": !config.admin_secrets.is_empty(),
+        "disable_admin_secret": config.disable_admin_secret,
+        "auth_hook": config.auth_hook.as_ref().map(|h| h.url.clone()),
+        "auth_hook_mode": config.auth_hook.as_ref().map(|h| match h.mode {
+            hge_auth::HookMode::Get => "GET",
+            hge_auth::HookMode::Post => "POST",
+        }),
+        "jwt_secret": jwt_secret,
+        "unauth_role": config.unauthorized_role,
+        "cors_config": {
+            "disabled": config.disable_cors,
+            "ws_read_cookie": if config.disable_cors { Value::from(args.ws_read_cookie) } else { Value::Null },
+            "allowed_origins": allowed_origins,
+        },
+        "enable_console": args.enable_console,
+        "console_assets_dir": null,
+        "console_sentry_dsn": null,
+        "enable_telemetry": false,
+        "use_prepared_statements": config.use_prepared_statements,
+        "stringify_numeric_types": config.stringify_numeric_types,
+        "v1-boolean-null-collapse": config.v1_boolean_null_collapse,
+        "enabled_apis": config.enabled_apis,
+        "live_query_options": {
+            "batch_size": config.websocket.live_queries.batch_size,
+            "refetch_delay": secs(config.websocket.live_queries.refetch_interval),
+        },
+        "enable_allowlist": args.enable_allowlist,
+        "enabled_log_types": log.types.names(),
+        "log_level": log.level.as_str(),
+        "remote_schema_permissions": false,
+        "websocket_compression_options": "NoCompression",
+        "websocket_keep_alive": format!("KeepAliveDelay {{unKeepAliveDelay = Seconds {{seconds = {}s}}}}", config.websocket.keep_alive.as_secs()),
+        "infer_function_permissions": true,
+        "enable_maintenance_mode": false,
+        "experimental_features": [],
+        "events_fetch_batch_size": config.events.fetch_batch_size,
+        "graceful_shutdown_timeout": config.events.graceful_shutdown_timeout.as_secs(),
+        "websocket_connection_init_timeout": format!("WSConnectionInitTimeout {{unWSConnectionInitTimeout = Seconds {{seconds = {}s}}}}", config.websocket.init_timeout.as_secs()),
+        "websocket_queue_size": config.websocket.queue_size,
+        "enable_metadata_query_logging": false,
+        "http_log_query_only_on_error": false,
+    })
+}
+
+/// The startup logs V2 writes before connecting: the configuration, the metadata database
+/// connection and the admin secret warning.
+fn log_startup(args: &ServeArgs, config: &ServerConfig, log: &LogConfig, ignored: &[String]) {
+    use hge_server::telemetry::{self, LogType};
+    let startup = |level: Level, kind: &str, info: serde_json::Value| {
+        telemetry::emit(
+            LogType::Startup,
+            level,
+            &serde_json::json!({"kind": kind, "info": info}),
+        );
+    };
+    startup(
+        Level::Info,
+        "server_configuration",
+        server_configuration(args, config, log),
+    );
+    if let Some(url) = config.catalog_url() {
+        let info = match telemetry::startup::mask_database_url(url) {
+            Some(url) => serde_json::json!({"retries": 1, "database_url": url}),
+            None => serde_json::json!({"error": "parsing database url failed"}),
+        };
+        startup(Level::Info, "postgres_connection", info);
+    }
+    if config.admin_secrets.is_empty() && !config.disable_admin_secret {
+        startup(
+            Level::Warn,
+            "no_admin_secret",
+            "WARNING: No admin secret provided".into(),
+        );
+    }
+    if !ignored.is_empty() {
+        startup(
+            Level::Warn,
+            "server",
+            format!("ignoring enterprise-only log types: {}", ignored.join(", ")).into(),
+        );
+    }
 }
 
 fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
@@ -496,19 +630,26 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Serve(args) => {
-            init_logging(&args.log_level);
+            let (log, ignored) = log_config(args)?;
+            let _flush = hge_server::telemetry::init(log);
             let config = serve_config(&cli, args)?;
+            log_startup(args, &config, &log, &ignored);
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()?;
             runtime.block_on(async move {
-                let engine =
-                    hge_server::build_engine(config)
-                        .await
-                        .map_err(|e| match &e.internal {
-                            Some(internal) => anyhow::anyhow!("{e} ({internal})"),
-                            None => anyhow::anyhow!("{e}"),
-                        })?;
+                let engine = hge_server::build_engine(config).await.map_err(|e| {
+                    // V2 logs a failed start as a `catalog_migrate` error with the QErr.
+                    hge_server::telemetry::emit(
+                        hge_server::telemetry::LogType::Startup,
+                        Level::Error,
+                        &serde_json::json!({"kind": "catalog_migrate", "info": e.to_api_json(true)}),
+                    );
+                    match &e.internal {
+                        Some(internal) => anyhow::anyhow!("{e} ({internal})"),
+                        None => anyhow::anyhow!("{e}"),
+                    }
+                })?;
                 hge_server::serve(engine).await?;
                 Ok(())
             })
@@ -537,5 +678,100 @@ mod tests {
             parse_millis("-1"),
             Err("Only expecting a non negative numeric".to_owned())
         );
+    }
+
+    fn serve_args(env: &[&str]) -> (Cli, ServeArgs) {
+        let argv = ["graphql-engine", "serve"].iter().chain(env).copied();
+        let cli = Cli::parse_from(argv);
+        let Command::Serve(args) = cli.command else {
+            unreachable!()
+        };
+        let cli = Cli {
+            command: Command::Version,
+            ..cli
+        };
+        (cli, *args)
+    }
+
+    #[test]
+    fn log_settings() {
+        let (_, args) = serve_args(&[
+            "--log-level",
+            "WARN",
+            "--enabled-log-types",
+            "startup,query-log",
+        ]);
+        let (log, ignored) = log_config(&args).unwrap();
+        assert_eq!(log.level, Level::Warn);
+        assert_eq!(log.types.names(), ["startup", "query-log"]);
+        assert!(ignored.is_empty());
+        let (_, args) = serve_args(&["--log-level", "verbose"]);
+        assert_eq!(
+            log_config(&args).unwrap_err().to_string(),
+            "Environment variable HASURA_GRAPHQL_LOG_LEVEL: Valid log levels: debug, info, warn or error"
+        );
+    }
+
+    #[test]
+    fn server_configuration_keys() {
+        let (cli, args) = serve_args(&[
+            "--jwt-secret",
+            r#"{"type":"HS256","key":"0123456789abcdef0123456789abcdef"}"#,
+            "--admin-secret",
+            "s",
+        ]);
+        let config = serve_config(&cli, &args).unwrap();
+        let info = server_configuration(&args, &config, &LogConfig::default());
+        let keys: Vec<&str> = info
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|k| k.as_str())
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                "port",
+                "server_host",
+                "transaction_isolation",
+                "admin_secret_set",
+                "disable_admin_secret",
+                "auth_hook",
+                "auth_hook_mode",
+                "jwt_secret",
+                "unauth_role",
+                "cors_config",
+                "enable_console",
+                "console_assets_dir",
+                "console_sentry_dsn",
+                "enable_telemetry",
+                "use_prepared_statements",
+                "stringify_numeric_types",
+                "v1-boolean-null-collapse",
+                "enabled_apis",
+                "live_query_options",
+                "enable_allowlist",
+                "enabled_log_types",
+                "log_level",
+                "remote_schema_permissions",
+                "websocket_compression_options",
+                "websocket_keep_alive",
+                "infer_function_permissions",
+                "enable_maintenance_mode",
+                "experimental_features",
+                "events_fetch_batch_size",
+                "graceful_shutdown_timeout",
+                "websocket_connection_init_timeout",
+                "websocket_queue_size",
+                "enable_metadata_query_logging",
+                "http_log_query_only_on_error",
+            ]
+        );
+        assert_eq!(
+            info["jwt_secret"],
+            serde_json::json!([{"type": "<TYPE REDACTED>", "key": "<JWK REDACTED>"}])
+        );
+        assert_eq!(info["admin_secret_set"], true);
+        assert_eq!(info["live_query_options"]["refetch_delay"], 1.0);
     }
 }
