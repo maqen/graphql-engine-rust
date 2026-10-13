@@ -3,6 +3,7 @@
 
 pub mod introspect;
 mod mutation;
+mod native;
 mod param;
 pub mod pool;
 pub mod source;

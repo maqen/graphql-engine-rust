@@ -497,7 +497,7 @@ impl Lowerer<'_> {
             },
             permission_filter: perm.row_filter().cloned(),
             permission_limit: perm.limit,
-            from_function: None,
+            from: None,
         })
     }
 

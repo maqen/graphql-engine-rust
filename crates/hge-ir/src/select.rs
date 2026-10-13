@@ -15,9 +15,26 @@ pub struct Select {
     pub permission_filter: Option<BoolExp>,
     /// Row limit from permissions; the effective limit is `min(args.limit, permission_limit)`.
     pub permission_limit: Option<u64>,
-    /// Select from the rows this function returns (of type `table`) instead of the table
-    /// itself: table computed fields and tracked functions.
-    pub from_function: Option<FunctionCall>,
+    /// Read the rows from here instead of the table itself.
+    pub from: Option<RowSource>,
+}
+
+/// Where a select reads its rows when not from its table.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RowSource {
+    /// The rows a function returns (of the select's table type): table computed fields and
+    /// tracked functions.
+    Function(FunctionCall),
+    /// The rows of a native query (the select's table is its logical model).
+    NativeQuery(Vec<NativeQueryPart>),
+}
+
+/// A piece of a native query's code.
+#[derive(Debug, Clone, PartialEq)]
+pub enum NativeQueryPart {
+    Sql(String),
+    /// An argument (`{{name}}`), bound as a parameter.
+    Arg(Value),
 }
 
 /// A call of a SQL function.
@@ -68,7 +85,7 @@ pub enum Field {
     ArrayAggregate(Box<RelationshipAggregate>),
     /// A scalar computed field: the function's value for the current row.
     ComputedScalar(Box<ComputedScalarField>),
-    /// A table computed field: rows of the select's `from_function` (called on the current
+    /// A table computed field: rows of the select's `from` function (called on the current
     /// row), as a JSON array.
     ComputedTable(Box<Select>),
 }

@@ -64,6 +64,7 @@ fn known_roles(metadata: &Metadata) -> HashSet<RoleName> {
                 .chain(t.delete_permissions.iter().map(|p| &p.role));
             roles.extend(names.map(RoleName::new));
         }
+        roles.extend(hge_schema::native::permission_roles(source).map(RoleName::new));
     }
     for action in &metadata.actions {
         if let Some(perms) = action.get("permissions").and_then(|p| p.as_array()) {

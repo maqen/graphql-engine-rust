@@ -5,7 +5,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use hge_actions::{ActionRegistry, HandlerConfig, ProcessEnv};
-use hge_core::{Code, Error, InconsistentObject, QualifiedFunction, QualifiedTable, SourceCatalog};
+use hge_core::{
+    Code, Error, InconsistentObject, NativeQueryCheck, QualifiedFunction, QualifiedTable,
+    SourceCatalog,
+};
 use hge_metadata::store::MetadataStore;
 use hge_metadata::{Metadata, PgConnectionInfo, Source, SourceConfiguration, UrlConfig, load_dir};
 use hge_metadata_api::Reload;
@@ -182,11 +185,17 @@ pub struct PreparedSource {
 struct Introspected {
     tables: HashSet<QualifiedTable>,
     functions: HashSet<QualifiedFunction>,
+    /// Type names of logical models and native query arguments.
+    types: HashSet<String>,
+    native_queries: HashSet<NativeQueryCheck>,
 }
 
 impl Introspected {
     fn covers(&self, wanted: &Introspected) -> bool {
-        wanted.tables.is_subset(&self.tables) && wanted.functions.is_subset(&self.functions)
+        wanted.tables.is_subset(&self.tables)
+            && wanted.functions.is_subset(&self.functions)
+            && wanted.types.is_subset(&self.types)
+            && wanted.native_queries.is_subset(&self.native_queries)
     }
 }
 
@@ -268,11 +277,14 @@ pub async fn prepare(
                 }
             },
         };
+        let (types, native_queries) = hge_schema::native::requests(source);
         let tracked = Introspected {
             tables: source.tables.iter().map(|t| t.table.clone()).collect(),
             functions: hge_schema::functions::referenced_functions(source)
                 .into_iter()
                 .collect(),
+            types: types.into_iter().collect(),
+            native_queries: native_queries.into_iter().collect(),
         };
         let (catalog, introspected) = if let Some(c) = catalogs.remove(&source.name) {
             (Arc::new(c), tracked)
@@ -283,7 +295,12 @@ pub async fn prepare(
         } else {
             let tables: Vec<_> = tracked.tables.iter().cloned().collect();
             let functions: Vec<_> = tracked.functions.iter().cloned().collect();
-            match pg.introspect(&tables, &functions).await {
+            let types: Vec<_> = tracked.types.iter().cloned().collect();
+            let native_queries: Vec<_> = tracked.native_queries.iter().cloned().collect();
+            match pg
+                .introspect(&tables, &functions, &types, &native_queries)
+                .await
+            {
                 Ok(c) => (Arc::new(c), tracked),
                 Err(e) => {
                     inconsistencies.push(source_inconsistency(

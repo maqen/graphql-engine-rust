@@ -77,6 +77,9 @@ pub struct TableInfo {
     pub computed_fields: Vec<Arc<ComputedFieldInfo>>,
     pub root_fields: RootFieldNames,
     pub is_enum: bool,
+    /// A logical model (see [`crate::native`]): no table behind it, only the rows of the
+    /// native queries returning it.
+    pub logical_model: bool,
     /// The metadata entry, for permission lookups.
     pub entry: TableEntry,
     /// Resolved permissions by role (filled by [`crate::permissions::resolve_permissions`]).
@@ -104,7 +107,12 @@ impl TableInfo {
     }
 
     pub fn bool_exp_name(&self) -> String {
-        format!("{}_bool_exp", self.gql_name)
+        if self.logical_model {
+            // Sic: V2 names it so.
+            format!("{}_bool_exp_bool_exp", self.gql_name)
+        } else {
+            format!("{}_bool_exp", self.gql_name)
+        }
     }
 
     pub fn order_by_name(&self) -> String {
@@ -112,12 +120,16 @@ impl TableInfo {
     }
 
     pub fn select_column_name(&self) -> String {
-        format!("{}_select_column", self.gql_name)
+        if self.logical_model {
+            format!("{}_enum_name", self.gql_name)
+        } else {
+            format!("{}_select_column", self.gql_name)
+        }
     }
 
     /// The table name as V2 prints it in descriptions (schema omitted when `public`).
     pub fn display_name(&self) -> String {
-        if self.name.schema == "public" {
+        if self.name.schema == "public" || self.logical_model {
             self.name.name.clone()
         } else {
             format!("{}.{}", self.name.schema, self.name.name)
@@ -133,11 +145,26 @@ pub struct Tables {
     pub ordered: Vec<Arc<TableInfo>>,
     /// Tracked functions of all sources, in metadata order.
     pub functions: Vec<Arc<crate::functions::FunctionInfo>>,
+    /// Logical models of all sources (also in `by_name`, but not in `ordered`: they have no
+    /// root fields of their own).
+    pub logical_models: Vec<Arc<TableInfo>>,
+    /// Native queries of all sources, in metadata order.
+    pub native_queries: Vec<Arc<crate::native::NativeQueryInfo>>,
 }
 
 impl Tables {
+    /// A tracked table (not a logical model).
     pub fn get(&self, source: &str, name: &QualifiedTable) -> Option<&Arc<TableInfo>> {
-        self.by_name.get(&(Arc::from(source), name.clone()))
+        self.by_name
+            .get(&(Arc::from(source), name.clone()))
+            .filter(|t| !t.logical_model)
+    }
+
+    /// A logical model, by its pseudo-table name ([`crate::native::logical_model_name`]).
+    pub fn logical_model(&self, source: &str, name: &QualifiedTable) -> Option<&Arc<TableInfo>> {
+        self.by_name
+            .get(&(Arc::from(source), name.clone()))
+            .filter(|t| t.logical_model)
     }
 }
 
@@ -395,6 +422,7 @@ fn resolve_table(
         computed_fields,
         root_fields,
         is_enum: entry.is_enum,
+        logical_model: false,
         entry: entry.clone(),
         permissions: HashMap::new(),
     })
@@ -692,6 +720,7 @@ mod tests {
             tables: HashMap::from([table("article"), table(other)]),
             enums: HashMap::new(),
             functions: HashMap::new(),
+            ..Default::default()
         };
         let catalogs = HashMap::from([("default".to_owned(), catalog)]);
         crate::resolve_tables(&metadata, &catalogs).1

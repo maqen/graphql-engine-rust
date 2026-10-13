@@ -488,6 +488,7 @@ mod tests {
             tables: HashMap::from([(author, table)]),
             enums: HashMap::new(),
             functions: functions_cat,
+            ..Default::default()
         };
         let metadata: hge_metadata::Metadata = serde_json::from_value(json!({
             "version": 3,

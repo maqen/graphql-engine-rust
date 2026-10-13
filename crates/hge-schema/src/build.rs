@@ -13,6 +13,7 @@ use crate::actions::ResolvedActions;
 use crate::functions::{ComputedFieldInfo, ComputedReturn, ExposedAs, FunctionInfo};
 use crate::introspection;
 use crate::model::*;
+use crate::native::NativeQueryInfo;
 use crate::permissions::{SelectAccess, select_access};
 use crate::scalars::{self, BUILTIN_SCALARS};
 use crate::tables::{RelationshipInfo, TableInfo, Tables};
@@ -96,7 +97,7 @@ fn role_access(
     role: &RoleName,
 ) -> HashMap<(Arc<str>, QualifiedTable), SelectAccess> {
     let mut access = HashMap::new();
-    for t in &tables.ordered {
+    for t in tables.ordered.iter().chain(&tables.logical_models) {
         if let Some(a) = select_access(t, role) {
             access.insert((t.source.clone(), t.name.clone()), a);
         }
@@ -200,6 +201,9 @@ fn build_schema(
         };
         b.add_function_root_field(function, role, options.infer_function_permissions, root);
     }
+    for nq in &tables.native_queries {
+        b.add_native_query_root_field(nq, &mut query_root);
+    }
     // Actions come last; `resolve_actions` has dropped those whose names conflict with
     // table root fields or types.
     if let Some(actions) = actions {
@@ -228,6 +232,9 @@ fn build_schema(
             let infer = options.infer_function_permissions;
             b.add_function_root_field(function, role, infer, &mut subscription_root);
         }
+    }
+    for nq in &tables.native_queries {
+        b.add_native_query_root_field(nq, &mut subscription_root);
     }
     b.access = access;
     // Async actions' `<action>(id:)` result fields can be subscribed to as well.
@@ -389,10 +396,15 @@ impl Builder<'_> {
         )));
 
         let mut obj = ObjectDef::new(table.type_name(), table.description.clone());
+        let what = if table.logical_model {
+            "the logical model for"
+        } else {
+            "the table"
+        };
         let mut bool_exp = InputObjectDef {
             name: table.bool_exp_name(),
             description: Some(format!(
-                "Boolean expression to filter rows from the table \"{display}\". All fields are combined with a logical 'AND'."
+                "Boolean expression to filter rows from {what} \"{display}\". All fields are combined with a logical 'AND'."
             )),
             fields: IndexMap::new(),
         };
@@ -413,7 +425,8 @@ impl Builder<'_> {
         };
         let mut select_column = EnumDef {
             name: table.select_column_name(),
-            description: Some(format!("select columns of table \"{display}\"")),
+            description: (!table.logical_model)
+                .then(|| format!("select columns of table \"{display}\"")),
             values: IndexMap::new(),
         };
 
@@ -652,6 +665,55 @@ impl Builder<'_> {
             let field = self.with_function_args(field, f);
             root.fields.insert(field.name.clone(), field);
         }
+    }
+
+    /// A native query's root field: the rows of its logical model, for roles that may select
+    /// from the logical model.
+    fn add_native_query_root_field(&mut self, nq: &Arc<NativeQueryInfo>, root: &mut ObjectDef) {
+        let Some(model) = self.tables.logical_model(&nq.source, &nq.returns).cloned() else {
+            return;
+        };
+        if self.access(&model).is_none() {
+            return;
+        }
+        self.ensure_table_types(&model);
+        let mut field = FieldDef::new(
+            nq.root_field.clone(),
+            TypeRef::nn_list_nn(model.type_name()),
+            FieldKind::NativeQuery(nq.clone()),
+        )
+        .describe_opt(nq.description.clone());
+        if !nq.arguments.is_empty() {
+            let name = nq.arguments_type_name();
+            if !self.schema.types.contains_key(&name) {
+                let mut fields = IndexMap::new();
+                for (arg_name, arg) in &nq.arguments {
+                    self.note_scalar(&arg.ty);
+                    let description = arg
+                        .description
+                        .clone()
+                        .unwrap_or_else(|| format!("Native Query argument {arg_name}"));
+                    fields.insert(
+                        arg_name.clone(),
+                        InputValueDef::new(
+                            arg_name.clone(),
+                            scalars::column_type_ref(&arg.ty, arg.nullable),
+                        )
+                        .describe(description),
+                    );
+                }
+                self.schema.add(TypeDef::InputObject(InputObjectDef {
+                    name: name.clone(),
+                    description: Some(nq.arguments_description()),
+                    fields,
+                }));
+            }
+            field = field.arg(
+                InputValueDef::new("args", TypeRef::nn(name)).describe(nq.arguments_description()),
+            );
+        }
+        let field = self.with_select_args(field, &model);
+        root.fields.insert(field.name.clone(), field);
     }
 
     /// The `args` argument of a function root field (when the function has input arguments).

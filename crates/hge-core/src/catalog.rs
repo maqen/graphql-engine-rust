@@ -17,12 +17,46 @@ pub struct SourceCatalog {
     /// Functions referenced by metadata (tracked functions and computed fields), with every
     /// overload of each name.
     pub functions: HashMap<QualifiedFunction, Vec<FunctionCatalog>>,
+    /// Scalar types named by logical model fields and native query arguments, keyed by the
+    /// name as written in metadata (`int4`, `integer`, `myschema.mood`).
+    pub types: HashMap<String, NamedType>,
+    /// The outcome of preparing each native query's validation statement: the result
+    /// columns, or V2's `error` object.
+    pub native_queries: HashMap<NativeQueryCheck, Result<Vec<ResultColumn>, serde_json::Value>>,
 }
 
 impl SourceCatalog {
     pub fn table(&self, name: &QualifiedTable) -> Option<&TableCatalog> {
         self.tables.get(name)
     }
+}
+
+/// A type name resolved by the database.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NamedType {
+    pub ty: ColumnType,
+    /// `format_type`'s name (`integer` for `int4`), as V2 prints it in messages.
+    pub display: String,
+    pub oid: u32,
+}
+
+/// A result column of a prepared statement.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ResultColumn {
+    pub name: String,
+    pub oid: u32,
+    /// `format_type`'s name of the column's type.
+    pub display: String,
+}
+
+/// A native query to validate by preparing it (never executing it).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NativeQueryCheck {
+    /// The statement to prepare, with arguments as `$1`, `$2`, ….
+    pub sql: String,
+    /// The type of each parameter, as written in metadata (keys of
+    /// [`SourceCatalog::types`]).
+    pub param_types: Vec<String>,
 }
 
 /// A database function (one overload).

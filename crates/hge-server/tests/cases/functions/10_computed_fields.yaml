@@ -200,6 +200,29 @@ cases:
         - {full_name: Carol Jones}
         q:
           fields:
+          - name: all_articles
+            args:
+            - {name: distinct_on}
+            - {name: limit}
+            - {name: offset}
+            - {name: order_by}
+            - {name: where}
+          - name: articles_above
+            args:
+            - {name: args}
+            - {name: distinct_on}
+            - {name: limit}
+            - {name: offset}
+            - {name: order_by}
+            - {name: where}
+          - name: articles_by
+            args:
+            - {name: args}
+            - {name: distinct_on}
+            - {name: limit}
+            - {name: offset}
+            - {name: order_by}
+            - {name: where}
           - name: author
             args:
             - {name: limit}

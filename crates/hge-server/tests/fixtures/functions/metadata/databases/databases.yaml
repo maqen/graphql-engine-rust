@@ -8,3 +8,58 @@
         max_connections: 10
   tables: "!include default/tables/tables.yaml"
   functions: "!include default/functions/functions.yaml"
+  logical_models:
+    - name: article_summary
+      description: An article
+      fields:
+        - name: id
+          type:
+            scalar: integer
+            nullable: false
+        - name: title
+          description: The title
+          type:
+            scalar: text
+            nullable: true
+        - name: rating
+          type:
+            scalar: int4
+            nullable: true
+      select_permissions:
+        - role: user
+          permission:
+            columns: [id, title]
+            filter:
+              id:
+                _gt: 1
+        - role: anonymous
+          permission:
+            columns: [id]
+            filter: {}
+        - role: reader
+          permission:
+            columns: [id, rating]
+            filter: {}
+  native_queries:
+    - root_field_name: articles_above
+      description: Articles above a rating
+      code: SELECT id, title, rating FROM article WHERE rating >= {{min_rating}}
+      arguments:
+        min_rating:
+          type: integer
+          nullable: false
+          description: Minimum
+      returns: article_summary
+    - root_field_name: articles_by
+      code: |-
+        SELECT a.id, a.title, a.rating, a.is_published
+          FROM article a JOIN author u ON u.id = a.author_id
+         WHERE {{author}} IS NULL OR u.first_name = {{author}} -- either way
+      arguments:
+        author:
+          type: text
+          nullable: true
+      returns: article_summary
+    - root_field_name: all_articles
+      code: SELECT id, title, rating FROM article
+      returns: article_summary
