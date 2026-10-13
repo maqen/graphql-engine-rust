@@ -10,6 +10,7 @@ pub mod routes;
 pub mod scheduled;
 pub mod state;
 pub mod sync;
+pub mod telemetry;
 pub mod v1_query;
 pub mod ws;
 
@@ -32,7 +33,19 @@ pub async fn build_engine(config: ServerConfig) -> Result<Arc<Engine>, hge_core:
             let catalog = PgCatalog::connect(url)?
                 .with_extensions_schema(&config.metadata_database_extensions_schema);
             let outcome = catalog.init().await?;
-            tracing::info!(target: "startup", ?outcome, "metadata catalog ready");
+            use hge_metadata_api::catalog::{CATALOG_VERSION as V, CatalogInit};
+            let message = match outcome {
+                CatalogInit::Current => {
+                    format!("Already at the latest catalog version ({V}); nothing to do.")
+                }
+                CatalogInit::Created => {
+                    format!("Successfully initialized the catalog (at version {V}).")
+                }
+                CatalogInit::Upgraded { from } => {
+                    format!("Successfully migrated from catalog version {from} to version {V}.")
+                }
+            };
+            tracing::info!(target: "startup", kind = "catalog_migrate", "{message}");
             let pool = catalog.pool().clone();
             (Arc::new(catalog), Some(pool))
         }
@@ -110,6 +123,14 @@ pub fn start_async_processor(
 pub async fn serve(engine: Arc<Engine>) -> std::io::Result<()> {
     let addr = format!("{}:{}", engine.config.host, engine.config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
+    telemetry::emit(
+        telemetry::LogType::Startup,
+        telemetry::Level::Info,
+        &serde_json::json!({
+            "kind": "server",
+            "info": {"message": "Starting API server", "time_taken": telemetry::uptime()},
+        }),
+    );
     tracing::info!(target: "startup", %addr, "server listening");
     sync::spawn(engine.clone());
     let shutdown = tokio_util::sync::CancellationToken::new();
@@ -164,5 +185,5 @@ async fn shutdown_signal() {
         _ = ctrl_c => {},
         _ = term => {},
     }
-    tracing::info!(target: "shutdown", "shutting down");
+    tracing::info!(target: "shutdown", "Gracefully shutting down server");
 }
