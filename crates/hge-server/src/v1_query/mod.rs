@@ -20,6 +20,9 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::Response;
 use hge_core::{Code, Error, Session};
 use hge_ir::{QueryRoot, SourceExecutor};
+use hge_metadata_api::Runtime;
+use hge_metadata_api::ctx::Ctx;
+use hge_metadata_api::run_sql;
 
 use crate::graphql::include_internal;
 use crate::routes::{json_response, request_id};
@@ -72,11 +75,29 @@ pub async fn run(engine: &Engine, session: &Session, body: &[u8]) -> Result<Stri
             &Path::root().key("args"),
         ));
     }
-    let exec = Executor {
+    if engine.settings().read_only && query.writes_data() {
+        return Err(ApiError::bad(
+            Code::NotSupported,
+            "Cannot run write queries when read-only mode is enabled",
+        ));
+    }
+    // Metadata changes (and `run_sql` that may change the schema) share one unit of work:
+    // one lock, and the metadata stored once at the end, only if every query succeeded.
+    let ctx = match query.metadata_access() {
+        Some(lock) => Some(Ctx::begin(engine, lock).await?),
+        None => None,
+    };
+    let mut exec = Executor {
+        engine,
         state: engine.state.load_full(),
         session,
+        ctx,
     };
-    exec.run(&query).await
+    let out = exec.run(&query).await?;
+    if let Some(ctx) = exec.ctx {
+        ctx.commit().await?;
+    }
+    Ok(out)
 }
 
 /// V2 maps every control character to a space before decoding (clients embed raw newlines
@@ -91,12 +112,14 @@ fn parse_body(body: &[u8]) -> Result<serde_json::Value, ApiError> {
 }
 
 struct Executor<'a> {
+    engine: &'a Engine,
     state: Arc<AppState>,
     session: &'a Session,
+    ctx: Option<Ctx<'a, Engine>>,
 }
 
-impl Executor<'_> {
-    fn run<'q>(&'q self, query: &'q Query) -> hge_ir::BoxFuture<'q, Result<String, ApiError>> {
+impl<'a> Executor<'a> {
+    fn run<'q>(&'q mut self, query: &'q Query) -> hge_ir::BoxFuture<'q, Result<String, ApiError>> {
         Box::pin(async move {
             match query {
                 Query::Select(q) => {
@@ -125,6 +148,27 @@ impl Executor<'_> {
                     out.push(']');
                     Ok(out)
                 }
+                Query::RunSql { args, path } => {
+                    let result = match &mut self.ctx {
+                        Some(ctx) if args.checks_metadata() => {
+                            run_sql::run_checked(ctx, args).await
+                        }
+                        _ => run_sql::run_plain(self.engine, args).await,
+                    };
+                    result
+                        .map(|v| v.to_string())
+                        .map_err(|e| nest_error(e, path))
+                }
+                Query::Metadata { command, path } => {
+                    // `run` begins a ctx whenever the request has a metadata query.
+                    let ctx = self.ctx.as_mut().ok_or_else(|| {
+                        ApiError::from(Error::unexpected("no metadata context for the request"))
+                    })?;
+                    let result = hge_metadata_api::api::run(ctx, command).await;
+                    result
+                        .map(|v| v.to_string())
+                        .map_err(|e| e.under(path.as_str()))
+                }
                 Query::Other { ty, path, .. } => Err(err400(
                     Code::NotSupported,
                     format!("\"{ty}\" is not supported on /v1/query yet"),
@@ -134,13 +178,18 @@ impl Executor<'_> {
         })
     }
 
+    /// The request's working metadata, once a metadata query in it has changed something:
+    /// later DML in the same bulk sees it, as in V2.
+    fn working(&self) -> Option<&crate::load::Prepared> {
+        self.ctx.as_ref().and_then(|c| c.prepared.as_ref())
+    }
+
     fn lowerer<'s>(&'s self, source: &str) -> Lowerer<'s> {
-        Lowerer::new(
-            &self.state.tables,
-            source,
-            &self.session.role,
-            &self.state.options,
-        )
+        let tables = match self.working() {
+            Some(p) => &p.tables,
+            None => &self.state.tables,
+        };
+        Lowerer::new(tables, source, &self.session.role, &self.state.options)
     }
 
     /// Run one root field on a source; DB errors are reported at the query's `args`.
@@ -150,7 +199,11 @@ impl Executor<'_> {
         root: QueryRoot,
         path: &Path,
     ) -> Result<String, ApiError> {
-        let executor = self.state.sources.get(source).ok_or_else(|| {
+        let executor = match self.working() {
+            Some(p) => p.sources.get(source).map(|s| s.pg.clone()),
+            None => self.state.sources.get(source).cloned(),
+        };
+        let executor = executor.ok_or_else(|| {
             err400(
                 Code::NotExists,
                 format!("source with name \"{source}\" does not exist"),
@@ -163,6 +216,11 @@ impl Executor<'_> {
             .map_err(|e| dml_error(e, path))?;
         Ok(out.pop().unwrap_or_else(|| "null".to_owned()))
     }
+}
+
+/// `run_sql` reports errors at `$`, which on `/v1/query` is the query's `args`.
+fn nest_error(e: ApiError, args_path: &Path) -> ApiError {
+    e.under(args_path.as_str())
 }
 
 /// V2's `dmlTxErrorHandler` statuses: expected DB errors are 400, anything else is a 500

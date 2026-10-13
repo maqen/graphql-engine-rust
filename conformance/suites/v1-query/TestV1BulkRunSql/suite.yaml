@@ -1,0 +1,5 @@
+description: Legacy /v1/query bulk mixing run_sql schema changes with DML (written for hasura-rs, responses recorded from Hasura)
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none
