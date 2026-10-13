@@ -49,9 +49,10 @@ services:
       retries: 30
 
   hasura:
+    # Community Edition build (the plain v2.51.0 tag is the EE binary).
     # cli-migrations-v3 applies ./project/migrations and ./project/metadata
     # on boot, exactly as an existing V2 project would be deployed.
-    image: ${HASURA_IMAGE:-hasura/graphql-engine:v2.51.0.cli-migrations-v3}
+    image: ${HASURA_IMAGE:-hasura/graphql-engine:v2.51.0-ce.cli-migrations-v3}
     depends_on:
       postgres: {condition: service_healthy}
       handler: {condition: service_healthy}
@@ -77,7 +78,7 @@ services:
   # cli-migrations wrapper. Only used for startup measurements.
   hasura-serve:
     profiles: ["startup"]
-    image: ${HASURA_IMAGE:-hasura/graphql-engine:v2.51.0.cli-migrations-v3}
+    image: ${HASURA_IMAGE:-hasura/graphql-engine:v2.51.0-ce.cli-migrations-v3}
     entrypoint: ["graphql-engine"]
     command: ["serve"]
     environment:

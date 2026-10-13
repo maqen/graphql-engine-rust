@@ -22,7 +22,7 @@ Everything is Python 3.9+ standard library plus Docker (Compose v2) and oha.
 |---|---|
 | `project/` | a V2 project exactly as `hasura init` lays it out: `config.yaml`, `metadata/` (v3 format), `migrations/default/` |
 | `handler/server.py` | action handler (`trackPriceQuote`) and event-trigger webhook; each engine posts to `/events/<engine>` and the handler keeps counts and recent payloads per engine |
-| `docker-compose.yml` | Postgres 16, handler, Hasura `v2.51.0.cli-migrations-v3`, `hasura-serve` (profile `startup`, startup timing only), and `rust-engine` (profile `rust`) |
+| `docker-compose.yml` | Postgres 16, handler, Hasura `v2.51.0-ce.cli-migrations-v3`, `hasura-serve` (profile `startup`, startup timing only), and `rust-engine` (profile `rust`) |
 | `queries/*.graphql` | the case suite, one file per case |
 | `expected/` | golden responses recorded from Hasura |
 | `results/<label>/` | `results.json` and `summary.md` per load run |
