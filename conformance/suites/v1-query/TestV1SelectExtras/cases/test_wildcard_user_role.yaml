@@ -1,0 +1,20 @@
+steps:
+- url: /v1/query
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - '*'
+      order_by: id
+  response:
+  - id: 1
+    name: Author 1
+    is_registered: false
+  - id: 2
+    name: Author 2
+    is_registered: false

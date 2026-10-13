@@ -9,6 +9,7 @@ pub mod routes;
 pub mod scheduled;
 pub mod state;
 pub mod sync;
+pub mod v1_query;
 
 use std::sync::Arc;
 

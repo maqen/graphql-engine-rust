@@ -1,0 +1,89 @@
+steps:
+- url: /v1/query
+  status: 400
+  headers:
+    X-Hasura-Role: anonymous
+  query:
+    type: select
+    args:
+      table: auction
+      columns:
+      - id
+  response:
+    error: 'select on "auction" for role "anonymous" is not allowed. '
+    path: $.args
+    code: permission-denied
+- url: /v1/query
+  status: 400
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      where:
+        author_id: 1
+  response:
+    error: role "user" does not have permission to select column "author_id"
+    path: $.args.where
+    code: permission-denied
+- url: /v1/query
+  status: 400
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      order_by: author_id
+  response:
+    error: role "user" does not have permission to select column "author_id"
+    path: $.args.order_by[0]
+    code: permission-denied
+- url: /v1/query
+  status: 400
+  headers:
+    X-Hasura-Role: user
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+  response:
+    error: '"x-hasura-user-id" header is expected but not found'
+    path: $.args
+    code: not-found
+- url: /v1/query
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    type: count
+    args:
+      table: article
+  response:
+    count: 2
+- url: /v1/query
+  status: 400
+  headers:
+    X-Hasura-Role: user1
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - id
+      - name: articles
+        columns:
+        - id
+  response:
+    error: 'select on "author" for role "user1" is not allowed. '
+    path: $.args
+    code: permission-denied

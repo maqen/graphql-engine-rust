@@ -1,0 +1,64 @@
+steps:
+- url: /v1/query
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    type: bulk
+    args:
+    - type: select
+      args:
+        table: article
+        columns:
+        - id
+        order_by: id
+    - type: count
+      args:
+        table: article
+  response:
+  - - id: 1
+    - id: 2
+    - id: 3
+  - count: 3
+- url: /v1/query
+  status: 400
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    type: bulk
+    args:
+    - type: count
+      args:
+        table: article
+    - type: run_sql
+      args:
+        sql: select 1
+  response:
+    error: 'restricted access : admin only'
+    path: $.args
+    code: access-denied
+- url: /v1/query
+  status: 400
+  query:
+    type: bulk
+    args:
+    - type: count
+      args:
+        table: article
+    - type: select
+      args:
+        table: nope
+        columns:
+        - id
+  response:
+    error: table "nope" does not exist
+    path: $.args[1].args.table
+    code: not-exists
+- url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args: []
+  response: []

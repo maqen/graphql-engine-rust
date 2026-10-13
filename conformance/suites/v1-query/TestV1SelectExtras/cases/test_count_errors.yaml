@@ -1,0 +1,45 @@
+steps:
+- url: /v1/query
+  status: 400
+  query:
+    type: count
+    args:
+      table: article
+      distinct:
+      - author
+  response:
+    error: 'no such column exists: "author"'
+    path: $.args.distinct[0]
+    code: permission-denied
+- url: /v1/query
+  status: 400
+  query:
+    type: count
+    args:
+      table: nope
+  response:
+    error: table "nope" does not exist
+    path: $.args
+    code: not-exists
+- url: /v1/query
+  status: 400
+  query:
+    type: count
+    args:
+      table: article
+      distinct: author_id
+  response:
+    error: parsing [] failed, expected Array, but encountered String
+    path: $.args.distinct
+    code: parse-failed
+- url: /v1/query
+  status: 200
+  query:
+    type: count
+    args:
+      table: article
+      distinct:
+      - author_id
+      - is_published
+  response:
+    count: 4

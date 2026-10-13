@@ -1,0 +1,90 @@
+steps:
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      where:
+        nope: 1
+  response:
+    error: '"nope" does not exist'
+    path: $.args.where
+    code: not-exists
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      where:
+        id:
+          $foo: 1
+  response:
+    error: 'Unknown operator: $foo'
+    path: $.args.where.id["$foo"]
+    code: unexpected-payload
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      where:
+        id:
+          $in: 1
+  response:
+    error: parsing [] failed, expected Array, but encountered Number
+    path: $.args.where.id["$in"]
+    code: parse-failed
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      where:
+        id:
+          $like: '1'
+  response:
+    error: ' is of type "integer"; this operator works only on columns of type "varchar", "text", "citext", "bpchar"'
+    path: $.args.where.id["$like"]
+    code: unexpected-payload
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      where:
+        $and:
+          id: 1
+  response:
+    error: parsing [] failed, expected Array, but encountered Object
+    path: $.args.where["$and"]
+    code: parse-failed
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      where:
+        id:
+          $is_null: yes
+  response:
+    error: expected Bool, but encountered String
+    path: $.args.where.id["$is_null"]
+    code: parse-failed

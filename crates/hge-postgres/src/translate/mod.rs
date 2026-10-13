@@ -4,6 +4,7 @@
 //! with one text column per root field, each holding the field's final JSON.
 
 mod boolexp;
+mod count;
 pub mod mutation;
 mod select;
 
@@ -26,6 +27,7 @@ pub fn translate_query(fields: &[&QueryRoot], session: &Session) -> Result<SqlBu
         match field {
             QueryRoot::Select(select) => t.select_many(select, None)?,
             QueryRoot::SelectOne(select) => t.select_one(select, None)?,
+            QueryRoot::Count(count) => t.count(count)?,
         }
         t.b.push(")::text");
     }

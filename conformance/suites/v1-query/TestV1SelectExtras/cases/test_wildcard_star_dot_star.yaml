@@ -1,0 +1,40 @@
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - '*.*'
+      order_by: +id
+      limit: 2
+  response:
+  - id: 1
+    remarks_internal: remark 1
+    name: Author 1
+    is_registered: false
+    articles:
+    - id: 1
+      content: Sample article content 1
+      is_published: false
+      published_on: null
+      author_id: 1
+      title: Article 1
+    - id: 2
+      content: Sample article content 2
+      is_published: true
+      published_on: null
+      author_id: 1
+      title: Article 2
+  - id: 2
+    remarks_internal: remark 2
+    name: Author 2
+    is_registered: false
+    articles:
+    - id: 3
+      content: Sample article content 3
+      is_published: true
+      published_on: null
+      author_id: 2
+      title: Article 3

@@ -1,0 +1,15 @@
+steps:
+- url: /v1/query
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    type: count
+    args:
+      table: article
+      where:
+        author:
+          name:
+            $eq: x
+  response:
+    count: 0

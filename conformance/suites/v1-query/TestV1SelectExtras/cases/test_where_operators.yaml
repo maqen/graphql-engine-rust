@@ -1,0 +1,66 @@
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      where:
+        id:
+          $ceq: author_id
+      order_by: id
+  response:
+  - id: 1
+- url: /v1/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      where:
+        $exists:
+          _table: author
+          _where:
+            name: Author 3
+      order_by: id
+      limit: 1
+  response:
+    error: 'no such column exists: "name"'
+    path: $.args.where
+    code: permission-denied
+- url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      where:
+        _or:
+        - id: 1
+        - id:
+            _eq: 3
+        _not:
+          title: null
+      order_by: id
+  response: []
+- url: /v1/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: article
+      columns:
+      - id
+      where:
+        published_on: null
+      order_by: -id
+      limit: 2
+  response:
+  - id: 4
+  - id: 3
