@@ -150,7 +150,9 @@ pub struct Transforms {
 }
 
 impl Transforms {
-    /// Parse and parse-check the metadata JSON; the error is the inconsistency message.
+    /// Parse the metadata JSON; the error is the inconsistency message. Kriti templates are
+    /// only checked when an event is delivered (V2 checks them in the metadata API, not when
+    /// metadata is loaded), so a bad template fails deliveries instead of the trigger.
     pub fn parse(request: Option<&Value>, response: Option<&Value>) -> Result<Self, String> {
         let request = match request {
             None | Some(Value::Null) => None,
@@ -160,8 +162,6 @@ impl Transforms {
             None | Some(Value::Null) => None,
             Some(v) => Some(ResponseTransform::from_json(v).map_err(|e| e.to_string())?),
         };
-        hge_transforms::validate_transforms(request.as_ref(), response.as_ref())
-            .map_err(|e| e.message)?;
         Ok(Transforms { request, response })
     }
 }
@@ -456,6 +456,15 @@ mod tests {
                 .collect(),
             body: body.as_bytes().to_vec(),
         }
+    }
+
+    #[test]
+    fn bad_template_fails_delivery_not_loading() {
+        let bad = serde_json::json!({"version": 2, "url": "{{ unparsed"});
+        let t = Transforms::parse(Some(&bad), None).expect("loads like V2");
+        let body = Json::from(&serde_json::json!({"a": 1}));
+        let r = build_request(&t, "http://h/x", vec![], body, Value::Null);
+        assert!(r.is_err());
     }
 
     #[test]

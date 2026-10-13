@@ -68,8 +68,12 @@ impl WebhookClient for HttpClient {
             let url = reqwest::Url::parse(&req.url)
                 .map_err(|e| WebhookError::InvalidUrl(e.to_string()))?;
             // Request transforms only produce valid methods.
-            let method = reqwest::Method::from_bytes(req.method.as_bytes())
-                .map_err(|e| WebhookError::InvalidUrl(e.to_string()))?;
+            let method = reqwest::Method::from_bytes(req.method.as_bytes()).map_err(|e| {
+                WebhookError::Http {
+                    message: e.to_string(),
+                    timeout: false,
+                }
+            })?;
             let mut builder = self
                 .client
                 .request(method, url)
