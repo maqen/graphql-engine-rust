@@ -14,6 +14,7 @@ pub enum Code {
     AlreadyExists,
     AlreadyTracked,
     BadRequest,
+    Conflict,
     ConstraintError,
     ConstraintViolation,
     DataException,
@@ -23,6 +24,7 @@ pub enum Code {
     InvalidJson,
     InvalidJwt,
     InvalidParams,
+    MetadataWarnings,
     JwtInvalidClaims,
     JwtMissingRoleClaims,
     MethodNotAllowed,
@@ -46,6 +48,7 @@ impl Code {
             Code::AlreadyExists => "already-exists",
             Code::AlreadyTracked => "already-tracked",
             Code::BadRequest => "bad-request",
+            Code::Conflict => "conflict",
             Code::ConstraintError => "constraint-error",
             Code::ConstraintViolation => "constraint-violation",
             Code::DataException => "data-exception",
@@ -55,6 +58,7 @@ impl Code {
             Code::InvalidJson => "invalid-json",
             Code::InvalidJwt => "invalid-jwt",
             Code::InvalidParams => "invalid-params",
+            Code::MetadataWarnings => "metadata-warnings",
             Code::JwtInvalidClaims => "jwt-invalid-claims",
             Code::JwtMissingRoleClaims => "jwt-missing-role-claims",
             Code::MethodNotAllowed => "method-not-allowed",
@@ -79,6 +83,7 @@ impl Code {
             Code::AccessDenied | Code::InvalidJwt | Code::JwtInvalidClaims => 401,
             Code::InvalidHeaders | Code::JwtMissingRoleClaims => 400,
             Code::NotFound => 404,
+            Code::Conflict => 409,
             Code::MethodNotAllowed => 405,
             Code::PermissionDenied => 403,
             Code::Unexpected | Code::PostgresError => 500,
@@ -147,9 +152,10 @@ impl Error {
 
     /// The error body used by the non-GraphQL APIs (`/v1/metadata`, `/v2/query`).
     pub fn to_api_json(&self, include_internal: bool) -> Value {
+        // V2's key order: error, path, code (then internal).
         let mut obj = Map::new();
-        obj.insert("path".into(), Value::String(self.path.clone()));
         obj.insert("error".into(), Value::String(self.message.clone()));
+        obj.insert("path".into(), Value::String(self.path.clone()));
         obj.insert("code".into(), Value::String(self.code.as_str().into()));
         if include_internal && let Some(internal) = &self.internal {
             obj.insert("internal".into(), (**internal).clone());

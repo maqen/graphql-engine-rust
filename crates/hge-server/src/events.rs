@@ -4,6 +4,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use hge_core::InconsistentObject;
 use hge_events::catalog;
 use hge_events::ddl::TriggerColumn;
 use hge_events::model::{ProcessEnv, is_legal_trigger_name};
@@ -18,8 +19,34 @@ use tracing::{info, warn};
 use crate::config::ServerConfig;
 use crate::state::Engine;
 
-fn context(table: &hge_core::QualifiedTable, trigger: &str, msg: &str) -> String {
-    format!("in table \"{table}\": in event trigger \"{trigger}\": {msg}")
+/// An inconsistent event trigger, as V2 reports it.
+fn trigger_issue(
+    source: &str,
+    table: &hge_core::QualifiedTable,
+    trigger: &str,
+    definition: &serde_json::Value,
+    msg: &str,
+) -> InconsistentObject {
+    InconsistentObject::table_object(
+        "event_trigger",
+        trigger,
+        source,
+        table,
+        format!(
+            "in table \"{}\": in event trigger \"{trigger}\": {msg}",
+            table.v2_text()
+        ),
+        definition.clone(),
+    )
+}
+
+/// A source-wide eventing problem.
+fn source_issue(source: &hge_metadata::Source, msg: String) -> InconsistentObject {
+    InconsistentObject::source(
+        &source.name,
+        msg,
+        serde_json::to_value(source).unwrap_or_default(),
+    )
 }
 
 /// Resolve every event trigger in `metadata` and, unless eventing is disabled, prepare the
@@ -30,7 +57,7 @@ pub async fn prepare(
     tables: &Tables,
     sources: &HashMap<String, Arc<PgSource>>,
     config: &ServerConfig,
-) -> (EventTriggers, Vec<String>) {
+) -> (EventTriggers, Vec<InconsistentObject>) {
     let mut inconsistencies = vec![];
     let mut out = EventTriggers::default();
     for source in &metadata.sources {
@@ -48,7 +75,13 @@ pub async fn prepare(
                 let conf: EventTriggerConf = match serde_json::from_value(raw.clone()) {
                     Ok(c) => c,
                     Err(e) => {
-                        inconsistencies.push(context(&entry.table, name, &e.to_string()));
+                        inconsistencies.push(trigger_issue(
+                            &source.name,
+                            &entry.table,
+                            name,
+                            raw,
+                            &e.to_string(),
+                        ));
                         continue;
                     }
                 };
@@ -69,7 +102,13 @@ pub async fn prepare(
                     None
                 };
                 if let Some(p) = problem {
-                    inconsistencies.push(context(&entry.table, &conf.name, &p));
+                    inconsistencies.push(trigger_issue(
+                        &source.name,
+                        &entry.table,
+                        &conf.name,
+                        raw,
+                        &p,
+                    ));
                     continue;
                 }
                 let Some(table) = tables.get(&source.name, &entry.table) else {
@@ -92,9 +131,11 @@ pub async fn prepare(
                     .into_iter()
                     .find(|c| !table.columns.contains_key(*c))
                 {
-                    inconsistencies.push(context(
+                    inconsistencies.push(trigger_issue(
+                        &source.name,
                         &entry.table,
                         &conf.name,
+                        raw,
                         &format!("column \"{missing}\" does not exist"),
                     ));
                     continue;
@@ -104,7 +145,13 @@ pub async fn prepare(
                         ddl.push(info.ddl(columns, config.stringify_numeric_types));
                         triggers.insert(info.name.clone(), Arc::new(info));
                     }
-                    Err(e) => inconsistencies.push(context(&entry.table, name, &e)),
+                    Err(e) => inconsistencies.push(trigger_issue(
+                        &source.name,
+                        &entry.table,
+                        name,
+                        raw,
+                        &e,
+                    )),
                 }
             }
         }
@@ -116,9 +163,9 @@ pub async fn prepare(
                 .and_then(|v| v.as_str())
                 .unwrap_or("public");
             if let Err(e) = catalog::init_source_catalog(pg.pool(), schema).await {
-                inconsistencies.push(format!(
-                    "source \"{}\": could not prepare the event trigger catalog: {e}",
-                    source.name
+                inconsistencies.push(source_issue(
+                    source,
+                    format!("could not prepare the event trigger catalog: {e}"),
                 ));
                 continue;
             }
@@ -128,9 +175,9 @@ pub async fn prepare(
                 Ok(report) => {
                     for (name, e) in &report.errors {
                         triggers.remove(name);
-                        inconsistencies.push(format!(
-                            "source \"{}\": in event trigger \"{name}\": {e}",
-                            source.name
+                        inconsistencies.push(source_issue(
+                            source,
+                            format!("in event trigger \"{name}\": {e}"),
                         ));
                     }
                     if !report.removed.is_empty() {
@@ -158,9 +205,9 @@ pub async fn prepare(
                     }
                 }
                 Err(e) => {
-                    inconsistencies.push(format!(
-                        "source \"{}\": could not create event triggers: {e}",
-                        source.name
+                    inconsistencies.push(source_issue(
+                        source,
+                        format!("could not create event triggers: {e}"),
                     ));
                     continue;
                 }

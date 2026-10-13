@@ -1,17 +1,19 @@
-//! Building [`AppState`] at startup (and, later, on metadata reload).
+//! Loading metadata at startup and resolving it against the databases (also on every
+//! metadata change).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use hge_core::{Code, Error};
+use hge_core::{Code, Error, InconsistentObject, QualifiedTable, SourceCatalog};
+use hge_metadata::store::MetadataStore;
 use hge_metadata::{Metadata, PgConnectionInfo, Source, SourceConfiguration, UrlConfig, load_dir};
+use hge_metadata_api::Reload;
 use hge_postgres::{IsolationLevel, PgSource, PoolConfig};
-use hge_schema::{SchemaOptions, resolve_tables};
+use hge_schema::{SchemaOptions, Tables, resolve_tables};
 use serde_json::json;
 use tracing::{info, warn};
 
 use crate::config::ServerConfig;
-use crate::state::AppState;
 
 /// Where the metadata came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,46 +23,47 @@ pub enum MetadataOrigin {
     Default,
 }
 
-/// Load metadata following V2's precedence (see architecture §5).
-pub async fn load_metadata(config: &ServerConfig) -> Result<(Metadata, MetadataOrigin), Error> {
+/// Load metadata following V2's precedence (see architecture §5) and make sure the store
+/// holds it. Returns the metadata and its resource version.
+pub async fn load_metadata(
+    config: &ServerConfig,
+    store: &dyn MetadataStore,
+) -> Result<(Metadata, i64, MetadataOrigin), Error> {
     if let Some(dir) = &config.metadata_dir {
         let md =
             load_dir(dir).map_err(|e| Error::new(Code::InvalidConfiguration, e.to_string()))?;
-        return Ok((md, MetadataOrigin::Directory));
-    }
-    if let Some(url) = config.catalog_url() {
-        let catalog = PgSource::connect(
-            "hdb_catalog",
-            url,
-            &PoolConfig {
-                max_connections: 1,
-                ..PoolConfig::default()
-            },
-        )?;
-        // A missing table fails at parse time, so check for it in its own statement.
-        let exists = catalog
-            .query_text(
-                "SELECT (to_regclass('hdb_catalog.hdb_metadata') IS NOT NULL)::text",
-                &[],
-            )
-            .await?;
-        let stored = if exists.as_deref() == Some("true") {
-            catalog
-                .query_text(
-                    "SELECT metadata::text FROM hdb_catalog.hdb_metadata WHERE id = 1",
-                    &[],
-                )
-                .await?
-        } else {
-            None
+        // Like the cli-migrations image's `hasura metadata apply`: the directory replaces
+        // the stored metadata. Replicas booting together may race; retry on conflict.
+        let doc = hge_metadata::export_json(&md);
+        let mut attempts = 0;
+        let version = loop {
+            let current = store.resource_version().await?;
+            match store.store(&doc, current).await {
+                Ok(v) => break v,
+                Err(e) if e.code == Code::Conflict && attempts < 5 => attempts += 1,
+                Err(e) => return Err(e),
+            }
         };
-        if let Some(text) = stored {
-            let value: serde_json::Value = serde_json::from_str(&text)
-                .map_err(|e| Error::unexpected(format!("invalid stored metadata: {e}")))?;
-            return Ok((hge_metadata::from_json(value)?, MetadataOrigin::Catalog));
-        }
+        return Ok((md, version, MetadataOrigin::Directory));
     }
-    Ok((default_metadata(config), MetadataOrigin::Default))
+    if let Some(stored) = store.fetch().await? {
+        let md = hge_metadata::from_json(stored.metadata)?;
+        return Ok((md, stored.resource_version, MetadataOrigin::Catalog));
+    }
+    let md = default_metadata(config);
+    let version = match store.store(&hge_metadata::export_json(&md), 0).await {
+        Ok(v) => v,
+        // Another replica stored the initial metadata first: use theirs.
+        Err(e) if e.code == Code::Conflict => {
+            if let Some(stored) = store.fetch().await? {
+                let md = hge_metadata::from_json(stored.metadata)?;
+                return Ok((md, stored.resource_version, MetadataOrigin::Catalog));
+            }
+            return Err(e);
+        }
+        Err(e) => return Err(e),
+    };
+    Ok((md, version, MetadataOrigin::Default))
 }
 
 /// Fresh-database metadata: a `default` source on `HASURA_GRAPHQL_DATABASE_URL`, like V2.
@@ -162,10 +165,46 @@ fn connection_info(source: &Source) -> Option<&PgConnectionInfo> {
     connection_info.as_ref()
 }
 
-/// Connect sources, introspect them, and resolve the schema inputs.
-pub async fn build_state(metadata: Metadata, config: &ServerConfig) -> AppState {
+/// A connected source, with what was introspected from it.
+#[derive(Clone)]
+pub struct PreparedSource {
+    /// The source's configuration and resolved URL; a change means a new pool.
+    key: String,
+    pub pg: Arc<PgSource>,
+    pub catalog: Arc<SourceCatalog>,
+    /// The tables `catalog` was introspected for.
+    introspected: HashSet<QualifiedTable>,
+}
+
+/// Metadata resolved against the databases: everything but the per-role schemas.
+#[derive(Clone, Default)]
+pub struct Prepared {
+    pub sources: HashMap<String, PreparedSource>,
+    pub tables: Arc<Tables>,
+    /// Deliverable event triggers.
+    pub event_triggers: Arc<hge_events::EventTriggers>,
+    pub inconsistencies: Vec<InconsistentObject>,
+}
+
+fn source_inconsistency(source: &Source, reason: impl Into<String>) -> InconsistentObject {
+    InconsistentObject::source(
+        &source.name,
+        reason,
+        serde_json::to_value(source).unwrap_or_default(),
+    )
+}
+
+/// Connect sources, introspect them, and resolve the schema inputs. Pools and catalogs of
+/// `base` are reused for sources whose configuration did not change, unless `reload` says
+/// otherwise; `catalogs` replaces introspection for the sources it names.
+pub async fn prepare(
+    metadata: &Metadata,
+    config: &ServerConfig,
+    base: Option<&Prepared>,
+    reload: &Reload,
+    mut catalogs: HashMap<String, SourceCatalog>,
+) -> Prepared {
     let mut sources = HashMap::new();
-    let mut catalogs = HashMap::new();
     let mut inconsistencies = vec![];
 
     for source in &metadata.sources {
@@ -173,65 +212,110 @@ pub async fn build_state(metadata: Metadata, config: &ServerConfig) -> AppState 
             source.kind.as_str(),
             "postgres" | "pg" | "citus" | "cockroach"
         ) {
-            inconsistencies.push(format!(
-                "source \"{}\": backend kind \"{}\" is not supported yet",
-                source.name, source.kind
+            inconsistencies.push(source_inconsistency(
+                source,
+                format!("backend kind \"{}\" is not supported yet", source.kind),
             ));
             continue;
         }
         let Some(info) = connection_info(source) else {
-            inconsistencies.push(format!(
-                "source \"{}\": missing connection_info",
-                source.name
-            ));
+            inconsistencies.push(source_inconsistency(source, "missing connection_info"));
             continue;
         };
         let url = match resolve_url(&info.database_url, config) {
             Ok(u) => u,
             Err(e) => {
-                inconsistencies.push(format!("source \"{}\": {e}", source.name));
+                inconsistencies.push(source_inconsistency(source, e));
                 continue;
             }
         };
-        let pg = match PgSource::connect(&source.name, &url, &pool_config(info, config)) {
-            Ok(pg) => Arc::new(pg),
-            Err(e) => {
-                inconsistencies.push(format!("source \"{}\": {}", source.name, e.message));
-                continue;
+        let key = format!(
+            "{}\n{url}",
+            serde_json::to_string(&source.configuration).unwrap_or_default()
+        );
+        let previous = base
+            .and_then(|b| b.sources.get(&source.name))
+            .filter(|p| p.key == key && !reload.reconnects(&source.name));
+        let pg = match previous {
+            Some(p) => p.pg.clone(),
+            None => match PgSource::connect(&source.name, &url, &pool_config(info, config)) {
+                Ok(pg) => Arc::new(pg),
+                Err(e) => {
+                    inconsistencies.push(source_inconsistency(source, e.message));
+                    continue;
+                }
+            },
+        };
+        let tracked: HashSet<QualifiedTable> =
+            source.tables.iter().map(|t| t.table.clone()).collect();
+        let (catalog, introspected) = if let Some(c) = catalogs.remove(&source.name) {
+            (Arc::new(c), tracked)
+        } else if let Some(p) = previous
+            .filter(|p| !reload.introspects(&source.name) && tracked.is_subset(&p.introspected))
+        {
+            (p.catalog.clone(), p.introspected.clone())
+        } else {
+            let list: Vec<_> = tracked.iter().cloned().collect();
+            match pg.introspect(&list).await {
+                Ok(c) => (Arc::new(c), tracked),
+                Err(e) => {
+                    inconsistencies.push(source_inconsistency(
+                        source,
+                        format!("could not introspect database: {}", e.message),
+                    ));
+                    continue;
+                }
             }
         };
-        let tracked: Vec<_> = source.tables.iter().map(|t| t.table.clone()).collect();
-        match pg.introspect(&tracked).await {
-            Ok(catalog) => {
-                catalogs.insert(source.name.clone(), catalog);
-                sources.insert(source.name.clone(), pg);
-            }
-            Err(e) => inconsistencies.push(format!(
-                "source \"{}\": could not introspect database: {}",
-                source.name, e.message
-            )),
-        }
+        sources.insert(
+            source.name.clone(),
+            PreparedSource {
+                key,
+                pg,
+                catalog,
+                introspected,
+            },
+        );
     }
 
-    let (tables, table_issues) = resolve_tables(&metadata, &catalogs);
+    let catalog_refs: HashMap<String, Arc<SourceCatalog>> = sources
+        .iter()
+        .map(|(name, s)| (name.clone(), s.catalog.clone()))
+        .collect();
+    let (tables, table_issues) = resolve_tables(metadata, &catalog_refs);
     inconsistencies.extend(table_issues);
+    let pg_sources: HashMap<String, Arc<PgSource>> = sources
+        .iter()
+        .map(|(name, s)| (name.clone(), s.pg.clone()))
+        .collect();
     let (event_triggers, event_issues) =
-        crate::events::prepare(&metadata, &tables, &sources, config).await;
+        crate::events::prepare(metadata, &tables, &pg_sources, config).await;
     inconsistencies.extend(event_issues);
-    for issue in &inconsistencies {
+    Prepared {
+        sources,
+        tables: Arc::new(tables),
+        event_triggers: Arc::new(event_triggers),
+        inconsistencies,
+    }
+}
+
+/// Log a freshly prepared state.
+pub fn log_prepared(prepared: &Prepared) {
+    for issue in &prepared.inconsistencies {
         warn!(target: "metadata", "inconsistent metadata: {issue}");
     }
     info!(
         target: "startup",
-        sources = sources.len(),
-        tables = tables.ordered.len(),
+        sources = prepared.sources.len(),
+        tables = prepared.tables.ordered.len(),
         "metadata loaded"
     );
-    let options = SchemaOptions {
+}
+
+/// The schema options derived from the server configuration.
+pub fn schema_options(config: &ServerConfig) -> SchemaOptions {
+    SchemaOptions {
         stringify_numeric_types: config.stringify_numeric_types,
         dangerously_collapse_booleans: config.v1_boolean_null_collapse,
-    };
-    let mut state = AppState::new(metadata, tables, sources, inconsistencies, options);
-    state.event_triggers = Arc::new(event_triggers);
-    state
+    }
 }

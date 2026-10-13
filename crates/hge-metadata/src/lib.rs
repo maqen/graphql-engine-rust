@@ -5,7 +5,9 @@
 
 mod actions_sdl;
 pub mod dir;
+pub mod export;
 pub mod model;
+pub mod store;
 
 use std::path::{Path, PathBuf};
 
@@ -30,6 +32,7 @@ impl LoadError {
 }
 
 pub use dir::{load_dir, load_dir_json};
+pub use export::export_json;
 
 /// Parse the canonical metadata JSON.
 pub fn from_json(value: serde_json::Value) -> Result<Metadata, Error> {
@@ -47,7 +50,55 @@ pub fn from_json(value: serde_json::Value) -> Result<Metadata, Error> {
     serde_path_to_error_lite(value)
 }
 
+/// Keys V2's `TableMetadata` parser accepts; anything else is an error there.
+const TABLE_KEYS: &[&str] = &[
+    "table",
+    "is_enum",
+    "configuration",
+    "object_relationships",
+    "array_relationships",
+    "computed_fields",
+    "remote_relationships",
+    "insert_permissions",
+    "select_permissions",
+    "update_permissions",
+    "delete_permissions",
+    "event_triggers",
+    "apollo_federation_config",
+    "logical_model",
+];
+
+/// V2 rejects unknown keys in table metadata (the one place where it is strict).
+fn check_table_keys(value: &serde_json::Value) -> Result<(), Error> {
+    let sources = value.get("sources").and_then(|s| s.as_array());
+    for (i, source) in sources.into_iter().flatten().enumerate() {
+        let tables = source.get("tables").and_then(|t| t.as_array());
+        for (j, table) in tables.into_iter().flatten().enumerate() {
+            let Some(obj) = table.as_object() else {
+                continue;
+            };
+            let unknown: Vec<String> = obj
+                .keys()
+                .filter(|k| !TABLE_KEYS.contains(&k.as_str()))
+                .map(|k| format!("\"{k}\""))
+                .collect();
+            if !unknown.is_empty() {
+                return Err(Error::new(
+                    Code::ParseFailed,
+                    format!(
+                        "unexpected keys when parsing TableMetadata: [{}]",
+                        unknown.join(",")
+                    ),
+                )
+                .with_path(format!("$.sources[{i}].tables[{j}]")));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn serde_path_to_error_lite(value: serde_json::Value) -> Result<Metadata, Error> {
+    check_table_keys(&value)?;
     serde_json::from_value::<Metadata>(value)
         .map_err(|e| Error::new(Code::ParseFailed, format!("invalid metadata: {e}")))
 }

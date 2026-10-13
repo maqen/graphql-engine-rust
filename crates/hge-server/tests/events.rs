@@ -125,7 +125,13 @@ async fn event_trigger_cases() {
         .expect("build engine");
 
     // The trigger with an unresolvable webhook is inconsistent and gets no SQL trigger.
-    let inconsistencies = engine.state.load().inconsistencies.clone();
+    let inconsistencies: Vec<String> = engine
+        .state
+        .load()
+        .inconsistencies
+        .iter()
+        .map(|o| o.reason.clone())
+        .collect();
     assert_eq!(
         inconsistencies,
         vec![

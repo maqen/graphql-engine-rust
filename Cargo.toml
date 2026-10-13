@@ -19,6 +19,7 @@ all = { level = "warn", priority = -1 }
 # internal crates
 hge-core = { path = "crates/hge-core" }
 hge-metadata = { path = "crates/hge-metadata" }
+hge-metadata-api = { path = "crates/hge-metadata-api" }
 hge-ir = { path = "crates/hge-ir" }
 hge-schema = { path = "crates/hge-schema" }
 hge-postgres = { path = "crates/hge-postgres" }
@@ -58,6 +59,7 @@ tokio-util = "0.7"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "compression-gzip", "trace"] }
 tracing = "0.1"
+uuid = { version = "1", features = ["v4"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 webpki-roots = "1"
 subtle = "2"

@@ -6,6 +6,7 @@
 
 pub mod catalog;
 pub mod error;
+pub mod inconsistency;
 pub mod names;
 pub mod session;
 
@@ -14,5 +15,6 @@ pub use catalog::{
     TypeKind, UniqueConstraint,
 };
 pub use error::{Code, Error, Result};
+pub use inconsistency::InconsistentObject;
 pub use names::QualifiedTable;
 pub use session::{ADMIN_ROLE, RoleName, Session, SessionVariables};

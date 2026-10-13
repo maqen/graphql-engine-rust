@@ -63,6 +63,18 @@ pub struct Metadata {
 }
 
 impl Metadata {
+    /// V2's `emptyMetadata`: version 3, no sources, nothing else.
+    pub fn empty() -> Self {
+        Metadata {
+            version: 3,
+            ..Metadata::default()
+        }
+    }
+
+    pub fn source_mut(&mut self, name: &str) -> Option<&mut Source> {
+        self.sources.iter_mut().find(|s| s.name == name)
+    }
+
     pub fn source(&self, name: &str) -> Option<&Source> {
         self.sources.iter().find(|s| s.name == name)
     }

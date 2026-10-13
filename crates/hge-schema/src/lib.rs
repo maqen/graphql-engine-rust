@@ -17,7 +17,7 @@ pub mod tables;
 use std::collections::HashMap;
 
 use async_graphql_parser::types::ExecutableDocument;
-use hge_core::{Error, SourceCatalog};
+use hge_core::{Error, InconsistentObject, SourceCatalog};
 use hge_ir::Operation;
 use hge_metadata::Metadata;
 use serde_json::{Map, Value as Json};
@@ -27,25 +27,27 @@ pub use tables::{TableInfo, Tables};
 
 /// Join metadata with the database catalogs. Returns the tables and a list of
 /// inconsistencies (objects that could not be resolved and were skipped).
-pub fn resolve_tables(
+pub fn resolve_tables<C: std::borrow::Borrow<SourceCatalog>>(
     metadata: &Metadata,
-    catalogs: &HashMap<String, SourceCatalog>,
-) -> (Tables, Vec<String>) {
+    catalogs: &HashMap<String, C>,
+) -> (Tables, Vec<InconsistentObject>) {
     let mut tables = Tables::default();
     let mut inconsistencies = vec![];
     for source in &metadata.sources {
-        match catalogs.get(&source.name) {
-            Some(catalog) => {
-                tables::resolve_source(source, catalog, &mut tables, &mut inconsistencies)
-            }
-            None => inconsistencies.push(format!(
-                "source \"{}\" is not reachable or not supported",
-                source.name
-            )),
+        // A source without a catalog is itself reported inconsistent by whoever failed to
+        // introspect it; like V2, its tables are not listed separately.
+        if let Some(catalog) = catalogs.get(&source.name) {
+            tables::resolve_source(source, catalog.borrow(), &mut tables, &mut inconsistencies)
         }
     }
     tables::drop_conflicting(&mut tables, &mut inconsistencies);
     permissions::resolve_permissions(&mut tables, &mut inconsistencies);
+    // V2 lists sources, then tables, then the objects inside tables.
+    inconsistencies.sort_by_key(|o| match o.kind.as_str() {
+        "source" => 0,
+        "table" => 1,
+        _ => 2,
+    });
     (tables, inconsistencies)
 }
 

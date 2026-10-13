@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use hge_core::{
-    ColumnType, QualifiedTable, RoleName, SourceCatalog, TableCatalog, TableMutability,
-    UniqueConstraint,
+    ColumnType, InconsistentObject, QualifiedTable, RoleName, SourceCatalog, TableCatalog,
+    TableMutability, UniqueConstraint,
 };
 use hge_ir::TablePermissions;
 use hge_metadata::{
@@ -143,23 +143,30 @@ pub fn is_valid_name(s: &str) -> bool {
 }
 
 /// Resolve the tables of one source. Tables missing from the catalog, or whose names are not
-/// valid GraphQL names, are reported as inconsistencies and skipped.
+/// valid GraphQL names, are reported as inconsistencies and skipped; so are relationships
+/// that cannot be resolved (the table itself is kept).
 pub fn resolve_source(
     source: &Source,
     catalog: &SourceCatalog,
     tables: &mut Tables,
-    inconsistencies: &mut Vec<String>,
+    inconsistencies: &mut Vec<InconsistentObject>,
 ) {
     let source_name: Arc<str> = Arc::from(source.name.as_str());
     for entry in &source.tables {
+        let table_def = || serde_json::to_value(&entry.table).unwrap_or_default();
         let Some(cat) = catalog.table(&entry.table) else {
-            inconsistencies.push(format!(
-                "table \"{}\" does not exist in source \"{}\"",
-                entry.table, source.name
+            inconsistencies.push(InconsistentObject::table(
+                &source.name,
+                &entry.table,
+                format!(
+                    "no such table/view exists in source: \"{}\"",
+                    entry.table.v2_text()
+                ),
+                table_def(),
             ));
             continue;
         };
-        match resolve_table(&source_name, entry, cat, catalog) {
+        match resolve_table(&source_name, entry, cat, catalog, inconsistencies) {
             Ok(info) => {
                 let info = Arc::new(info);
                 tables
@@ -167,9 +174,40 @@ pub fn resolve_source(
                     .insert((source_name.clone(), entry.table.clone()), info.clone());
                 tables.ordered.push(info);
             }
-            Err(e) => inconsistencies.push(e),
+            Err(e) => inconsistencies.push(InconsistentObject::table(
+                &source.name,
+                &entry.table,
+                e,
+                table_def(),
+            )),
         }
     }
+}
+
+fn relationship_issue(
+    kind: &str,
+    rel: &impl serde::Serialize,
+    name: &str,
+    source: &str,
+    table: &QualifiedTable,
+    reason: String,
+) -> InconsistentObject {
+    InconsistentObject::table_object(
+        kind,
+        name,
+        source,
+        table,
+        reason,
+        with_comment(serde_json::to_value(rel).unwrap_or_default()),
+    )
+}
+
+/// V2's relationship definitions always carry `comment`.
+fn with_comment(mut def: serde_json::Value) -> serde_json::Value {
+    if let Some(obj) = def.as_object_mut() {
+        obj.entry("comment").or_insert(serde_json::Value::Null);
+    }
+    def
 }
 
 fn resolve_table(
@@ -177,6 +215,7 @@ fn resolve_table(
     entry: &TableEntry,
     cat: &TableCatalog,
     catalog: &SourceCatalog,
+    issues: &mut Vec<InconsistentObject>,
 ) -> Result<TableInfo, String> {
     let config = &entry.configuration;
     let gql_name = match &config.custom_name {
@@ -217,28 +256,39 @@ fn resolve_table(
 
     let mut object_relationships = vec![];
     for rel in &entry.object_relationships {
-        let (target, mapping, forward) = match &rel.using {
+        let resolved = match &rel.using {
             ObjectRelUsing::ForeignKey {
                 foreign_key_constraint_on,
             } => match foreign_key_constraint_on {
                 ObjectFkOn::Column(c) => {
-                    let (t, m) = forward_fk(cat, std::slice::from_ref(c), &rel.name)?;
-                    (t, m, true)
+                    forward_fk(cat, std::slice::from_ref(c), &rel.name).map(|(t, m)| (t, m, true))
                 }
                 ObjectFkOn::Columns(cs) => {
-                    let (t, m) = forward_fk(cat, cs, &rel.name)?;
-                    (t, m, true)
+                    forward_fk(cat, cs, &rel.name).map(|(t, m)| (t, m, true))
                 }
                 ObjectFkOn::Remote(remote) => {
-                    let (t, m) = reverse_fk(cat, catalog, remote, &rel.name)?;
-                    (t, m, false)
+                    reverse_fk(cat, catalog, source, remote, &rel.name).map(|(t, m)| (t, m, false))
                 }
             },
             ObjectRelUsing::Manual {
                 manual_configuration,
             } => {
                 let (t, m) = manual(manual_configuration);
-                (t, m, false)
+                Ok((t, m, false))
+            }
+        };
+        let (target, mapping, forward) = match resolved {
+            Ok(r) => r,
+            Err(e) => {
+                issues.push(relationship_issue(
+                    "object_relation",
+                    rel,
+                    &rel.name,
+                    source,
+                    &entry.table,
+                    e,
+                ));
+                continue;
             }
         };
         let nullable = !forward
@@ -258,13 +308,27 @@ fn resolve_table(
 
     let mut array_relationships = vec![];
     for rel in &entry.array_relationships {
-        let (target, mapping) = match &rel.using {
+        let resolved = match &rel.using {
             ArrayRelUsing::ForeignKey {
                 foreign_key_constraint_on,
-            } => reverse_fk(cat, catalog, foreign_key_constraint_on, &rel.name)?,
+            } => reverse_fk(cat, catalog, source, foreign_key_constraint_on, &rel.name),
             ArrayRelUsing::Manual {
                 manual_configuration,
-            } => manual(manual_configuration),
+            } => Ok(manual(manual_configuration)),
+        };
+        let (target, mapping) = match resolved {
+            Ok(r) => r,
+            Err(e) => {
+                issues.push(relationship_issue(
+                    "array_relation",
+                    rel,
+                    &rel.name,
+                    source,
+                    &entry.table,
+                    e,
+                ));
+                continue;
+            }
         };
         array_relationships.push(Arc::new(RelationshipInfo {
             name: rel.name.clone(),
@@ -340,14 +404,17 @@ fn forward_fk(
 fn reverse_fk(
     cat: &TableCatalog,
     catalog: &SourceCatalog,
+    source: &str,
     remote: &hge_metadata::RemoteFk,
     rel: &str,
 ) -> Result<(QualifiedTable, Vec<(String, String)>), String> {
     let columns = remote.columns();
     let remote_cat = catalog.table(&remote.table).ok_or_else(|| {
         format!(
-            "relationship \"{rel}\" of table \"{}\": table \"{}\" does not exist",
-            cat.name, remote.table
+            "in table \"{}\": in relationship \"{rel}\": table \"{}\" does not exist in source: {}",
+            cat.name.v2_text(),
+            remote.table.v2_text(),
+            source
         )
     })?;
     let fk = remote_cat
@@ -428,7 +495,7 @@ const TYPE_SUFFIXES: &[&str] = &[
 /// schema's own names), or whose fields clash among themselves, as V2 reports such metadata
 /// inconsistent. Without this a later table would silently reuse an earlier table's types,
 /// exposing columns through the wrong permissions.
-pub fn drop_conflicting(tables: &mut Tables, inconsistencies: &mut Vec<String>) {
+pub fn drop_conflicting(tables: &mut Tables, inconsistencies: &mut Vec<InconsistentObject>) {
     let mut types: HashMap<String, String> = RESERVED_TYPE_NAMES
         .iter()
         .map(|n| ((*n).to_owned(), "the schema".to_owned()))
@@ -487,7 +554,12 @@ pub fn drop_conflicting(tables: &mut Tables, inconsistencies: &mut Vec<String>) 
             }
         }
         if let Some(p) = problem {
-            inconsistencies.push(format!("{owner}: {p}"));
+            inconsistencies.push(InconsistentObject::table(
+                &table.source,
+                &table.name,
+                p,
+                serde_json::to_value(&table.name).unwrap_or_default(),
+            ));
             tables
                 .by_name
                 .remove(&(table.source.clone(), table.name.clone()));

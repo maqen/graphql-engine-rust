@@ -50,6 +50,10 @@ pub struct ServerConfig {
     pub preserve_401_errors: bool,
     /// Event trigger processing (`HASURA_GRAPHQL_EVENTS_*`, `DISABLE_EVENTING`, …).
     pub events: hge_events::EventingConfig,
+    /// `HASURA_GRAPHQL_ENABLE_READ_ONLY_MODE`: reject metadata and database writes.
+    pub read_only: bool,
+    /// `HASURA_GRAPHQL_SCHEMA_SYNC_POLL_INTERVAL` in milliseconds (0 disables).
+    pub schema_sync_poll_interval_ms: u64,
 }
 
 impl Default for ServerConfig {
@@ -81,6 +85,8 @@ impl Default for ServerConfig {
                 user_agent: format!("hasura-graphql-engine/{}", crate::routes::VERSION),
                 ..hge_events::EventingConfig::default()
             },
+            read_only: false,
+            schema_sync_poll_interval_ms: 1000,
         }
     }
 }

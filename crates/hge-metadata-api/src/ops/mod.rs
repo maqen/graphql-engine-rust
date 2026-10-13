@@ -1,0 +1,204 @@
+//! Metadata commands. Each module implements a family; this file only dispatches.
+//!
+//! A command is a function `(ctx, args) -> ApiResult<Value>` that edits `ctx.metadata` and
+//! then calls `ctx.check(..)` (modifying commands) or just reads state.
+
+pub mod metadata;
+
+use hge_core::Code;
+use serde_json::Value;
+
+use crate::api::Command;
+use crate::ctx::Ctx;
+use crate::response::{ApiError, ApiResult, parse_failed};
+use crate::runtime::Runtime;
+
+/// Backend-agnostic commands V2 knows. Those not implemented yet answer `not-supported`.
+const AGNOSTIC: &[&str] = &[
+    "replace_metadata",
+    "export_metadata",
+    "clear_metadata",
+    "reload_metadata",
+    "get_inconsistent_metadata",
+    "drop_inconsistent_metadata",
+    "get_catalog_state",
+    "set_catalog_state",
+    "dump_internal_state",
+    "rename_source",
+    "add_remote_schema",
+    "update_remote_schema",
+    "remove_remote_schema",
+    "reload_remote_schema",
+    "introspect_remote_schema",
+    "add_remote_schema_permissions",
+    "drop_remote_schema_permissions",
+    "create_remote_schema_remote_relationship",
+    "update_remote_schema_remote_relationship",
+    "delete_remote_schema_remote_relationship",
+    "create_cron_trigger",
+    "delete_cron_trigger",
+    "create_scheduled_event",
+    "delete_scheduled_event",
+    "get_scheduled_events",
+    "get_scheduled_event_invocations",
+    "get_cron_triggers",
+    "cleanup_event_trigger_logs",
+    "pause_event_trigger_cleanups",
+    "resume_event_trigger_cleanups",
+    "create_action",
+    "drop_action",
+    "update_action",
+    "create_action_permission",
+    "drop_action_permission",
+    "set_custom_types",
+    "create_query_collection",
+    "rename_query_collection",
+    "drop_query_collection",
+    "add_query_to_collection",
+    "drop_query_from_collection",
+    "add_collection_to_allowlist",
+    "drop_collection_from_allowlist",
+    "update_scope_of_collection_in_allowlist",
+    "create_rest_endpoint",
+    "drop_rest_endpoint",
+    "set_api_limits",
+    "remove_api_limits",
+    "set_metrics_config",
+    "remove_metrics_config",
+    "add_inherited_role",
+    "drop_inherited_role",
+    "add_host_to_tls_allowlist",
+    "drop_host_from_tls_allowlist",
+    "set_graphql_schema_introspection_options",
+    "set_query_tags",
+    "set_opentelemetry_config",
+    "set_opentelemetry_status",
+    "test_webhook_transform",
+    "dc_add_agent",
+    "dc_delete_agent",
+    "list_source_kinds",
+    "get_source_kind_capabilities",
+    "get_table_info",
+];
+
+/// Postgres commands V2 knows (after the `pg_` prefix).
+const PG_COMMANDS: &[&str] = &[
+    "add_source",
+    "drop_source",
+    "update_source",
+    "set_table_customization",
+    "set_apollo_federation_config",
+    "test_connection_template",
+    "get_source_tables",
+    "get_table_info",
+    "get_source_trackables",
+    "track_table",
+    "track_tables",
+    "untrack_table",
+    "untrack_tables",
+    "set_table_is_enum",
+    "create_insert_permission",
+    "create_select_permission",
+    "create_update_permission",
+    "create_delete_permission",
+    "drop_insert_permission",
+    "drop_select_permission",
+    "drop_update_permission",
+    "drop_delete_permission",
+    "set_permission_comment",
+    "create_object_relationship",
+    "create_array_relationship",
+    "drop_relationship",
+    "set_relationship_comment",
+    "rename_relationship",
+    "suggest_relationships",
+    "create_remote_relationship",
+    "update_remote_relationship",
+    "delete_remote_relationship",
+    "track_function",
+    "untrack_function",
+    "set_function_customization",
+    "create_function_permission",
+    "drop_function_permission",
+    "add_computed_field",
+    "drop_computed_field",
+    "create_event_trigger",
+    "delete_event_trigger",
+    "redeliver_event",
+    "invoke_event_trigger",
+    "get_event_logs",
+    "get_event_invocation_logs",
+    "get_event_by_id",
+    "get_native_query",
+    "track_native_query",
+    "untrack_native_query",
+    "get_logical_model",
+    "track_logical_model",
+    "untrack_logical_model",
+    "create_logical_model_select_permission",
+    "drop_logical_model_select_permission",
+];
+
+fn not_implemented(name: &str) -> ApiError {
+    ApiError::bad(
+        Code::NotSupported,
+        format!("metadata command \"{name}\" is not supported yet"),
+    )
+}
+
+/// Reject command names V2 does not know, with V2's message: anything that is not a
+/// backend-agnostic command is `<backend>_<command>`, and unknown backends are taken to be
+/// data connector names.
+pub fn validate_name(name: &str) -> ApiResult<()> {
+    if AGNOSTIC.contains(&name) || matches!(name, "bulk" | "bulk_keep_going" | "bulk_atomic") {
+        return Ok(());
+    }
+    let (prefix, command) = name.split_once('_').unwrap_or((name, ""));
+    let backend = match prefix {
+        "pg" | "postgres" => {
+            if PG_COMMANDS.contains(&command) {
+                return Ok(());
+            }
+            "postgres"
+        }
+        "citus" | "cockroach" | "mssql" | "bigquery" => {
+            if PG_COMMANDS.contains(&command) {
+                return Ok(());
+            }
+            prefix
+        }
+        other => other,
+    };
+    Err(parse_failed(
+        "$",
+        format!("unknown metadata command \"{command}\" for backend {backend}"),
+    ))
+}
+
+pub async fn run_agnostic<R: Runtime>(ctx: &mut Ctx<'_, R>, cmd: &Command) -> ApiResult<Value> {
+    let args = &cmd.args;
+    match cmd.name.as_str() {
+        "export_metadata" => metadata::export_metadata(ctx, cmd.version).await,
+        "replace_metadata" => metadata::replace_metadata(ctx, args, cmd.version).await,
+        "clear_metadata" => metadata::clear_metadata(ctx).await,
+        "reload_metadata" => metadata::reload_metadata(ctx, args).await,
+        "get_inconsistent_metadata" => metadata::get_inconsistent_metadata(ctx).await,
+        "drop_inconsistent_metadata" => metadata::drop_inconsistent_metadata(ctx).await,
+        "get_catalog_state" => metadata::get_catalog_state(ctx).await,
+        "set_catalog_state" => metadata::set_catalog_state(ctx, args).await,
+        "list_source_kinds" => Ok(metadata::list_source_kinds()),
+        name => Err(not_implemented(name)),
+    }
+}
+
+pub async fn run_backend<R: Runtime>(
+    _ctx: &mut Ctx<'_, R>,
+    backend: &str,
+    command: &str,
+    _args: &Value,
+) -> ApiResult<Value> {
+    if !matches!(backend, "pg" | "postgres") {
+        return Err(not_implemented(&format!("{backend}_{command}")));
+    }
+    Err(not_implemented(&format!("{backend}_{command}")))
+}
