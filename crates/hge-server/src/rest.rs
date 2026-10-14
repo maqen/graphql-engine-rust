@@ -15,6 +15,7 @@ use hge_rest::{RequestMethod, parse_query_string};
 use crate::graphql;
 use crate::routes::{json_response, request_id};
 use crate::state::Engine;
+use crate::telemetry::metrics::{self, OperationType};
 use crate::telemetry::query_log;
 
 pub async fn handler(
@@ -113,25 +114,36 @@ async fn run(
         .prepared
         .rest
         .lookup(RequestMethod::parse(method.as_str()), path)?;
-    let query = parse_query_string(uri.query().unwrap_or_default());
-    // Only a JSON object body contributes variables; anything else is ignored.
-    let body = (!body.is_empty())
-        .then(|| serde_json::from_slice::<serde_json::Value>(body).ok())
-        .flatten();
-    let variables = endpoint.variables(
-        &query,
-        body.as_ref().and_then(|b| b.as_object()),
-        &path_vars,
-    )?;
-    crate::policies::check_allowlist(&state, session, &endpoint.document, &endpoint.query)?;
-    let rs = state.role_schema(&session.role, session.backend_only);
-    let op = hge_schema::plan(&rs, &endpoint.document, None, &variables)?;
+    let started = std::time::Instant::now();
+    // Anything failing before the operation is planned has no operation type.
+    let planned = (|| {
+        let query = parse_query_string(uri.query().unwrap_or_default());
+        // Only a JSON object body contributes variables; anything else is ignored.
+        let body = (!body.is_empty())
+            .then(|| serde_json::from_slice::<serde_json::Value>(body).ok())
+            .flatten();
+        let variables = endpoint.variables(
+            &query,
+            body.as_ref().and_then(|b| b.as_object()),
+            &path_vars,
+        )?;
+        crate::policies::check_allowlist(&state, session, &endpoint.document, &endpoint.query)?;
+        let rs = state.role_schema(&session.role, session.backend_only);
+        let op = hge_schema::plan(&rs, &endpoint.document, None, &variables)?;
+        Ok::<_, Error>((op, variables))
+    })();
+    let (op, variables) = planned.inspect_err(|_| {
+        metrics::graphql_request(OperationType::Unknown, false, started.elapsed());
+    })?;
     if query_log::enabled() {
         let variables = serde_json::Value::Object(variables);
         let request = query_log::request(&endpoint.query, None, Some(&variables));
         query_log::log(&state, session, request_id, &request, &op);
     }
-    match graphql::execute(engine, &state, session, headers, Some(&endpoint.query), &op).await {
+    let result =
+        graphql::execute(engine, &state, session, headers, Some(&endpoint.query), &op).await;
+    metrics::graphql_request(op.kind.into(), result.is_ok(), started.elapsed());
+    match result {
         Ok((body, cookies)) => Ok((strip_data_envelope(body), cookies)),
         Err(graphql::Failure::Error(e)) => Err(e),
         // A remote schema's errors, as the GraphQL endpoint returns them.

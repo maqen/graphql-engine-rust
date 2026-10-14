@@ -36,6 +36,7 @@ use uuid::Uuid;
 
 use crate::graphql::{self, GraphQLRequest};
 use crate::state::{AppState, Engine};
+use crate::telemetry::metrics::{self, OperationType, SubscriptionKind};
 use crate::telemetry::{self, Level, LogType, query_log};
 
 /// WebSocket and subscription settings.
@@ -289,9 +290,15 @@ enum Event {
 /// A running subscription.
 enum Running {
     /// A live query or stream, in a poller.
-    Poller(#[allow(dead_code)] SubscriptionHandle),
+    Poller(
+        #[allow(dead_code)] SubscriptionHandle,
+        #[allow(dead_code)] metrics::GaugeGuard,
+    ),
     /// An async action subscription's task.
-    Task(async_actions::TaskHandle),
+    Task(
+        async_actions::TaskHandle,
+        #[allow(dead_code)] metrics::GaugeGuard,
+    ),
 }
 
 /// Frames for the writer.
@@ -352,6 +359,7 @@ async fn write(
                 if is_data {
                     queued.fetch_sub(1, Ordering::SeqCst);
                 }
+                metrics::websocket_sent(text.len());
                 if sink.send(Message::text(text)).await.is_err() {
                     return;
                 }
@@ -419,6 +427,7 @@ impl Connection {
         upgrade_headers: HeaderMap,
         ws_id: Uuid,
     ) {
+        let _connection = metrics::websocket_connection();
         let (sink, mut stream) = socket.split();
         let (out_tx, out_rx) = mpsc::unbounded_channel();
         let queued = Arc::new(AtomicUsize::new(0));
@@ -470,8 +479,14 @@ impl Connection {
             let expiry = conn.expiry();
             tokio::select! {
                 frame = stream.next() => match frame {
-                    Some(Ok(Message::Text(t))) => conn.on_frame(t.as_bytes()).await,
-                    Some(Ok(Message::Binary(b))) => conn.on_frame(&b).await,
+                    Some(Ok(Message::Text(t))) => {
+                        metrics::websocket_received(t.len());
+                        conn.on_frame(t.as_bytes()).await;
+                    }
+                    Some(Ok(Message::Binary(b))) => {
+                        metrics::websocket_received(b.len());
+                        conn.on_frame(&b).await;
+                    }
                     Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
                     Some(Ok(_)) => {} // ping / pong frames are answered by the library
                 },
@@ -674,7 +689,7 @@ impl Connection {
 
     async fn on_start(&mut self, id: String, payload: StartPayload) {
         // A task that completed may not have reported it yet: its id is free.
-        if let Some((_, Running::Task(t), _)) = self.subscriptions.get(&id)
+        if let Some((_, Running::Task(t, _), _)) = self.subscriptions.get(&id)
             && t.is_released()
             && let Some((_, _, Some(op_log))) = self.subscriptions.remove(&id)
         {
@@ -712,6 +727,7 @@ impl Connection {
             payload.operation_name.as_deref(),
             Some(&payload.query),
         );
+        let started = std::time::Instant::now();
         let state = self.engine.state.load_full();
         let logged = request_id
             .filter(|_| query_log::enabled())
@@ -732,7 +748,10 @@ impl Connection {
         };
         let op = match graphql::plan(&state, &session, req) {
             Ok(op) => op,
-            Err(e) => return self.request_error(&id, &e, op_log),
+            Err(e) => {
+                metrics::graphql_request(OperationType::Unknown, false, started.elapsed());
+                return self.request_error(&id, &e, op_log);
+            }
         };
         if let Some((request, request_id)) = &logged {
             query_log::log(&state, &session, request_id, request, &op);
@@ -753,6 +772,7 @@ impl Connection {
             let run = async move {
                 let result =
                     graphql::execute(&engine, &state, &session, &headers, Some(&query), &op).await;
+                metrics::graphql_request(op.kind.into(), result.is_ok(), started.elapsed());
                 // A remote schema's own errors are its response, not a failed query.
                 if let (Some(op_log), Err(graphql::Failure::Error(e))) = (&op_log, &result) {
                     op_log.log(log::OpEvent::QueryErr(e));
@@ -815,7 +835,7 @@ impl Connection {
             }) => self
                 .subscribe(&state, &session, &id, generation, source, fields, layout)
                 .await
-                .map(Running::Poller),
+                .map(|(handle, kind)| Running::Poller(handle, metrics::active_subscription(kind))),
             Ok(Plan::AsyncActions { fields, live }) => Ok(Running::Task(
                 async_actions::AsyncActionSubscription {
                     engine: self.engine.clone(),
@@ -837,8 +857,14 @@ impl Connection {
                     polls: self.engine.ws.async_action_polls.clone(),
                 }
                 .spawn(),
+                metrics::active_subscription(SubscriptionKind::LiveQuery),
             )),
         };
+        metrics::graphql_request(
+            OperationType::Subscription,
+            running.is_ok(),
+            started.elapsed(),
+        );
         match running {
             Ok(running) => {
                 if let Some(op_log) = &op_log {
@@ -871,7 +897,7 @@ impl Connection {
         source: &str,
         fields: Vec<&QueryRoot>,
         layout: Layout,
-    ) -> Result<SubscriptionHandle, Error> {
+    ) -> Result<(SubscriptionHandle, SubscriptionKind), Error> {
         let executor: Arc<dyn SourceExecutor> = state
             .sources
             .get(source)
@@ -882,10 +908,10 @@ impl Connection {
             _ => None,
         };
         let query = executor.multiplexed_query(&fields, session)?;
-        let registry = if query.cursor.is_some() {
-            &self.engine.ws.streaming
+        let (registry, kind) = if query.cursor.is_some() {
+            (&self.engine.ws.streaming, SubscriptionKind::Streaming)
         } else {
-            &self.engine.ws.live_queries
+            (&self.engine.ws.live_queries, SubscriptionKind::LiveQuery)
         };
         let sink = Arc::new(OperationSink {
             id: id.to_owned(),
@@ -901,7 +927,8 @@ impl Connection {
             source: source.into(),
             role: session.role.as_str().into(),
         };
-        registry.subscribe_with(executor, query, sink, info).await
+        let handle = registry.subscribe_with(executor, query, sink, info).await?;
+        Ok((handle, kind))
     }
 
     /// `generation` tells the overflowed subscription apart from a later one reusing its id.

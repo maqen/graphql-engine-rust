@@ -11,6 +11,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use hge_core::{Code, Error};
 use serde_json::{Value, json};
+use subtle::ConstantTimeEq;
 
 use crate::routes::{VERSION, json_response};
 use crate::state::Engine;
@@ -25,6 +26,10 @@ pub fn register(router: Router<Arc<Engine>>, engine: &Engine) -> Router<Arc<Engi
     if engine.config.api_enabled("config") {
         router = router.route("/v1alpha1/config", get(config));
     }
+    if engine.config.api_enabled("metrics") {
+        super::metrics::enable();
+        router = router.route("/v1/metrics", get(metrics));
+    }
     if engine.config.api_enabled("developer") {
         router = router
             .route("/dev/ekg", get(dev_ekg))
@@ -33,6 +38,35 @@ pub fn register(router: Router<Arc<Engine>>, engine: &Engine) -> Router<Arc<Engi
             .route("/dev/subscriptions/extended", get(dev_subscriptions));
     }
     router
+}
+
+/// `GET /v1/metrics`: Prometheus metrics, behind `HASURA_GRAPHQL_METRICS_SECRET` (as
+/// `Authorization: Bearer <secret>`) when one is set. V2 documents the secret but not its
+/// error response; a wrong or missing one gets a 401 `access-denied`.
+async fn metrics(State(engine): State<Arc<Engine>>, headers: HeaderMap) -> Response {
+    if let Some(secret) = engine.config.metrics_secret.as_deref() {
+        let given = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "));
+        let ok = given.is_some_and(|g| bool::from(g.as_bytes().ct_eq(secret.as_bytes())));
+        if !ok {
+            let e = Error::new(Code::AccessDenied, "invalid metrics secret");
+            return json_response(
+                StatusCode::UNAUTHORIZED,
+                e.to_api_json(false).to_string(),
+                None,
+            );
+        }
+    }
+    (
+        [(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; version=0.0.4; charset=utf-8"),
+        )],
+        super::metrics::render(),
+    )
+        .into_response()
 }
 
 /// V2's answers for unknown paths and methods. Must be applied after every route is

@@ -19,6 +19,7 @@
 pub mod endpoints;
 pub mod http;
 mod layer;
+pub mod metrics;
 pub mod query_log;
 pub mod startup;
 pub(crate) mod time;

@@ -71,6 +71,11 @@ pub fn router(engine: Arc<Engine>) -> Router {
                 axum::routing::post(crate::explain::handler),
             );
     }
+    if engine.config.api_enabled("metrics") {
+        router = router.route_layer(axum::middleware::from_fn(
+            crate::telemetry::metrics::http_middleware,
+        ));
+    }
     let mut router = crate::telemetry::endpoints::fallbacks(router)
         .layer(axum::middleware::from_fn(ws::reject_other_paths))
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024));

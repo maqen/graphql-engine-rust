@@ -13,7 +13,7 @@ use serde_json::{Map, Value as Json};
 
 use crate::response_cache;
 use crate::state::{AppState, Engine, SchemaKey};
-use crate::telemetry::query_log;
+use crate::telemetry::{metrics, query_log};
 
 /// One GraphQL request.
 #[derive(Debug, Deserialize)]
@@ -128,7 +128,20 @@ async fn execute_one(
     request_id: &str,
     req: GraphQLRequest,
 ) -> (String, Vec<String>, Option<Error>) {
-    match run(engine, state, session, headers, request_id, req).await {
+    let started = std::time::Instant::now();
+    let mut op_type = metrics::OperationType::Unknown;
+    let result = run(
+        engine,
+        state,
+        session,
+        headers,
+        request_id,
+        req,
+        &mut op_type,
+    )
+    .await;
+    metrics::graphql_request(op_type, result.is_ok(), started.elapsed());
+    match result {
         Ok((body, cookies)) => (body, cookies, None),
         Err(Failure::Error(e)) => {
             let body = error_body(&e, include_internal(engine, session));
@@ -173,6 +186,7 @@ async fn run(
     client_headers: &HeaderMap,
     request_id: &str,
     req: GraphQLRequest,
+    op_type: &mut metrics::OperationType,
 ) -> Result<(String, Vec<String>), Failure> {
     // Introspection-only responses are cached per schema. A cached response skips planning,
     // so with `query-log` on every request is planned (and logged) instead.
@@ -182,9 +196,11 @@ async fn run(
     if let Some(key) = cache_key.as_ref().filter(|_| !logging)
         && let Some(body) = state.responses.get(key)
     {
+        *op_type = metrics::OperationType::Query;
         return Ok((body.to_string(), vec![]));
     }
     let op = plan_request(state, session, &req)?;
+    *op_type = op.kind.into();
     if op.kind == OperationKind::Subscription {
         return Err(Error::new(
             Code::UnexpectedPayload,
