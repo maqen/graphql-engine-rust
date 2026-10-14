@@ -51,6 +51,8 @@ pub struct AppState {
     schemas: RwLock<HashMap<SchemaKey, Arc<RoleSchema>>>,
     /// Responses of introspection-only queries, per schema.
     pub(crate) responses: crate::response_cache::ResponseCache,
+    /// Parsed query documents by query text.
+    pub(crate) documents: crate::parse_cache::ParseCache,
 }
 
 fn known_roles(metadata: &Metadata) -> HashSet<RoleName> {
@@ -156,6 +158,7 @@ impl AppState {
             options,
             schemas: RwLock::new(schemas),
             responses: Default::default(),
+            documents: Default::default(),
         };
         // Build the admin schema eagerly so the first request is fast and errors surface early.
         state.role_schema(&RoleName::admin(), false);
