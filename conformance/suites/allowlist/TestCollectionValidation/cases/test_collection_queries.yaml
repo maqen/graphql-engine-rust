@@ -1,0 +1,422 @@
+upstream:
+  file: test_endpoints.py
+  by_hand: true
+steps:
+- description: Replace metadata with invalid collection queries
+  url: /v1/metadata
+  status: 200
+  query:
+    type: replace_metadata
+    args:
+      allow_inconsistent_metadata: true
+      metadata:
+        version: 3
+        sources:
+        - name: default
+          kind: postgres
+          configuration:
+            connection_info:
+              database_url:
+                from_env: HASURA_GRAPHQL_DATABASE_URL
+          tables:
+          - table:
+              name: qv_author
+              schema: public
+            array_relationships:
+            - name: articles
+              using:
+                foreign_key_constraint_on:
+                  column: author_id
+                  table:
+                    name: qv_article
+                    schema: public
+          - table:
+              name: qv_article
+              schema: public
+        query_collections:
+        - name: c1
+          definition:
+            queries:
+            - name: ok
+              query: query ok { qv_author { id name } }
+            - name: nofield
+              query: query nofield { nope }
+            - name: nested
+              query: query nested { qv_author { id nope articles { title zz } } }
+            - name: scalarsel
+              query: query scalarsel { qv_author { id { x } } }
+            - name: objnosel
+              query: query objnosel { qv_author { articles } }
+            - name: mut
+              query: 'mutation mut { insert_qv_author(objects: []) { affected_rows } nope }'
+            - name: sub
+              query: subscription sub { qv_author { id } }
+            - name: badvar
+              query: 'query badvar($a: Nope, $b: qv_author, $c: Int) { qv_author { id } }'
+            - name: mismatch
+              query: 'query mismatch { qv_author { x: id x: name } }'
+            - name: mismatchobj
+              query: 'query mismatchobj { a: qv_author { id } a: qv_article { id } }'
+            - name: mismatchroot
+              query: 'query mismatchroot { x: qv_author { id } x: qv_author_aggregate { aggregate { count } } nope }'
+            - name: frag
+              query: query frag { qv_author { ...F } } fragment F on qv_author { id bad }
+            - name: undef
+              query: query undef { qv_author { ...G } }
+            - name: cycle
+              query: query cycle { qv_author { ...A } } fragment A on qv_author { ...B } fragment B on qv_author { ...C } fragment C on qv_author { ...A }
+            - name: two
+              query: query a { qv_author { id } } query b { qv_author { id } }
+            - name: shorthand
+              query: '{ nope }'
+            - name: typename
+              query: 'query typename { __typename qv_author { __typename } __schema { types { name zz } } __type(name: "x") { name } }'
+            - name: inline
+              query: query inline { qv_author { ... on qv_author { id bad } ... { name } } }
+            - name: enumsel
+              query: query enumsel { __schema { types { kind { a } } } }
+            - name: inputout
+              query: query inputout { qv_author { id } }
+            - name: argsbad
+              query: 'query argsbad { qv_author(nope: 1) { id } }'
+            - name: multi
+              query: query multi { b1 c1 qv_author { d1 } }
+            - name: onlyfrag
+              query: fragment F on qv_author { id }
+        - name: c2
+          definition:
+            queries:
+            - name: nofield
+              query: query nofield { nope }
+            - name: dup
+              query: query nofield { nope }
+        allowlist:
+        - collection: c1
+        - collection: c2
+          scope:
+            global: false
+            roles:
+            - user
+        rest_endpoints:
+        - name: e1
+          url: e1
+          methods:
+          - GET
+          - POST
+          definition:
+            query:
+              collection_name: c1
+              query_name: nofield
+        - name: e0
+          url: e0
+          methods:
+          - GET
+          definition:
+            query:
+              collection_name: c2
+              query_name: nofield
+        - name: e2
+          url: e2
+          methods:
+          - GET
+          definition:
+            query:
+              collection_name: c1
+              query_name: nested
+  response:
+    inconsistent_objects:
+    - definition:
+        name: nofield
+        query: query nofield { nope }
+      name: query_collections nofield in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "nofield" is invalid with the following error(s): "$.nope: field ''nope'' not found in object ''query_root''". This query is being used in the following REST endpoint(s): "e1", "e1", "e0". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: nested
+        query: query nested { qv_author { id nope articles { title zz } } }
+      name: query_collections nested in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "nested" is invalid with the following error(s): "$.qv_author.articles.zz: field ''zz'' not found in object ''qv_article''", "$.qv_author.nope: field ''nope'' not found in object ''qv_author''". This query is being used in the following REST endpoint(s): "e2". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: scalarsel
+        query: query scalarsel { qv_author { id { x } } }
+      name: query_collections scalarsel in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "scalarsel" is invalid with the following error(s): "$.qv_author.id: scalar ''Int'' does not accept a selection set". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: objnosel
+        query: query objnosel { qv_author { articles } }
+      name: query_collections objnosel in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "objnosel" is invalid with the following error(s): "$.qv_author.articles: object of type ''qv_article'' must have a selection set". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: mut
+        query: 'mutation mut { insert_qv_author(objects: []) { affected_rows } nope }'
+      name: query_collections mut in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "mut" is invalid with the following error(s): "$.nope: field ''nope'' not found in object ''mutation_root''". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: badvar
+        query: 'query badvar($a: Nope, $b: qv_author, $c: Int) { qv_author { id } }'
+      name: query_collections badvar in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "badvar" is invalid with the following error(s): "$.b: object ''qv_author'' cannot be used in an input type", "$.a: type ''Nope'' not found in the schema". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: mismatch
+        query: 'query mismatch { qv_author { x: id x: name } }'
+      name: query_collections mismatch in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "mismatch" is invalid with the following error(s): "$.qv_author: field ''x'' seen with two different types: TypeNamed (Nullability {unNullability = True}) (Name {unName = "String"}) and TypeNamed (Nullability {unNullability = False}) (Name {unName = "Int"})". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: mismatchobj
+        query: 'query mismatchobj { a: qv_author { id } a: qv_article { id } }'
+      name: query_collections mismatchobj in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "mismatchobj" is invalid with the following error(s): "$: field ''a'' seen with two different types: TypeList (Nullability {unNullability = False}) (TypeNamed (Nullability {unNullability = False}) (Name {unName = "qv_article"})) and TypeList (Nullability {unNullability = False}) (TypeNamed (Nullability {unNullability = False}) (Name {unName = "qv_author"}))". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: mismatchroot
+        query: 'query mismatchroot { x: qv_author { id } x: qv_author_aggregate { aggregate { count } } nope }'
+      name: query_collections mismatchroot in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "mismatchroot" is invalid with the following error(s): "$: field ''x'' seen with two different types: TypeNamed (Nullability {unNullability = False}) (Name {unName = "qv_author_aggregate"}) and TypeList (Nullability {unNullability = False}) (TypeNamed (Nullability {unNullability = False}) (Name {unName = "qv_author"}))", "$.nope: field ''nope'' not found in object ''query_root''". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: frag
+        query: query frag { qv_author { ...F } } fragment F on qv_author { id bad }
+      name: query_collections frag in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "frag" is invalid with the following error(s): "$.qv_author.bad: field ''bad'' not found in object ''qv_author''". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: undef
+        query: query undef { qv_author { ...G } }
+      name: query_collections undef in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "undef" is invalid with the following error(s): "reference to undefined fragment "G"". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: cycle
+        query: query cycle { qv_author { ...A } } fragment A on qv_author { ...B } fragment B on qv_author { ...C } fragment C on qv_author { ...A }
+      name: query_collections cycle in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "cycle" is invalid with the following error(s): "the fragment definition(s) A, B, and C form a cycle". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: two
+        query: query a { qv_author { id } } query b { qv_author { id } }
+      name: query_collections two in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "two" is invalid with the following error(s): "exactly one operation has to be present in the document when operationName is not specified". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: shorthand
+        query: '{ nope }'
+      name: query_collections shorthand in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "shorthand" is invalid with the following error(s): "$.nope: field ''nope'' not found in object ''query_root''". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: typename
+        query: 'query typename { __typename qv_author { __typename } __schema { types { name zz } } __type(name: "x") { name } }'
+      name: query_collections typename in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "typename" is invalid with the following error(s): "$.__schema.types.zz: field ''zz'' not found in object ''__Type''"'
+      type: query_collections
+    - definition:
+        name: inline
+        query: query inline { qv_author { ... on qv_author { id bad } ... { name } } }
+      name: query_collections inline in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "inline" is invalid with the following error(s): "$.qv_author.bad: field ''bad'' not found in object ''qv_author''". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: enumsel
+        query: query enumsel { __schema { types { kind { a } } } }
+      name: query_collections enumsel in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "enumsel" is invalid with the following error(s): "$.__schema.types.kind: enum ''__TypeKind'' does not accept a selection set". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: multi
+        query: query multi { b1 c1 qv_author { d1 } }
+      name: query_collections multi in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "multi" is invalid with the following error(s): "$.qv_author.d1: field ''d1'' not found in object ''qv_author''", "$.c1: field ''c1'' not found in object ''query_root''", "$.b1: field ''b1'' not found in object ''query_root''". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: onlyfrag
+        query: fragment F on qv_author { id }
+      name: query_collections onlyfrag in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "onlyfrag" is invalid with the following error(s): "exactly one operation has to be present in the document when operationName is not specified". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: nofield
+        query: query nofield { nope }
+      name: query_collections nofield in c2
+      reason: 'Inconsistent object: In query collection "c2" the query "nofield" is invalid with the following error(s): "$.nope: field ''nope'' not found in object ''query_root''". This query is being used in the following REST endpoint(s): "e1", "e1", "e0". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: dup
+        query: query nofield { nope }
+      name: query_collections dup in c2
+      reason: 'Inconsistent object: In query collection "c2" the query "dup" is invalid with the following error(s): "$.nope: field ''nope'' not found in object ''query_root''". This query is being used in the following REST endpoint(s): "e1", "e1", "e0". This query is in allowlist.'
+      type: query_collections
+    is_consistent: false
+- description: List the inconsistencies
+  url: /v1/metadata
+  status: 200
+  query:
+    type: get_inconsistent_metadata
+    args: {}
+  response:
+    inconsistent_objects:
+    - definition:
+        name: nofield
+        query: query nofield { nope }
+      name: query_collections nofield in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "nofield" is invalid with the following error(s): "$.nope: field ''nope'' not found in object ''query_root''". This query is being used in the following REST endpoint(s): "e1", "e1", "e0". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: nested
+        query: query nested { qv_author { id nope articles { title zz } } }
+      name: query_collections nested in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "nested" is invalid with the following error(s): "$.qv_author.articles.zz: field ''zz'' not found in object ''qv_article''", "$.qv_author.nope: field ''nope'' not found in object ''qv_author''". This query is being used in the following REST endpoint(s): "e2". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: scalarsel
+        query: query scalarsel { qv_author { id { x } } }
+      name: query_collections scalarsel in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "scalarsel" is invalid with the following error(s): "$.qv_author.id: scalar ''Int'' does not accept a selection set". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: objnosel
+        query: query objnosel { qv_author { articles } }
+      name: query_collections objnosel in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "objnosel" is invalid with the following error(s): "$.qv_author.articles: object of type ''qv_article'' must have a selection set". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: mut
+        query: 'mutation mut { insert_qv_author(objects: []) { affected_rows } nope }'
+      name: query_collections mut in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "mut" is invalid with the following error(s): "$.nope: field ''nope'' not found in object ''mutation_root''". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: badvar
+        query: 'query badvar($a: Nope, $b: qv_author, $c: Int) { qv_author { id } }'
+      name: query_collections badvar in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "badvar" is invalid with the following error(s): "$.b: object ''qv_author'' cannot be used in an input type", "$.a: type ''Nope'' not found in the schema". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: mismatch
+        query: 'query mismatch { qv_author { x: id x: name } }'
+      name: query_collections mismatch in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "mismatch" is invalid with the following error(s): "$.qv_author: field ''x'' seen with two different types: TypeNamed (Nullability {unNullability = True}) (Name {unName = "String"}) and TypeNamed (Nullability {unNullability = False}) (Name {unName = "Int"})". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: mismatchobj
+        query: 'query mismatchobj { a: qv_author { id } a: qv_article { id } }'
+      name: query_collections mismatchobj in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "mismatchobj" is invalid with the following error(s): "$: field ''a'' seen with two different types: TypeList (Nullability {unNullability = False}) (TypeNamed (Nullability {unNullability = False}) (Name {unName = "qv_article"})) and TypeList (Nullability {unNullability = False}) (TypeNamed (Nullability {unNullability = False}) (Name {unName = "qv_author"}))". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: mismatchroot
+        query: 'query mismatchroot { x: qv_author { id } x: qv_author_aggregate { aggregate { count } } nope }'
+      name: query_collections mismatchroot in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "mismatchroot" is invalid with the following error(s): "$: field ''x'' seen with two different types: TypeNamed (Nullability {unNullability = False}) (Name {unName = "qv_author_aggregate"}) and TypeList (Nullability {unNullability = False}) (TypeNamed (Nullability {unNullability = False}) (Name {unName = "qv_author"}))", "$.nope: field ''nope'' not found in object ''query_root''". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: frag
+        query: query frag { qv_author { ...F } } fragment F on qv_author { id bad }
+      name: query_collections frag in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "frag" is invalid with the following error(s): "$.qv_author.bad: field ''bad'' not found in object ''qv_author''". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: undef
+        query: query undef { qv_author { ...G } }
+      name: query_collections undef in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "undef" is invalid with the following error(s): "reference to undefined fragment "G"". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: cycle
+        query: query cycle { qv_author { ...A } } fragment A on qv_author { ...B } fragment B on qv_author { ...C } fragment C on qv_author { ...A }
+      name: query_collections cycle in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "cycle" is invalid with the following error(s): "the fragment definition(s) A, B, and C form a cycle". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: two
+        query: query a { qv_author { id } } query b { qv_author { id } }
+      name: query_collections two in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "two" is invalid with the following error(s): "exactly one operation has to be present in the document when operationName is not specified". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: shorthand
+        query: '{ nope }'
+      name: query_collections shorthand in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "shorthand" is invalid with the following error(s): "$.nope: field ''nope'' not found in object ''query_root''". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: typename
+        query: 'query typename { __typename qv_author { __typename } __schema { types { name zz } } __type(name: "x") { name } }'
+      name: query_collections typename in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "typename" is invalid with the following error(s): "$.__schema.types.zz: field ''zz'' not found in object ''__Type''"'
+      type: query_collections
+    - definition:
+        name: inline
+        query: query inline { qv_author { ... on qv_author { id bad } ... { name } } }
+      name: query_collections inline in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "inline" is invalid with the following error(s): "$.qv_author.bad: field ''bad'' not found in object ''qv_author''". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: enumsel
+        query: query enumsel { __schema { types { kind { a } } } }
+      name: query_collections enumsel in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "enumsel" is invalid with the following error(s): "$.__schema.types.kind: enum ''__TypeKind'' does not accept a selection set". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: multi
+        query: query multi { b1 c1 qv_author { d1 } }
+      name: query_collections multi in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "multi" is invalid with the following error(s): "$.qv_author.d1: field ''d1'' not found in object ''qv_author''", "$.c1: field ''c1'' not found in object ''query_root''", "$.b1: field ''b1'' not found in object ''query_root''". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: onlyfrag
+        query: fragment F on qv_author { id }
+      name: query_collections onlyfrag in c1
+      reason: 'Inconsistent object: In query collection "c1" the query "onlyfrag" is invalid with the following error(s): "exactly one operation has to be present in the document when operationName is not specified". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: nofield
+        query: query nofield { nope }
+      name: query_collections nofield in c2
+      reason: 'Inconsistent object: In query collection "c2" the query "nofield" is invalid with the following error(s): "$.nope: field ''nope'' not found in object ''query_root''". This query is being used in the following REST endpoint(s): "e1", "e1", "e0". This query is in allowlist.'
+      type: query_collections
+    - definition:
+        name: dup
+        query: query nofield { nope }
+      name: query_collections dup in c2
+      reason: 'Inconsistent object: In query collection "c2" the query "dup" is invalid with the following error(s): "$.nope: field ''nope'' not found in object ''query_root''". This query is being used in the following REST endpoint(s): "e1", "e1", "e0". This query is in allowlist.'
+      type: query_collections
+    is_consistent: false
+- description: Restore metadata
+  url: /v1/metadata
+  status: 200
+  query:
+    type: replace_metadata
+    args:
+      metadata:
+        version: 3
+        sources:
+        - name: default
+          kind: postgres
+          configuration:
+            connection_info:
+              database_url:
+                from_env: HASURA_GRAPHQL_DATABASE_URL
+          tables:
+          - table:
+              name: qv_author
+              schema: public
+            array_relationships:
+            - name: articles
+              using:
+                foreign_key_constraint_on:
+                  column: author_id
+                  table:
+                    name: qv_article
+                    schema: public
+          - table:
+              name: qv_article
+              schema: public
+  response:
+    inconsistent_objects: []
+    is_consistent: true

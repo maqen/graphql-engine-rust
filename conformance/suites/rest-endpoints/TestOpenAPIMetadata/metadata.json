@@ -1,0 +1,381 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "test_table",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "test_table_recurse",
+            "schema": "public"
+          },
+          "object_relationships": [
+            {
+              "name": "recurse_rel",
+              "using": {
+                "manual_configuration": {
+                  "column_mapping": {
+                    "id": "id"
+                  },
+                  "insertion_order": null,
+                  "remote_table": {
+                    "name": "test_table_recurse",
+                    "schema": "public"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ],
+  "query_collections": [
+    {
+      "name": "test_collection",
+      "definition": {
+        "queries": [
+          {
+            "name": "simple_query",
+            "query": "query { test_table { first_name last_name } }"
+          },
+          {
+            "name": "simple_query_with_aliases",
+            "query": "query { test: test_table { firstName: first_name lastName: last_name surname: last_name } }"
+          },
+          {
+            "name": "query_with_arg",
+            "query": "query ($first_name:String!) { test_table(where: {first_name: { _eq: $first_name } }) { first_name last_name } }"
+          },
+          {
+            "name": "query_with_args",
+            "query": "query ($first_name: String!, $last_name:String!) { test_table(where: {first_name: { _eq: $first_name } last_name: { _eq: $last_name }}) { first_name last_name } }"
+          },
+          {
+            "name": "query_with_uuid_arg",
+            "query": "query ($id: uuid!) { test_table(where: {id: { _neq: $id }}) { first_name last_name } }"
+          },
+          {
+            "name": "query_with_default_arg",
+            "query": "query ($first_name:String=\"Foo\") { test_table(where: {first_name: { _eq: $first_name } }) { first_name last_name } }"
+          },
+          {
+            "name": "mutation_with_args",
+            "query": "mutation ($first_name: String!, $last_name: String!) { insert_test_table( objects: {first_name: $first_name, last_name: $last_name }) { returning { id } affected_rows } }"
+          },
+          {
+            "name": "mutation_complex_arg",
+            "query": "mutation ($objects: [test_table_insert_input!]!) { insert_test_table( objects: $objects) { returning { id } } }"
+          },
+          {
+            "name": "mutation_complex_args",
+            "query": "mutation QQ($new_object: test_table_set_input!, $first_name: String!) { update_test_table(where: {first_name: {_eq: $first_name}}, _set: $new_object) { affected_rows } }"
+          },
+          {
+            "name": "mutation_recursive_arg",
+            "query": "mutation MyMutation($object: test_table_recurse_insert_input!) { insert_test_table_recurse_one(object: $object) { id } }"
+          },
+          {
+            "name": "query_with_duplicate_field_name",
+            "query": "query { test_table { first_name } test_table { last_name } }"
+          }
+        ]
+      }
+    },
+    {
+      "name": "extra",
+      "definition": {
+        "queries": [
+          {
+            "name": "warn",
+            "query": "query warn($id: uuid!, $ids: [Int!], $dir: order_by = desc, $n: Int = 3) { test_table(limit: $n, order_by: {first_name: $dir}) { first_name id } __typename }"
+          },
+          {
+            "name": "bywhere",
+            "query": "query bywhere($where: test_table_bool_exp!) { test_table(where: $where) { id } }"
+          },
+          {
+            "name": "agg",
+            "query": "query agg { test_table_aggregate { aggregate { count max { first_name } } } }"
+          }
+        ]
+      }
+    }
+  ],
+  "rest_endpoints": [
+    {
+      "name": "with_duplicate_field_name",
+      "url": "with_duplicate_field_name",
+      "methods": [
+        "POST"
+      ],
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "query_with_duplicate_field_name"
+        }
+      }
+    },
+    {
+      "name": "simple",
+      "url": "simple",
+      "methods": [
+        "GET"
+      ],
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "simple_query"
+        }
+      }
+    },
+    {
+      "name": "simple_with_aliases",
+      "url": "simple_with_aliases",
+      "methods": [
+        "GET"
+      ],
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "simple_query_with_aliases"
+        }
+      }
+    },
+    {
+      "name": "with_args",
+      "url": "with_args",
+      "methods": [
+        "POST"
+      ],
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "query_with_args"
+        }
+      }
+    },
+    {
+      "name": "with_args_url",
+      "url": "with_args_url/:first_name/:last_name",
+      "methods": [
+        "POST"
+      ],
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "query_with_args"
+        }
+      }
+    },
+    {
+      "name": "complex_arg",
+      "url": "complex_arg",
+      "methods": [
+        "POST"
+      ],
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "mutation_complex_arg"
+        }
+      }
+    },
+    {
+      "name": "complex_args",
+      "url": "complex_args",
+      "methods": [
+        "POST"
+      ],
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "mutation_complex_args"
+        }
+      }
+    },
+    {
+      "name": "with_default_arg",
+      "url": "with_default_arg",
+      "methods": [
+        "POST"
+      ],
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "query_with_default_arg"
+        }
+      }
+    },
+    {
+      "name": "multi_method_endpoint",
+      "url": "multi_method_endpoint",
+      "methods": [
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE",
+        "PATCH"
+      ],
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "query_with_arg"
+        }
+      }
+    },
+    {
+      "name": "recurse_arg",
+      "url": "recurse_arg",
+      "methods": [
+        "POST"
+      ],
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "mutation_recursive_arg"
+        }
+      }
+    },
+    {
+      "name": "same_path_get",
+      "url": "my_endpoint_url",
+      "methods": [
+        "GET"
+      ],
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "query_with_default_arg"
+        }
+      }
+    },
+    {
+      "name": "same_path_post",
+      "url": "my_endpoint_url",
+      "methods": [
+        "POST"
+      ],
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "mutation_with_args"
+        }
+      }
+    },
+    {
+      "name": "simple_with_segments",
+      "url": "simple/with/segments",
+      "methods": [
+        "GET"
+      ],
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "simple_query"
+        }
+      }
+    },
+    {
+      "name": "with_args_and_segments_url",
+      "url": "simple/with/segments/:first_name/:last_name/trailing",
+      "methods": [
+        "POST"
+      ],
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "query_with_args"
+        }
+      }
+    },
+    {
+      "name": "uuid_path",
+      "url": "by_id/:id",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "comment": "Looks up by id. ",
+      "definition": {
+        "query": {
+          "collection_name": "test_collection",
+          "query_name": "query_with_uuid_arg"
+        }
+      }
+    },
+    {
+      "name": "warn",
+      "url": "warn/:id",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "comment": "Has warnings. ",
+      "definition": {
+        "query": {
+          "collection_name": "extra",
+          "query_name": "warn"
+        }
+      }
+    },
+    {
+      "name": "bywhere",
+      "url": "bywhere",
+      "methods": [
+        "POST"
+      ],
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "extra",
+          "query_name": "bywhere"
+        }
+      }
+    },
+    {
+      "name": "agg",
+      "url": "agg",
+      "methods": [
+        "GET"
+      ],
+      "comment": null,
+      "definition": {
+        "query": {
+          "collection_name": "extra",
+          "query_name": "agg"
+        }
+      }
+    }
+  ]
+}

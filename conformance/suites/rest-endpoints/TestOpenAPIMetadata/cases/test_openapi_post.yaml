@@ -1,0 +1,13 @@
+upstream:
+  file: test_openapi.py
+  by_hand: true
+steps:
+- description: Only GET is served
+  url: /api/swagger/json
+  method: POST
+  status: 404
+  query: {}
+  response:
+    error: resource does not exist
+    path: $
+    code: not-found

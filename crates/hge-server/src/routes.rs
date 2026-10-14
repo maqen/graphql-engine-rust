@@ -32,6 +32,10 @@ pub fn router(engine: Arc<Engine>) -> Router {
         .route(
             "/api/rest/{*path}",
             axum::routing::any(crate::rest::handler),
+        )
+        .route(
+            "/api/swagger/json",
+            axum::routing::any(crate::rest::openapi),
         );
     if engine.config.api_enabled("graphql") {
         router = router

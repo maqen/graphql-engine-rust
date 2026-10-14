@@ -90,6 +90,7 @@ fn resolve(metadata: &Metadata, e: &RestEndpoint) -> Result<Endpoint, String> {
         url: e.url.clone(),
         segments: parse_url(&e.url),
         methods: e.methods.clone(),
+        comment: e.comment.clone(),
         query: query.query.clone(),
         document,
         variables,

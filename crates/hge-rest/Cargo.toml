@@ -10,6 +10,8 @@ description = "Query collections, the allowlist and RESTified endpoints (/api/re
 [dependencies]
 hge-core.workspace = true
 hge-metadata.workspace = true
+hge-schema.workspace = true
+indexmap.workspace = true
 async-graphql-parser.workspace = true
 async-graphql-value.workspace = true
 serde_json.workspace = true

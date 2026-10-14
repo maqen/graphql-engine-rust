@@ -1168,6 +1168,8 @@ dependencies = [
  "async-graphql-value",
  "hge-core",
  "hge-metadata",
+ "hge-schema",
+ "indexmap",
  "serde_json",
 ]
 

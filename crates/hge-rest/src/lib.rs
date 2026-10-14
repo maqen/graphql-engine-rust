@@ -7,6 +7,8 @@
 
 pub mod allowlist;
 mod build;
+mod openapi;
+mod validate;
 mod variables;
 
 use std::collections::HashMap;
@@ -16,6 +18,8 @@ use hge_core::{Code, Error};
 use hge_metadata::EndpointMethod;
 
 pub use build::build;
+pub use openapi::openapi;
+pub use validate::{collection_issues, diagnose};
 pub use variables::{QueryParams, parse_query_string};
 
 /// The order of V2's `Allowed methods: …` list (checked against v2.51.0-ce).
@@ -56,6 +60,7 @@ pub struct Endpoint {
     pub url: String,
     pub segments: Vec<Segment>,
     pub methods: Vec<EndpointMethod>,
+    pub comment: Option<String>,
     /// The stored query text.
     pub query: String,
     /// `query`, parsed once.
@@ -94,6 +99,10 @@ impl<'a> RequestMethod<'a> {
 impl RestEndpoints {
     pub fn is_empty(&self) -> bool {
         self.by_len.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Endpoint> {
+        self.by_len.values().flatten()
     }
 
     /// Match `path` (the raw, still percent-encoded part after `/api/rest/`). Returns the

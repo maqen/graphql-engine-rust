@@ -19,7 +19,7 @@ use crate::scalars::{self, BUILTIN_SCALARS};
 use crate::tables::{RelationshipInfo, TableInfo, Tables};
 
 /// Engine options that change the schema or the lowering.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchemaOptions {
     /// `HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES`
     pub stringify_numeric_types: bool,
