@@ -1220,13 +1220,13 @@ mod tests {
         let err = apply(&mut md(), "default", &before, &drop(1), false).unwrap_err();
         assert_eq!(
             err.error.message,
-            "cannot drop due to the following dependent objects: event-trigger public.t.cols in source \"default\""
+            "cannot drop due to the following dependent objects: event-trigger t.cols in source \"default\""
         );
         let err = apply(&mut md(), "default", &before, &drop(2), false).unwrap_err();
         assert!(
             err.error
                 .message
-                .ends_with("event-trigger public.t.pay in source \"default\"")
+                .ends_with("event-trigger t.pay in source \"default\"")
         );
         apply(&mut md(), "default", &before, &drop(3), false).unwrap();
 
