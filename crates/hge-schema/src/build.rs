@@ -900,11 +900,13 @@ impl Builder<'_> {
         if ty.is_array() {
             fields.push(
                 InputValueDef::new("_contained_in", value_ty.clone())
-                    .describe("is the array contained in the given array value"),
+                    .describe("is the array contained in the given array value")
+                    .for_column(),
             );
             fields.push(
                 InputValueDef::new("_contains", value_ty.clone())
-                    .describe("does the array contain the given value"),
+                    .describe("does the array contain the given value")
+                    .for_column(),
             );
         }
         if scalars::is_jsonb(ty) {

@@ -10,8 +10,8 @@ use std::sync::OnceLock;
 
 use async_graphql_parser::Positioned;
 use async_graphql_parser::types::{
-    DocumentOperations, ExecutableDocument, FragmentDefinition, OperationDefinition, OperationType,
-    Selection, SelectionSet,
+    Directive, DocumentOperations, ExecutableDocument, FragmentDefinition, OperationDefinition,
+    OperationType, Selection, SelectionSet,
 };
 use async_graphql_value::{Name, Value as GqlValue};
 use hge_core::{Code, Error};
@@ -93,7 +93,8 @@ pub fn normalize<'s>(
         },
     };
     let multiple_top_level_fields = operation_directives(op)?;
-    let vars = coerce_variables(schema, op, variables)?;
+    let vars = coerce_variables(op, variables)?;
+    check_unexpected_variables(doc, op, variables)?;
     let cx = Context {
         schema,
         fragments: &doc.fragments,
@@ -166,7 +167,6 @@ fn select_operation<'d>(
 pub type Variables = HashMap<String, (TypeRef, Option<Json>, bool)>;
 
 fn coerce_variables(
-    schema: &Schema,
     op: &OperationDefinition,
     provided: &Map<String, Json>,
 ) -> Result<Variables, Error> {
@@ -176,19 +176,8 @@ fn coerce_variables(
         let name = def.name.node.to_string();
         let ty = TypeRef::from_ast(&def.var_type.node);
         let path = format!("$.variableValues.{name}");
-        match schema.get(ty.base()) {
-            Some(t) if t.is_input() => {}
-            Some(_) => {
-                return Err(Error::validation(format!(
-                    "variable '{name}' is declared as '{ty}', but '{}' is not an input type",
-                    ty.base()
-                ))
-                .with_path(path));
-            }
-            // V2 only type-checks a variable where it is used (against the expected type), so
-            // an unused variable may name a type the schema doesn't have.
-            None => {}
-        }
+        // V2 only type-checks a variable where it is used (against the expected type), so an
+        // unused variable may name an output type or a type the schema doesn't have.
         let value = match provided.get(&name) {
             Some(v) => Some(v.clone()),
             None => match &def.default_value {
@@ -210,6 +199,100 @@ fn coerce_variables(
         out.insert(name, (ty, value, def.default_value.is_some()));
     }
     Ok(out)
+}
+
+/// V2 rejects provided variables the operation doesn't use (syntactically, in its directives
+/// and the fragments it reaches), declared or not, before it parses any field.
+fn check_unexpected_variables(
+    doc: &ExecutableDocument,
+    op: &OperationDefinition,
+    provided: &Map<String, Json>,
+) -> Result<(), Error> {
+    if provided.is_empty() {
+        return Ok(());
+    }
+    let mut used = HashSet::new();
+    let mut fragments = HashSet::new();
+    for d in &op.directives {
+        directive_variables(&d.node, &mut used);
+    }
+    selection_variables(doc, &op.selection_set.node, &mut used, &mut fragments);
+    let mut unexpected: Vec<&str> = provided
+        .keys()
+        .map(String::as_str)
+        .filter(|k| !used.contains(k))
+        .collect();
+    if unexpected.is_empty() {
+        return Ok(());
+    }
+    // V2 lists them from a `HashSet`.
+    hge_core::sort_v2_hash_order(&mut unexpected);
+    Err(Error::validation(format!(
+        "unexpected variables in variableValues: {}",
+        unexpected.join(", ")
+    ))
+    .with_path("$"))
+}
+
+fn selection_variables<'d>(
+    doc: &'d ExecutableDocument,
+    set: &'d SelectionSet,
+    used: &mut HashSet<&'d str>,
+    fragments: &mut HashSet<&'d str>,
+) {
+    for item in &set.items {
+        match &item.node {
+            Selection::Field(f) => {
+                let f = &f.node;
+                for (_, v) in &f.arguments {
+                    value_variables(&v.node, used);
+                }
+                for d in &f.directives {
+                    directive_variables(&d.node, used);
+                }
+                selection_variables(doc, &f.selection_set.node, used, fragments);
+            }
+            Selection::FragmentSpread(spread) => {
+                let spread = &spread.node;
+                for d in &spread.directives {
+                    directive_variables(&d.node, used);
+                }
+                let name = spread.fragment_name.node.as_str();
+                if fragments.insert(name)
+                    && let Some(fragment) = doc.fragments.get(&spread.fragment_name.node)
+                {
+                    for d in &fragment.node.directives {
+                        directive_variables(&d.node, used);
+                    }
+                    selection_variables(doc, &fragment.node.selection_set.node, used, fragments);
+                }
+            }
+            Selection::InlineFragment(inline) => {
+                let inline = &inline.node;
+                for d in &inline.directives {
+                    directive_variables(&d.node, used);
+                }
+                selection_variables(doc, &inline.selection_set.node, used, fragments);
+            }
+        }
+    }
+}
+
+fn directive_variables<'d>(d: &'d Directive, used: &mut HashSet<&'d str>) {
+    for (_, v) in &d.arguments {
+        value_variables(&v.node, used);
+    }
+}
+
+fn value_variables<'d>(v: &'d GqlValue, used: &mut HashSet<&'d str>) {
+    match v {
+        GqlValue::Variable(name) => {
+            used.insert(name.as_str());
+        }
+        GqlValue::List(items) => items.iter().for_each(|i| value_variables(i, used)),
+        GqlValue::Object(fields) => fields.values().for_each(|i| value_variables(i, used)),
+        _ => {}
+    }
 }
 
 /// Deepest selection set nesting accepted (fragments can nest deeper than the parser

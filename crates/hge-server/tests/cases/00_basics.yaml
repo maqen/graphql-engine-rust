@@ -141,6 +141,7 @@ cases:
         - extensions: { path: "$.selectionSet.author.args.limit", code: validation-failed }
           message: "expected a 32-bit integer for type 'Int', but found a float"
 
+  # Article 2 is the unpublished one, so only 4 matches.
   - description: a column value may be a string, which Postgres parses (V2's column parser)
     query:
       query: '{ article(where: {id: {_in: ["2", 4]}, is_published: {_eq: "true"}}) { id } }'
@@ -237,3 +238,28 @@ cases:
       errors:
         - extensions: { path: "$.selectionSet.author.args.order_by.id", code: validation-failed }
           message: "expected an enum value for type 'order_by', but found a string"
+
+  - description: an unused variable may be declared with an output type, as in V2
+    query:
+      query: "query ($x: article) { __typename }"
+    response:
+      data:
+        __typename: query_root
+
+  - description: a variable of an output type fails where it is used
+    query:
+      query: "query ($x: article) { author(limit: $x) { id } }"
+      variables: { x: 1 }
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.args.limit", code: validation-failed }
+          message: "variable 'x' is declared as 'article', but used where 'Int' is expected"
+
+  - description: provided variables the query doesn't use are rejected, in V2's hash order
+    query:
+      query: "query ($x: Int) { __typename }"
+      variables: { x: 1, y: 2, z: 3 }
+    response:
+      errors:
+        - extensions: { path: "$", code: validation-failed }
+          message: "unexpected variables in variableValues: y, z, x"
