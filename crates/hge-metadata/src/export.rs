@@ -474,7 +474,8 @@ fn export_table(table: Value) -> Value {
             sort_by_key(items, sort_key);
         }
     }
-    let out = ordered(&mut obj, TABLE, |key, v| match key {
+    let mut out = ordered(&mut obj, TABLE, |key, v| match key {
+        "configuration" => table_config(v),
         "object_relationships" | "array_relationships" => map_array(v, |r| fixed(r, RELATIONSHIP)),
         "computed_fields" => map_array(v, |c| fixed(c, COMPUTED_FIELD)),
         "insert_permissions" => map_array(v, |p| permission(p, INSERT_PERM)),
@@ -495,17 +496,119 @@ fn export_table(table: Value) -> Value {
         "event_triggers" => map_array(v, |t| fixed(t, EVENT_TRIGGER)),
         _ => sorted(v),
     });
+    if out.get("configuration") == Some(&Value::Null) {
+        out.remove("configuration");
+    }
     Value::Object(reorder(out, TABLE))
+}
+
+/// V2's table configuration: `custom_column_names` merged into `column_config` (which
+/// wins) and derived back from it, and `column_config`, `custom_column_names` and
+/// `custom_root_fields` always present. `null` when the configuration is empty.
+fn table_config(v: Value) -> Value {
+    let Value::Object(mut obj) = v else {
+        return sorted(v);
+    };
+    let mut column_config = match obj.remove("column_config") {
+        Some(Value::Object(m)) => m,
+        _ => Map::new(),
+    };
+    if let Some(Value::Object(legacy)) = obj.remove("custom_column_names") {
+        for (column, name) in legacy {
+            let entry = column_config
+                .entry(column)
+                .or_insert_with(|| Value::Object(Map::new()));
+            if let Value::Object(cfg) = entry
+                && cfg.get("custom_name").is_none_or(Value::is_null)
+            {
+                cfg.insert("custom_name".into(), name);
+            }
+        }
+    }
+    let custom_column_names: Map<String, Value> = column_config
+        .iter()
+        .filter_map(|(column, cfg)| {
+            cfg.get("custom_name")
+                .filter(|n| !n.is_null())
+                .map(|n| (column.clone(), n.clone()))
+        })
+        .collect();
+    let root_fields = match obj.remove("custom_root_fields") {
+        Some(Value::Object(m)) => m.into_iter().filter(|(_, v)| !v.is_null()).collect(),
+        _ => Map::new(),
+    };
+    obj.retain(|_, v| !v.is_null());
+    if obj.is_empty() && column_config.is_empty() && root_fields.is_empty() {
+        return Value::Null;
+    }
+    obj.insert("column_config".into(), Value::Object(column_config));
+    obj.insert(
+        "custom_column_names".into(),
+        Value::Object(custom_column_names),
+    );
+    obj.insert("custom_root_fields".into(), Value::Object(root_fields));
+    sorted(Value::Object(obj))
 }
 
 fn permission(p: Value, order: &[&str]) -> Value {
     let Value::Object(mut obj) = p else {
         return p;
     };
-    if let Some(perm) = obj.remove("permission") {
-        obj.insert("permission".into(), fixed(perm, order));
+    let perm = obj.remove("permission");
+    let mut out = fixed(Value::Object(obj), PERMISSION);
+    if let (Some(perm), Value::Object(o)) = (perm, &mut out) {
+        o.insert("permission".into(), fixed(normalise_bool_exps(perm), order));
+        *o = reorder(std::mem::take(o), PERMISSION);
     }
-    fixed(Value::Object(obj), PERMISSION)
+    out
+}
+
+/// V2 re-serialises boolean expressions: an `_exists` table always comes out qualified.
+fn normalise_bool_exps(perm: Value) -> Value {
+    let Value::Object(mut obj) = perm else {
+        return perm;
+    };
+    for key in ["filter", "check"] {
+        if let Some(exp) = obj.get_mut(key) {
+            normalise_bool_exp(exp);
+        }
+    }
+    Value::Object(obj)
+}
+
+/// Walk the boolean structure of `exp` (`_and`/`_or`/`_not` and `_exists._where`). V2
+/// keeps column and relationship values as raw JSON, so those are left alone; the
+/// `$and`/`$or`/`$not` spellings come out as `_and`/`_or`/`_not`.
+fn normalise_bool_exp(exp: &mut Value) {
+    let Value::Object(obj) = exp else {
+        return;
+    };
+    let entries = std::mem::take(obj);
+    for (k, mut v) in entries {
+        let key = match k.as_str() {
+            "$and" => "_and".to_owned(),
+            "$or" => "_or".to_owned(),
+            "$not" => "_not".to_owned(),
+            _ => k,
+        };
+        match key.as_str() {
+            "_and" | "_or" => match &mut v {
+                Value::Array(items) => items.iter_mut().for_each(normalise_bool_exp),
+                other => normalise_bool_exp(other),
+            },
+            "_not" => normalise_bool_exp(&mut v),
+            "_exists" => {
+                if let Some(Value::String(name)) = v.get("_table").cloned() {
+                    v["_table"] = serde_json::json!({"name": name, "schema": "public"});
+                }
+                if let Some(w) = v.get_mut("_where") {
+                    normalise_bool_exp(w);
+                }
+            }
+            _ => {}
+        }
+        obj.insert(key, v);
+    }
 }
 
 /// An object with a fixed key order: known keys first (in `order`, values sorted
@@ -658,6 +761,37 @@ mod tests {
             out["custom_types"].to_string(),
             r#"{"objects":[{"name":"O","fields":[{"name":"f","type":"Int","description":"d"}],"description":"d","relationships":[{"field_mapping":{"f":"id"},"name":"r","remote_table":{"name":"t","schema":"public"},"source":"default","type":"object"}]},{"name":"P","fields":[{"name":"g","type":"Int"}]}],"enums":[{"name":"E","values":[{"description":"d","is_deprecated":null,"value":"A"}]}]}"#
         );
+    }
+
+    #[test]
+    fn bool_exp_normalisation_walks_only_boolean_structure() {
+        let mut exp = json!({
+            "$and": [
+                {"_exists": {"_table": "a", "_where": {"_exists": {"_table": "b", "_where": {}}}}},
+                {"$not": {"_exists": {"_table": "c", "_where": {}}}},
+                {"rel": {"_exists": {"_table": "raw"}}}
+            ],
+            "$or": [{"id": {"_eq": 1}}],
+            "tags": {"_eq": {"_exists": {"_table": "literal"}}}
+        });
+        normalise_bool_exp(&mut exp);
+        let q = |n: &str| json!({"name": n, "schema": "public"});
+        assert_eq!(
+            exp.as_object().unwrap().keys().collect::<Vec<_>>(),
+            ["_and", "_or", "tags"]
+        );
+        assert_eq!(exp["_and"][0]["_exists"]["_table"], q("a"));
+        assert_eq!(
+            exp["_and"][0]["_exists"]["_where"]["_exists"]["_table"],
+            q("b")
+        );
+        assert_eq!(exp["_and"][1]["_not"]["_exists"]["_table"], q("c"));
+        // Column and relationship values stay raw JSON.
+        assert_eq!(
+            exp["_and"][2],
+            json!({"rel": {"_exists": {"_table": "raw"}}})
+        );
+        assert_eq!(exp["tags"]["_eq"]["_exists"]["_table"], json!("literal"));
     }
 
     #[test]

@@ -112,10 +112,7 @@ impl Parser<'_> {
                 if let Some(cf) = table.computed_field(key) {
                     return self.computed_field(table, root, cf, value);
                 }
-                Err(format!(
-                    "no such column exists: \"{key}\" in table \"{}\"",
-                    table.display_name()
-                ))
+                Err(format!("\"{key}\" does not exist"))
             }
         }
     }
@@ -518,12 +515,10 @@ pub fn presets(
 ) -> Result<indexmap::IndexMap<String, Value>, PermError> {
     let mut out = indexmap::IndexMap::with_capacity(set.len());
     for (name, v) in set {
-        let col = table.columns.get(name).ok_or_else(|| {
-            format!(
-                "column \"{name}\" not found in table \"{}\"",
-                table.display_name()
-            )
-        })?;
+        let col = table
+            .columns
+            .get(name)
+            .ok_or_else(|| format!("column \"{name}\" does not exist"))?;
         out.insert(name.clone(), value(v, &col.ty)?);
     }
     Ok(out)

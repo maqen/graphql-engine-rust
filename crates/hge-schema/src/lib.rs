@@ -52,6 +52,7 @@ pub fn resolve_tables<C: std::borrow::Borrow<SourceCatalog>>(
         }
     }
     tables::drop_conflicting(&mut tables, &mut inconsistencies);
+    tables::drop_dangling_relationships(&mut tables, &mut inconsistencies);
     enums::attach_enum_references(&mut tables, catalogs, &mut inconsistencies);
     for source in &metadata.sources {
         if let Some(catalog) = catalogs.get(&source.name) {

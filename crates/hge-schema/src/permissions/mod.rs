@@ -109,7 +109,7 @@ fn resolve_table<'m>(
                 "in table \"{}\": in permission for role \"{role}\": {e}",
                 table.name.v2_text()
             ),
-            perm.definition(),
+            perm.definition(kind),
         ));
     };
 
@@ -215,7 +215,7 @@ mod erased {
     /// A permission entry of any kind, as its inconsistency definition.
     pub trait Definition {
         fn role(&self) -> &str;
-        fn definition(&self) -> serde_json::Value;
+        fn definition(&self, kind: &str) -> serde_json::Value;
     }
 
     impl<P: serde::Serialize> Definition for PermissionEntry<P> {
@@ -223,11 +223,22 @@ mod erased {
             &self.role
         }
 
-        /// V2's definitions always carry `comment`.
-        fn definition(&self) -> serde_json::Value {
+        /// V2's definitions always carry `comment` and the permission's defaults.
+        fn definition(&self, kind: &str) -> serde_json::Value {
+            use serde_json::Value;
             let mut def = serde_json::to_value(self).unwrap_or_default();
             if let Some(obj) = def.as_object_mut() {
-                obj.entry("comment").or_insert(serde_json::Value::Null);
+                obj.entry("comment").or_insert(Value::Null);
+                if let Some(Value::Object(perm)) = obj.get_mut("permission") {
+                    if kind == "select" {
+                        perm.entry("allow_aggregations")
+                            .or_insert(Value::Bool(false));
+                        perm.entry("computed_fields")
+                            .or_insert(Value::Array(vec![]));
+                    } else {
+                        perm.entry("backend_only").or_insert(Value::Bool(false));
+                    }
+                }
             }
             def
         }
@@ -289,13 +300,10 @@ fn columns(table: &TableInfo, columns: &Columns) -> Result<Vec<String>, PermErro
     {
         if table.relationship_by_name(missing).is_some() {
             return Err(format!(
-                "\"{missing}\" is a relationship; only table columns can be listed in a permission"
+                "expecting a database column; but, \"{missing}\" is a relationship; permissions for relationships are automatically inferred"
             ));
         }
-        return Err(format!(
-            "column \"{missing}\" not found in table \"{}\"",
-            table.display_name()
-        ));
+        return Err(format!("column \"{missing}\" does not exist"));
     }
     Ok(table
         .columns

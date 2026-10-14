@@ -1318,8 +1318,7 @@
       "type": "table"
      }
     ]
-   },
-   "todo": "pg_track_table is not implemented yet"
+   }
   },
   {
    "url": "/v1/metadata",

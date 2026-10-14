@@ -476,3 +476,105 @@ async fn event_triggers_end_to_end() {
     let empty = catalog::sync_triggers(&pool, &[], &keep).await.unwrap();
     assert!(empty.removed.is_empty());
 }
+
+/// `url` with its database name replaced.
+fn with_database(url: &str, database: &str) -> String {
+    let (base, query) = url.split_once('?').unwrap_or((url, ""));
+    let base = &base[..base.rfind('/').unwrap()];
+    if query.is_empty() {
+        format!("{base}/{database}")
+    } else {
+        format!("{base}/{database}?{query}")
+    }
+}
+
+/// `pg_drop_source` cleanup: a plain source database loses `hdb_catalog`; a database that
+/// also holds metadata keeps it but loses the event tables and the trigger's SQL.
+#[tokio::test(flavor = "multi_thread")]
+async fn drop_source_catalog_cleans_up() {
+    let Ok(url) = std::env::var("HASURA_GRAPHQL_DATABASE_URL") else {
+        eprintln!("HASURA_GRAPHQL_DATABASE_URL not set; skipping");
+        return;
+    };
+    let admin = pool(&url);
+    let names = [
+        format!("hge_drop_source_{}", std::process::id()),
+        format!("hge_drop_source_md_{}", std::process::id()),
+    ];
+    let client = admin.get().await.unwrap();
+    for (i, name) in names.iter().enumerate() {
+        client
+            .batch_execute(&format!("DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)"))
+            .await
+            .unwrap();
+        if let Err(e) = client
+            .batch_execute(&format!("CREATE DATABASE \"{name}\""))
+            .await
+        {
+            for created in &names[..i] {
+                let _ = client
+                    .batch_execute(&format!(
+                        "DROP DATABASE IF EXISTS \"{created}\" WITH (FORCE)"
+                    ))
+                    .await;
+            }
+            // Only a missing privilege skips the test; any other failure is one.
+            if e.code() == Some(&tokio_postgres::error::SqlState::INSUFFICIENT_PRIVILEGE) {
+                eprintln!("cannot create databases ({e}); skipping");
+                return;
+            }
+            panic!("creating {name}: {e}");
+        }
+    }
+    drop(client);
+    let state = "SELECT \
+         (SELECT count(*) FROM pg_namespace WHERE nspname = 'hdb_catalog') AS schema, \
+         to_regclass('hdb_catalog.event_log') IS NOT NULL AS event_log, \
+         to_regclass('hdb_catalog.hdb_metadata') IS NOT NULL AS metadata, \
+         (SELECT count(*) FROM pg_trigger WHERE tgname LIKE 'notify_hasura%') AS triggers";
+    for (name, holds_metadata) in names.iter().zip([false, true]) {
+        let pool = pool(&with_database(&url, name));
+        exec(
+            &pool,
+            "CREATE TABLE public.items (id serial primary key, name text)",
+        )
+        .await;
+        catalog::init_source_catalog(&pool, "public").await.unwrap();
+        if holds_metadata {
+            exec(&pool, "CREATE TABLE hdb_catalog.hdb_metadata (id int)").await;
+        }
+        let items = QualifiedTable::public("items");
+        let (addr, _) = start_hook().await;
+        let t = trigger(
+            "items_ev",
+            &items,
+            "ok",
+            json!({"num_retries": 0, "interval_sec": 1}),
+            addr,
+        );
+        let ddl = [t.ddl(columns(), false)];
+        catalog::sync_triggers(&pool, &ddl, &HashSet::new())
+            .await
+            .unwrap();
+        assert_eq!(
+            query(&pool, state).await,
+            json!([{"schema": 1, "event_log": true, "metadata": holds_metadata, "triggers": 3}])
+        );
+        catalog::drop_source_catalog(&pool, &["items_ev".to_owned()])
+            .await
+            .unwrap();
+        let schema = i32::from(holds_metadata);
+        assert_eq!(
+            query(&pool, state).await,
+            json!([{"schema": schema, "event_log": false, "metadata": holds_metadata, "triggers": 0}])
+        );
+        pool.close();
+    }
+    for name in &names {
+        exec(
+            &admin,
+            &format!("DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)"),
+        )
+        .await;
+    }
+}

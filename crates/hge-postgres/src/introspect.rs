@@ -402,6 +402,16 @@ pub fn enum_rows_sql(table: &QualifiedTable, key: &str, comment: Option<&str>) -
     sql
 }
 
+/// V2's text for a failed enum table read (`defaultTxErrorHandler`): a transaction rollback
+/// keeps Postgres's message (`sqlstate`, message); anything else, connection failures and
+/// timeouts included, is "database query error".
+pub fn enum_read_error(db: Option<(&str, &str)>) -> String {
+    match db {
+        Some((state, message)) if state.starts_with("40") => message.to_owned(),
+        _ => "database query error".to_owned(),
+    }
+}
+
 /// The rows returned by [`enum_rows_sql`].
 pub fn enum_rows(rows: Vec<Vec<Option<String>>>) -> Vec<EnumTableRow> {
     rows.into_iter()
@@ -410,4 +420,22 @@ pub fn enum_rows(rows: Vec<Vec<Option<String>>>) -> Vec<EnumTableRow> {
             value: r.pop().flatten().unwrap_or_default(),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod enum_error_tests {
+    use super::*;
+
+    #[test]
+    fn enum_read_errors_match_v2() {
+        assert_eq!(
+            enum_read_error(Some(("42501", "permission denied for table e"))),
+            "database query error"
+        );
+        assert_eq!(enum_read_error(None), "database query error");
+        assert_eq!(
+            enum_read_error(Some(("40001", "could not serialize access"))),
+            "could not serialize access"
+        );
+    }
 }

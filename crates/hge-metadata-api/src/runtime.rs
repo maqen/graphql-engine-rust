@@ -9,8 +9,8 @@ use std::future::Future;
 use std::sync::Arc;
 
 use hge_core::{InconsistentObject, SourceCatalog};
-use hge_metadata::Metadata;
 use hge_metadata::store::MetadataStore;
+use hge_metadata::{Metadata, Source};
 use hge_postgres::PgSource;
 use tokio::sync::MutexGuard;
 
@@ -131,6 +131,18 @@ pub trait Runtime: Send + Sync {
 
     /// Atomically swap in a prepared state. In-flight requests finish on the old one.
     fn install(&self, prepared: Self::Prepared, metadata: Metadata, resource_version: i64);
+
+    /// After `pg_drop_source`: remove the event trigger SQL and catalog the engine created in
+    /// the source's database (V2's `postDropSourceHook`). Failures are only logged. Like V2,
+    /// it runs after the consistency check but before the new metadata is persisted.
+    fn post_drop_source(
+        &self,
+        source: &Source,
+        pg: Arc<PgSource>,
+    ) -> impl Future<Output = ()> + Send {
+        let _ = (source, pg);
+        async {}
+    }
 }
 
 /// A snapshot of the installed state.

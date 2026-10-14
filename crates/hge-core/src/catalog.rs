@@ -251,6 +251,28 @@ impl ColumnType {
             ..self.clone()
         }
     }
+
+    /// The name V2 prints for this type (`pgScalarTypeToText`), e.g. in `get_table_info`:
+    /// `integer`, `float8`, `varchar`, `timestamptz`, `integer[]`.
+    pub fn v2_text(&self) -> String {
+        let base = pg_scalar_type_text(&self.name);
+        format!("{base}{}", "[]".repeat(self.dimensions as usize))
+    }
+}
+
+/// V2's canonical name of a Postgres scalar type given its `pg_type.typname`: the name its
+/// `PGScalarType` prints back (`textToPGScalarType`, then `pgScalarTypeToText`). Types V2
+/// has no constructor for keep their name.
+pub fn pg_scalar_type_text(typname: &str) -> &str {
+    match typname {
+        "int2" => "smallint",
+        "int4" => "integer",
+        "int8" => "bigint",
+        "float4" => "real",
+        "bool" => "boolean",
+        "char" => "bpchar",
+        other => other,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -259,4 +281,25 @@ pub struct ForeignKey {
     pub ref_table: QualifiedTable,
     /// `(local column, referenced column)` pairs in constraint order.
     pub columns: Vec<(String, String)>,
+}
+
+#[cfg(test)]
+mod v2_text_tests {
+    use super::*;
+
+    #[test]
+    fn v2_type_names() {
+        let ty = |name: &str, dimensions: u32| ColumnType {
+            dimensions,
+            ..ColumnType::builtin(name)
+        };
+        assert_eq!(ty("int4", 0).v2_text(), "integer");
+        assert_eq!(ty("int4", 1).v2_text(), "integer[]");
+        assert_eq!(ty("float8", 0).v2_text(), "float8");
+        assert_eq!(ty("float4", 0).v2_text(), "real");
+        assert_eq!(ty("varchar", 0).v2_text(), "varchar");
+        assert_eq!(ty("timestamptz", 0).v2_text(), "timestamptz");
+        assert_eq!(ty("char", 0).v2_text(), "bpchar");
+        assert_eq!(ty("mood", 0).v2_text(), "mood");
+    }
 }

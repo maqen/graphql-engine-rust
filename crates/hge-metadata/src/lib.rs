@@ -102,16 +102,35 @@ fn check_table_keys(value: &serde_json::Value) -> Result<(), Error> {
 
 fn serde_path_to_error_lite(value: serde_json::Value) -> Result<Metadata, Error> {
     check_table_keys(&value)?;
-    let metadata = serde_json::from_value::<Metadata>(value)
+    let mut md = serde_json::from_value::<Metadata>(value)
         .map_err(|e| Error::new(Code::ParseFailed, format!("invalid metadata: {e}")))?;
-    actions::check_transforms(&metadata.actions)?;
-    Ok(metadata)
+    actions::check_transforms(&md.actions)?;
+    for source in &mut md.sources {
+        if matches!(source.kind.as_str(), "postgres" | "pg") {
+            source.configuration.fill_pg_defaults();
+        }
+    }
+    Ok(md)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn remote_fk_needs_exactly_one_of_column_and_columns() {
+        let fk = |v: serde_json::Value| serde_json::from_value::<RemoteFk>(v);
+        assert!(fk(json!({"table": "a", "column": "x"})).is_ok());
+        assert!(fk(json!({"table": "a", "columns": ["x", "y"]})).is_ok());
+        for bad in [
+            json!({"table": "a"}),
+            json!({"table": "a", "column": "x", "columns": ["x"]}),
+        ] {
+            let e = fk(bad).unwrap_err().to_string();
+            assert!(e.starts_with(REMOTE_FK_COLUMNS_ERROR), "{e}");
+        }
+    }
 
     #[test]
     fn parses_minimal_metadata_and_round_trips() {
@@ -141,7 +160,9 @@ mod tests {
                 "configuration": {
                     "connection_info": {
                         "database_url": {"from_env": "HASURA_GRAPHQL_DATABASE_URL"},
-                        "pool_settings": {"max_connections": 50, "idle_timeout": 180}
+                        "pool_settings": {"max_connections": 50, "idle_timeout": 180, "connection_lifetime": 600},
+                        "use_prepared_statements": false,
+                        "isolation_level": "read-committed"
                     }
                 }
             }],

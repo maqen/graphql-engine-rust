@@ -443,10 +443,9 @@ async fn enum_rows_in(
                 let _ = tx
                     .batch_execute("ROLLBACK TO SAVEPOINT hge_enum_rows")
                     .await;
-                Err(e
-                    .as_db_error()
-                    .map(|d| d.message().to_owned())
-                    .unwrap_or_else(|| e.to_string()))
+                Err(introspect::enum_read_error(
+                    e.as_db_error().map(|d| (d.code().code(), d.message())),
+                ))
             }
         };
         let _ = tx.batch_execute("RELEASE SAVEPOINT hge_enum_rows").await;

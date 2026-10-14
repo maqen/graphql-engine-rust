@@ -70,7 +70,8 @@ pub async fn load_metadata(
     Ok((md, version, MetadataOrigin::Default))
 }
 
-/// Fresh-database metadata: a `default` source on `HASURA_GRAPHQL_DATABASE_URL`, like V2.
+/// Fresh-database metadata: a `default` source on `HASURA_GRAPHQL_DATABASE_URL`, like V2,
+/// which writes `HASURA_GRAPHQL_USE_PREPARED_STATEMENTS` into its configuration.
 fn default_metadata(config: &ServerConfig) -> Metadata {
     let mut md = Metadata {
         version: 3,
@@ -87,7 +88,7 @@ fn default_metadata(config: &ServerConfig) -> Metadata {
                         "database_url": {"from_env": "HASURA_GRAPHQL_DATABASE_URL"},
                         "isolation_level": "read-committed",
                         "pool_settings": {"connection_lifetime": 600, "retries": 1, "idle_timeout": 180, "max_connections": 50},
-                        "use_prepared_statements": true
+                        "use_prepared_statements": config.use_prepared_statements
                     }
                 }
             }))
@@ -106,9 +107,9 @@ fn resolve_url(url: &UrlConfig, config: &ServerConfig) -> Result<String, String>
             .database_url
             .clone()
             .or_else(|| std::env::var(from_env).ok())
-            .ok_or_else(|| format!("environment variable \"{from_env}\" not set")),
+            .ok_or_else(|| format!("environment variable '{from_env}' not set")),
         UrlConfig::FromEnv { from_env } => std::env::var(from_env)
-            .map_err(|_| format!("environment variable \"{from_env}\" not set")),
+            .map_err(|_| format!("environment variable '{from_env}' not set")),
         UrlConfig::Parameters {
             connection_parameters: p,
         } => {
@@ -146,9 +147,9 @@ fn pool_config(info: &PgConnectionInfo, config: &ServerConfig) -> PoolConfig {
             .unwrap_or(config.pg_connections),
         idle_timeout: ps.idle_timeout,
         pool_timeout: ps.pool_timeout,
-        use_prepared_statements: info
-            .use_prepared_statements
-            .unwrap_or(config.use_prepared_statements),
+        // V2 parses a missing `use_prepared_statements` as false; the server-wide setting only
+        // seeds the default source (see `default_metadata`).
+        use_prepared_statements: info.use_prepared_statements.unwrap_or(false),
         isolation_level: info
             .isolation_level
             .as_deref()
@@ -227,7 +228,8 @@ fn source_inconsistency(source: &Source, reason: impl Into<String>) -> Inconsist
     InconsistentObject::source(
         &source.name,
         reason,
-        serde_json::to_value(source).unwrap_or_default(),
+        // V2's definition of a source inconsistency is just its name.
+        serde_json::Value::String(source.name.clone()),
     )
 }
 
@@ -430,10 +432,7 @@ async fn with_enum_rows(
         let (Some(reader), Some((key, comment))) = (reader, cat.enum_columns()) else {
             continue;
         };
-        let read = reader
-            .enum_table_rows(&entry.table, key, comment)
-            .await
-            .map_err(|e| e.message);
+        let read = reader.enum_table_rows(&entry.table, key, comment).await;
         rows.insert(entry.table.clone(), read);
     }
     if rows != catalog.enum_tables {
@@ -492,4 +491,34 @@ fn action_registry(
     }
     inconsistencies.extend(built.inconsistencies);
     built.registry
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `HASURA_GRAPHQL_USE_PREPARED_STATEMENTS` seeds the default source only; any other
+    /// source without the key does not prepare statements (V2's metadata default).
+    #[test]
+    fn prepared_statements_default() {
+        for flag in [true, false] {
+            let config = ServerConfig {
+                database_url: Some("postgres://x/y".into()),
+                use_prepared_statements: flag,
+                ..ServerConfig::default()
+            };
+            let md = default_metadata(&config);
+            let info = connection_info(&md.sources[0]).unwrap();
+            assert_eq!(info.use_prepared_statements, Some(flag));
+            assert_eq!(pool_config(info, &config).use_prepared_statements, flag);
+        }
+        let config = ServerConfig::default();
+        let source: Source = serde_json::from_value(json!({
+            "name": "s", "kind": "postgres", "tables": [],
+            "configuration": {"connection_info": {"database_url": "postgres://x/z"}}
+        }))
+        .unwrap();
+        let info = connection_info(&source).unwrap();
+        assert!(!pool_config(info, &config).use_prepared_statements);
+    }
 }

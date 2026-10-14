@@ -17,6 +17,9 @@ use crate::param::TextParam;
 use crate::pool::{IsolationLevel, PoolConfig, connect_pool};
 use crate::translate::{translate_multiplexed, translate_query};
 
+/// How long reading one enum table's rows may take.
+pub const ENUM_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 pub struct PgSource {
     pub name: Arc<str>,
     pool: Pool,
@@ -103,16 +106,43 @@ impl PgSource {
     }
 
     /// The rows of an enum table: its primary key column and its comment column, if any
-    /// (V2's `fetchEnumValuesFromDb`).
+    /// (V2's `fetchEnumValuesFromDb`), or V2's error text. The read is bounded by
+    /// [`ENUM_READ_TIMEOUT`] so a slow source cannot stall a metadata change.
     pub async fn enum_table_rows(
         &self,
         table: &QualifiedTable,
         key: &str,
         comment: Option<&str>,
-    ) -> Result<Vec<EnumTableRow>, Error> {
+    ) -> Result<Vec<EnumTableRow>, String> {
         let sql = introspect::enum_rows_sql(table, key, comment);
-        let rows = self.query_rows(&sql, &[]).await?;
-        Ok(introspect::enum_rows(rows))
+        match tokio::time::timeout(ENUM_READ_TIMEOUT, self.read_enum_rows(&sql)).await {
+            Ok(read) => read,
+            Err(_) => Err(introspect::enum_read_error(None)),
+        }
+    }
+
+    async fn read_enum_rows(&self, sql: &str) -> Result<Vec<EnumTableRow>, String> {
+        let error = |e: tokio_postgres::Error| {
+            introspect::enum_read_error(e.as_db_error().map(|d| (d.code().code(), d.message())))
+        };
+        let mut client = self
+            .client()
+            .await
+            .map_err(|_| introspect::enum_read_error(None))?;
+        let tx = client.transaction().await.map_err(error)?;
+        tx.batch_execute(&format!(
+            "SET LOCAL statement_timeout = {}",
+            ENUM_READ_TIMEOUT.as_millis()
+        ))
+        .await
+        .map_err(error)?;
+        let rows = tx.query(sql, &[]).await.map_err(error)?;
+        tx.commit().await.map_err(error)?;
+        Ok(introspect::enum_rows(
+            rows.iter()
+                .map(|r| vec![r.get::<_, Option<String>>(0), r.get(1)])
+                .collect(),
+        ))
     }
 
     /// Run a statement returning (at most) one row with one text column.

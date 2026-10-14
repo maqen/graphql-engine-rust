@@ -266,10 +266,7 @@ fn column_comparisons() {
 #[test]
 fn invalid_permissions_are_inconsistent() {
     for (filter, message) in [
-        (
-            json!({"nope": {"_eq": 1}}),
-            "no such column exists: \"nope\"",
-        ),
+        (json!({"nope": {"_eq": 1}}), "\"nope\" does not exist"),
         (json!({"id": {"_foo": 1}}), "Unknown operator: _foo"),
         (json!({"id": {"eq": 1}}), "Unknown operator: eq"),
         (
@@ -376,7 +373,7 @@ fn mutation_permissions() {
         json!({}),
     );
     assert_eq!(errs.len(), 1, "{errs:?}");
-    assert!(errs[0].contains("column \"nope\" not found in table \"author\""));
+    assert!(errs[0].contains("column \"nope\" does not exist"));
     let p = table_permissions(author(&tables), &RoleName::new("user")).unwrap();
     assert!(p.select.is_none());
 
