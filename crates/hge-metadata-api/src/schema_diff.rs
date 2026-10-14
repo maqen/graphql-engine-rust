@@ -1,6 +1,7 @@
 //! Apply database schema changes made by `run_sql` to the metadata, like V2: renamed tables
 //! and columns are renamed in the metadata, dropped ones are removed, and objects depending
-//! on dropped ones block the SQL unless `cascade` is set.
+//! on dropped ones block the SQL unless `cascade` is set. Dropped tracked functions are
+//! untracked; computed fields over dropped functions are dependents.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -35,6 +36,10 @@ fn temporary(i: usize) -> String {
 /// A metadata object that depends on something being dropped.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Dependent {
+    ComputedField {
+        table: QualifiedTable,
+        name: String,
+    },
     Relationship {
         table: QualifiedTable,
         name: String,
@@ -53,6 +58,10 @@ enum Dependent {
 impl Dependent {
     fn report(&self, source: &str) -> String {
         match self {
+            Dependent::ComputedField { table, name } => format!(
+                "computed field {}.{name} in source \"{source}\"",
+                table.v2_text()
+            ),
             Dependent::Relationship { table, name } => format!(
                 "relationship {}.{name} in source \"{source}\"",
                 table.v2_text()
@@ -83,13 +92,31 @@ pub fn apply(
     source: &str,
     before: &[TableSnapshot],
     after: &[TableSnapshot],
+    dropped_functions: &[QualifiedTable],
     cascade: bool,
 ) -> ApiResult<()> {
     let Some(src) = metadata.source_mut(source) else {
         return Ok(());
     };
+    // V2 untracks dropped functions (and their permissions) without asking for cascade.
+    src.functions.retain(|f| {
+        function_name(f.get("function")).is_none_or(|n| !dropped_functions.contains(&n))
+    });
     let rels = Rels::new(&src.tables, before);
     let mut dependents = vec![];
+    for t in &src.tables {
+        for c in &t.computed_fields {
+            if function_name(c.pointer("/definition/function"))
+                .is_some_and(|f| dropped_functions.contains(&f))
+                && let Some(name) = c.get("name").and_then(Value::as_str)
+            {
+                dependents.push(Dependent::ComputedField {
+                    table: t.table.clone(),
+                    name: name.to_owned(),
+                });
+            }
+        }
+    }
     let mut dropped_tables = vec![];
     // Columns whose type changed: what uses them blocks the change, like a drop.
     let mut retyped = vec![];
@@ -153,7 +180,8 @@ pub fn apply(
     dependents.extend(retyped.into_iter().flat_map(|(_, _, deps)| deps));
     // Objects of dropped tables go with them.
     dependents.retain(|d| match d {
-        Dependent::Relationship { table, .. }
+        Dependent::ComputedField { table, .. }
+        | Dependent::Relationship { table, .. }
         | Dependent::Permission { table, .. }
         | Dependent::EventTrigger { table, .. } => !dropped_tables.contains(table),
     });
@@ -955,8 +983,23 @@ fn rename_table(tables: &mut [TableEntry], old: &QualifiedTable, new: &Qualified
     }
 }
 
+fn function_name(v: Option<&Value>) -> Option<QualifiedTable> {
+    v.and_then(|v| serde_json::from_value(v.clone()).ok())
+}
+
 fn drop_dependent(tables: &mut [TableEntry], d: &Dependent) {
     match d {
+        // Like V2, select permissions lose the field; row filters that use it are left to
+        // the consistency check.
+        Dependent::ComputedField { table, name } => {
+            if let Some(t) = tables.iter_mut().find(|t| t.table == *table) {
+                t.computed_fields
+                    .retain(|c| c.get("name").and_then(Value::as_str) != Some(name.as_str()));
+                for p in &mut t.select_permissions {
+                    p.permission.computed_fields.retain(|c| c != name);
+                }
+            }
+        }
         Dependent::Relationship { table, name } => {
             if let Some(t) = tables.iter_mut().find(|t| t.table == *table) {
                 t.object_relationships.retain(|r| r.name != *name);
@@ -1033,7 +1076,7 @@ mod tests {
         article.foreign_keys = vec![(1, vec![2])];
         let before = [snap(1, "author", &[(1, "id")]), article.clone()];
         let after = [snap(1, "writer", &[(1, "author_id")]), article];
-        apply(&mut m, "default", &before, &after, false).unwrap();
+        apply(&mut m, "default", &before, &after, &[], false).unwrap();
         let filter = &m.sources[0].tables[1].select_permissions[0]
             .permission
             .filter;
@@ -1056,14 +1099,14 @@ mod tests {
             [author, before[1].clone()]
         };
         // `name` is compared with a static value.
-        let err = apply(&mut md(), "default", &before, &retype(2), false).unwrap_err();
+        let err = apply(&mut md(), "default", &before, &retype(2), &[], false).unwrap_err();
         assert_eq!(
             err.error.message,
             "cannot change type of column \"name\" in table \"author\" because of the following dependencies: permission author.user.select in source \"default\""
         );
         // `id` is only compared with a session variable, listed in `columns` and used by
         // relationships: none of these depend on its type.
-        apply(&mut md(), "default", &before, &retype(1), false).unwrap();
+        apply(&mut md(), "default", &before, &retype(1), &[], false).unwrap();
     }
 
     #[test]
@@ -1116,13 +1159,13 @@ mod tests {
         let before = [snap(1, "author", &[(1, "id"), (2, "name")]), article];
         // `DROP TABLE author CASCADE` also drops the constraint on article.
         let after = [snap(2, "article", &[(1, "id"), (2, "author_id")])];
-        let err = apply(&mut md(), "default", &before, &after, false).unwrap_err();
+        let err = apply(&mut md(), "default", &before, &after, &[], false).unwrap_err();
         assert_eq!(
             err.error.message,
             "cannot drop due to the following dependent objects: relationship article.author in source \"default\""
         );
         let mut m = md();
-        apply(&mut m, "default", &before, &after, true).unwrap();
+        apply(&mut m, "default", &before, &after, &[], true).unwrap();
         assert_eq!(m.sources[0].tables.len(), 1);
         assert!(m.sources[0].tables[0].object_relationships.is_empty());
     }
@@ -1138,7 +1181,7 @@ mod tests {
             snap(1, "writer", &[(1, "uid"), (2, "name")]),
             snap(2, "article", &[(1, "id"), (2, "writer_id")]),
         ];
-        apply(&mut m, "default", &before, &after, false).unwrap();
+        apply(&mut m, "default", &before, &after, &[], false).unwrap();
         let tables = &m.sources[0].tables;
         assert_eq!(tables[0].table.name, "writer");
         let perm = &tables[0].select_permissions[0].permission;
@@ -1173,7 +1216,7 @@ mod tests {
             snap(1, "article", &[(1, "name"), (2, "id")]),
             snap(2, "author", &[(1, "id"), (2, "author_id")]),
         ];
-        apply(&mut m, "default", &before, &after, false).unwrap();
+        apply(&mut m, "default", &before, &after, &[], false).unwrap();
         let names: Vec<_> = m.sources[0]
             .tables
             .iter()
@@ -1192,7 +1235,7 @@ mod tests {
             snap(1, "writer", &[(1, "id")]),
             snap(2, "article", &[(1, "id"), (2, "author_id")]),
         ];
-        apply(&mut m, "default", &before, &after, true).unwrap();
+        apply(&mut m, "default", &before, &after, &[], true).unwrap();
         let writer = &m.sources[0].tables[0];
         assert_eq!(writer.table.name, "writer");
         assert!(writer.select_permissions.is_empty());
@@ -1222,18 +1265,18 @@ mod tests {
                 .collect();
             [snap(1, "t", &cols)]
         };
-        let err = apply(&mut md(), "default", &before, &drop(1), false).unwrap_err();
+        let err = apply(&mut md(), "default", &before, &drop(1), &[], false).unwrap_err();
         assert_eq!(
             err.error.message,
             "cannot drop due to the following dependent objects: event-trigger t.cols in source \"default\""
         );
-        let err = apply(&mut md(), "default", &before, &drop(2), false).unwrap_err();
+        let err = apply(&mut md(), "default", &before, &drop(2), &[], false).unwrap_err();
         assert!(
             err.error
                 .message
                 .ends_with("event-trigger t.pay in source \"default\"")
         );
-        apply(&mut md(), "default", &before, &drop(3), false).unwrap();
+        apply(&mut md(), "default", &before, &drop(3), &[], false).unwrap();
         // Listed as V2 sorts the reports: the event trigger before the permission.
         let mut m = md();
         m.sources[0].tables[0].select_permissions = hge_metadata::from_json(json!({
@@ -1246,14 +1289,14 @@ mod tests {
             .tables[0]
             .select_permissions
             .clone();
-        let err = apply(&mut m, "default", &before, &drop(1), false).unwrap_err();
+        let err = apply(&mut m, "default", &before, &drop(1), &[], false).unwrap_err();
         assert_eq!(
             err.error.message,
             "cannot drop due to the following dependent objects: event-trigger t.cols in source \"default\", permission t.user.select in source \"default\""
         );
 
         let mut m = md();
-        apply(&mut m, "default", &before, &drop(1), true).unwrap();
+        apply(&mut m, "default", &before, &drop(1), &[], true).unwrap();
         let names: Vec<_> = m.sources[0].tables[0]
             .event_triggers
             .iter()
@@ -1263,7 +1306,7 @@ mod tests {
 
         let mut m = md();
         let renamed = [snap(1, "t", &[(1, "a"), (2, "bb"), (3, "c")])];
-        apply(&mut m, "default", &before, &renamed, false).unwrap();
+        apply(&mut m, "default", &before, &renamed, &[], false).unwrap();
         assert_eq!(
             m.sources[0].tables[0].event_triggers[1]["definition"]["delete"]["payload"],
             json!(["bb"])
@@ -1277,13 +1320,13 @@ mod tests {
             snap(2, "article", &[(1, "id"), (2, "author_id")]),
         ];
         let after = [snap(1, "author", &[(1, "id"), (2, "name")])];
-        let err = apply(&mut md(), "default", &before, &after, false).unwrap_err();
+        let err = apply(&mut md(), "default", &before, &after, &[], false).unwrap_err();
         assert_eq!(
             err.error.message,
             "cannot drop due to the following dependent objects: relationship author.articles in source \"default\""
         );
         let mut m = md();
-        apply(&mut m, "default", &before, &after, true).unwrap();
+        apply(&mut m, "default", &before, &after, &[], true).unwrap();
         assert_eq!(m.sources[0].tables.len(), 1);
         assert!(m.sources[0].tables[0].array_relationships.is_empty());
 
@@ -1292,11 +1335,43 @@ mod tests {
             snap(1, "author", &[(1, "id")]),
             snap(2, "article", &[(1, "id"), (2, "author_id")]),
         ];
-        let err = apply(&mut md(), "default", &before, &after, false).unwrap_err();
+        let err = apply(&mut md(), "default", &before, &after, &[], false).unwrap_err();
         assert!(
             err.error
                 .message
                 .ends_with("permission author.user.select in source \"default\"")
+        );
+    }
+
+    #[test]
+    fn dropped_functions_untrack_and_cascade_computed_fields() {
+        let mut m = hge_metadata::from_json(json!({
+            "version": 3,
+            "sources": [{"name": "default", "configuration": {}, "tables": [
+                {"table": "u",
+                 "computed_fields": [{"name": "dbl", "definition": {"function": "cf"}}],
+                 "select_permissions": [{"role": "user", "permission": {"columns": ["id"], "computed_fields": ["dbl"], "filter": {}}}]}
+            ], "functions": [{"function": "f"}, {"function": "g", "permissions": [{"role": "user"}]}]}]
+        }))
+        .unwrap();
+        let before = vec![snap(1, "u", &[(1, "id")])];
+        let gone = [QualifiedTable::public("f"), QualifiedTable::public("cf")];
+        let err = apply(&mut m.clone(), "default", &before, &before, &gone, false).unwrap_err();
+        assert_eq!(
+            err.error.message,
+            "cannot drop due to the following dependent objects: computed field u.dbl in source \"default\""
+        );
+        apply(&mut m, "default", &before, &before, &gone[..1], false).unwrap();
+        let src = m.source("default").unwrap();
+        assert_eq!(src.functions.len(), 1);
+        apply(&mut m, "default", &before, &before, &gone, true).unwrap();
+        let t = &m.source("default").unwrap().tables[0];
+        assert!(t.computed_fields.is_empty());
+        assert!(
+            t.select_permissions[0]
+                .permission
+                .computed_fields
+                .is_empty()
         );
     }
 }

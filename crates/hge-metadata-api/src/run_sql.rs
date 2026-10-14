@@ -304,6 +304,12 @@ pub async fn run_checked<R: Runtime>(ctx: &mut Ctx<'_, R>, args: &RunSql) -> Api
         .map_err(|e| sql_error(e, "BEGIN"))?;
     set_session(&tx, ctx.session).await?;
     let before = snapshot(&tx, &tracked).await?;
+    let functions = ctx
+        .metadata
+        .source(&args.source)
+        .map(hge_metadata::Source::referenced_functions)
+        .unwrap_or_default();
+    let functions_before = existing_functions(&tx, &functions).await?;
     let msgs = tx
         .simple_query(&args.sql)
         .await
@@ -311,9 +317,21 @@ pub async fn run_checked<R: Runtime>(ctx: &mut Ctx<'_, R>, args: &RunSql) -> Api
     let result = result_json(&msgs);
     let oids: Vec<u32> = before.iter().map(|t| t.oid).collect();
     let after = snapshot_oids(&tx, &oids).await?;
+    let functions_after = existing_functions(&tx, &functions_before).await?;
+    let dropped_functions: Vec<QualifiedTable> = functions_before
+        .into_iter()
+        .filter(|f| !functions_after.contains(f))
+        .collect();
 
     let mut metadata = ctx.metadata.clone();
-    schema_diff::apply(&mut metadata, &args.source, &before, &after, args.cascade)?;
+    schema_diff::apply(
+        &mut metadata,
+        &args.source,
+        &before,
+        &after,
+        &dropped_functions,
+        args.cascade,
+    )?;
 
     // Resolve against the catalog as this transaction sees it before committing.
     let tables: Vec<QualifiedTable> = metadata
@@ -387,6 +405,29 @@ async fn snapshot(
         .await
         .map_err(|e| sql_error(e, &sql))?;
     rows.iter().map(row_snapshot).collect()
+}
+
+/// Which of `functions` exist (by schema and name).
+async fn existing_functions(
+    client: &impl GenericClient,
+    functions: &[QualifiedTable],
+) -> ApiResult<Vec<QualifiedTable>> {
+    if functions.is_empty() {
+        return Ok(vec![]);
+    }
+    let param = introspect::tables_param(functions);
+    const SQL: &str = "SELECT DISTINCT n.nspname::text, p.proname::text FROM pg_proc p \
+                       JOIN pg_namespace n ON n.oid = p.pronamespace \
+                       JOIN json_to_recordset($1::text::json) AS f(schema text, name text) \
+                       ON n.nspname = f.schema AND p.proname = f.name";
+    let rows = client
+        .query(SQL, &[&param])
+        .await
+        .map_err(|e| sql_error(e, SQL))?;
+    Ok(rows
+        .iter()
+        .map(|r| QualifiedTable::new(r.get::<_, String>(0), r.get::<_, String>(1)))
+        .collect())
 }
 
 async fn snapshot_oids(client: &impl GenericClient, oids: &[u32]) -> ApiResult<Vec<TableSnapshot>> {
