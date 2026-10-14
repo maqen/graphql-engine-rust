@@ -44,6 +44,10 @@ enum Dependent {
         role: String,
         kind: &'static str,
     },
+    EventTrigger {
+        table: QualifiedTable,
+        name: String,
+    },
 }
 
 impl Dependent {
@@ -55,6 +59,10 @@ impl Dependent {
             ),
             Dependent::Permission { table, role, kind } => format!(
                 "permission {}.{role}.{kind} in source \"{source}\"",
+                table.v2_text()
+            ),
+            Dependent::EventTrigger { table, name } => format!(
+                "event-trigger {}.{name} in source \"{source}\"",
                 table.v2_text()
             ),
         }
@@ -140,9 +148,9 @@ pub fn apply(
     dependents.extend(retyped.into_iter().flat_map(|(_, _, deps)| deps));
     // Objects of dropped tables go with them.
     dependents.retain(|d| match d {
-        Dependent::Relationship { table, .. } | Dependent::Permission { table, .. } => {
-            !dropped_tables.contains(table)
-        }
+        Dependent::Relationship { table, .. }
+        | Dependent::Permission { table, .. }
+        | Dependent::EventTrigger { table, .. } => !dropped_tables.contains(table),
     });
     dependents.sort();
     dependents.dedup();
@@ -645,8 +653,43 @@ fn column_dependents(
                 });
             }
         }
+        if own {
+            for trigger in &t.event_triggers {
+                if trigger_mentions(trigger, column)
+                    && let Some(name) = trigger.get("name").and_then(Value::as_str)
+                {
+                    out.push(Dependent::EventTrigger {
+                        table: t.table.clone(),
+                        name: name.to_owned(),
+                    });
+                }
+            }
+        }
     }
     out
+}
+
+/// The column lists of an event trigger's operations: `columns` and `payload`, when they
+/// are lists rather than `"*"`.
+fn trigger_column_lists(trigger: &mut Value) -> impl Iterator<Item = &mut Vec<Value>> {
+    trigger
+        .get_mut("definition")
+        .and_then(Value::as_object_mut)
+        .into_iter()
+        .flat_map(|d| d.iter_mut())
+        .filter_map(|(op, spec)| {
+            matches!(op.as_str(), "insert" | "update" | "delete").then_some(spec)
+        })
+        .filter_map(Value::as_object_mut)
+        .flat_map(|spec| spec.iter_mut())
+        .filter_map(|(key, v)| matches!(key.as_str(), "columns" | "payload").then_some(v))
+        .filter_map(Value::as_array_mut)
+}
+
+/// Whether an event trigger lists `column` in an operation's `columns` or `payload`.
+fn trigger_mentions(trigger: &Value, column: &str) -> bool {
+    let mut copy = trigger.clone();
+    trigger_column_lists(&mut copy).any(|cols| cols.iter().any(|c| c == column))
 }
 
 /// Foreign-key relationships that use the constraint on `columns` of `table` referencing
@@ -773,6 +816,15 @@ fn rename_column(
                     .shift_remove_index(i)
                     .expect("index exists");
                 cfg.custom_column_names.shift_insert(i, new.to_owned(), v);
+            }
+        }
+        if own {
+            for trigger in &mut t.event_triggers {
+                for cols in trigger_column_lists(trigger) {
+                    for c in cols.iter_mut().filter(|c| *c == old) {
+                        *c = Value::String(new.to_owned());
+                    }
+                }
             }
         }
         for p in &mut t.select_permissions {
@@ -914,6 +966,12 @@ fn drop_dependent(tables: &mut [TableEntry], d: &Dependent) {
                     "update" => t.update_permissions.retain(|p| p.role != *role),
                     _ => t.delete_permissions.retain(|p| p.role != *role),
                 }
+            }
+        }
+        Dependent::EventTrigger { table, name } => {
+            if let Some(t) = tables.iter_mut().find(|t| t.table == *table) {
+                t.event_triggers
+                    .retain(|e| e.get("name").and_then(Value::as_str) != Some(name));
             }
         }
     }
@@ -1133,6 +1191,61 @@ mod tests {
         let writer = &m.sources[0].tables[0];
         assert_eq!(writer.table.name, "writer");
         assert!(writer.select_permissions.is_empty());
+    }
+
+    #[test]
+    fn event_trigger_columns() {
+        let md = || {
+            hge_metadata::from_json(json!({
+                "version": 3,
+                "sources": [{"name": "default", "configuration": {}, "tables": [
+                    {"table": "t", "event_triggers": [
+                        {"name": "cols", "webhook": "http://h", "definition": {
+                            "insert": {"columns": "*"}, "update": {"columns": ["a"]}}},
+                        {"name": "pay", "webhook": "http://h", "definition": {
+                            "delete": {"columns": "*", "payload": ["b"]}}}
+                    ]}
+                ]}]
+            }))
+            .unwrap()
+        };
+        let before = [snap(1, "t", &[(1, "a"), (2, "b"), (3, "c")])];
+        let drop = |n: i16| {
+            let cols: Vec<(i16, &str)> = [(1, "a"), (2, "b"), (3, "c")]
+                .into_iter()
+                .filter(|(i, _)| *i != n)
+                .collect();
+            [snap(1, "t", &cols)]
+        };
+        let err = apply(&mut md(), "default", &before, &drop(1), false).unwrap_err();
+        assert_eq!(
+            err.error.message,
+            "cannot drop due to the following dependent objects: event-trigger public.t.cols in source \"default\""
+        );
+        let err = apply(&mut md(), "default", &before, &drop(2), false).unwrap_err();
+        assert!(
+            err.error
+                .message
+                .ends_with("event-trigger public.t.pay in source \"default\"")
+        );
+        apply(&mut md(), "default", &before, &drop(3), false).unwrap();
+
+        let mut m = md();
+        apply(&mut m, "default", &before, &drop(1), true).unwrap();
+        let names: Vec<_> = m.sources[0].tables[0]
+            .event_triggers
+            .iter()
+            .map(|t| t["name"].clone())
+            .collect();
+        assert_eq!(names, [json!("pay")]);
+
+        let mut m = md();
+        let renamed = [snap(1, "t", &[(1, "a"), (2, "bb"), (3, "c")])];
+        apply(&mut m, "default", &before, &renamed, false).unwrap();
+        assert_eq!(
+            m.sources[0].tables[0].event_triggers[1]["definition"]["delete"]["payload"],
+            json!(["bb"])
+        );
     }
 
     #[test]
