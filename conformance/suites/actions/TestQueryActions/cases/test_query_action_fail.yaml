@@ -1,0 +1,23 @@
+upstream:
+  file: test_actions.py
+  class: TestQueryActions
+  method: test_query_action_fail
+  fixtures:
+  - queries/actions/sync/get_user_by_email_fail.yaml
+steps:
+- description: Run get_user_by_email query action with invalid email
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        get_user_by_email(email: "random-email"){
+            id
+        }
+      }
+  response:
+    errors:
+    - message: Given email address is not valid
+      extensions:
+        path: $
+        code: invalid-email

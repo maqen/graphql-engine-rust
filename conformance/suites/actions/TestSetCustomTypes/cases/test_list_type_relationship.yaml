@@ -1,0 +1,61 @@
+upstream:
+  file: test_actions.py
+  class: TestSetCustomTypes
+  method: test_list_type_relationship
+  fixtures:
+  - queries/actions/custom-types/list_type_relationship.yaml
+steps:
+- description: Set custom types; relationships for objects with list type fields
+  url: /v1/query
+  status: 400
+  query:
+    type: set_custom_types
+    args:
+      objects:
+      - name: User
+        fields:
+        - name: user_id
+          type: uuid!
+        - name: names
+          type: '[String!]'
+        relationships:
+        - name: Names
+          type: array
+          remote_table: user
+          field_mapping:
+            names: name
+  response:
+    error: 'Inconsistent object: validation for the given custom types failed because the type of the
+      field "names" for relationship "Names" in object type "User" is a list type'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        enums: []
+        input_objects: []
+        objects:
+        - description: null
+          fields:
+          - arguments: null
+            description: null
+            name: user_id
+            type: uuid!
+          - arguments: null
+            description: null
+            name: names
+            type: '[String!]'
+          name: User
+          relationships:
+          - field_mapping:
+              names: name
+            name: Names
+            remote_table:
+              name: user
+              schema: public
+            source: default
+            type: array
+        scalars: []
+      name: custom_types custom_types
+      reason: 'Inconsistent object: validation for the given custom types failed because the type of the
+        field "names" for relationship "Names" in object type "User" is a list type'
+      type: custom_types

@@ -1,0 +1,54 @@
+upstream:
+  file: test_actions.py
+  class: TestActionsSync
+  method: test_scalar_response_action_transformed_output
+  fixtures:
+  - queries/actions/sync/scalar_response_action_transformed_output.yaml
+steps:
+- description: Update actions webhook to transform scalar string output into an object response
+  url: /v1/query
+  status: 200
+  query:
+    type: update_action
+    args:
+      name: scalar_response
+      definition:
+        kind: synchronous
+        output_type: OutObjectScalarTransformed!
+        handler: '{{ACTION_WEBHOOK_HANDLER}}/scalar-response'
+        response_transform:
+          template_engine: Kriti
+          body: |
+            {
+              "foo": {{ $body }}
+            }
+  response:
+    message: success
+- description: Run scalar-response sync action
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        scalar_response{
+          foo
+        }
+      }
+  response:
+    data:
+      scalar_response:
+        foo: some-string
+- description: Revert action wehbook
+  url: /v1/query
+  status: 200
+  query:
+    type: update_action
+    args:
+      name: scalar_response
+      definition:
+        kind: synchronous
+        arguments: null
+        output_type: String!
+        handler: '{{ACTION_WEBHOOK_HANDLER}}/scalar-response'
+  response:
+    message: success

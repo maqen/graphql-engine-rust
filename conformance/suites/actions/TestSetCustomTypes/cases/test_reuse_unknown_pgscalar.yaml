@@ -1,0 +1,69 @@
+upstream:
+  file: test_actions.py
+  class: TestSetCustomTypes
+  method: test_reuse_unknown_pgscalar
+  fixtures:
+  - queries/actions/custom-types/reuse_unknown_pgscalar.yaml
+steps:
+- description: Set custom types with Postgres scalars
+  url: /v1/query
+  status: 400
+  query:
+    type: set_custom_types
+    args:
+      objects:
+      - name: User
+        fields:
+        - name: user_id
+          type: uuid!
+        - name: location
+          type: geography
+        - name: unknown_pgtype
+          type: unknown_type
+      input_objects:
+      - name: UserInput
+        fields:
+        - name: name
+          type: String!
+        - name: id
+          type: uuid!
+  response:
+    error: 'Inconsistent object: validation for the given custom types failed because the type "unknown_type"
+      for field "unknown_pgtype" in  object type "User" does not exist'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        enums: []
+        input_objects:
+        - description: null
+          fields:
+          - description: null
+            name: name
+            type: String!
+          - description: null
+            name: id
+            type: uuid!
+          name: UserInput
+        objects:
+        - description: null
+          fields:
+          - arguments: null
+            description: null
+            name: user_id
+            type: uuid!
+          - arguments: null
+            description: null
+            name: location
+            type: geography
+          - arguments: null
+            description: null
+            name: unknown_pgtype
+            type: unknown_type
+          name: User
+          relationships: []
+        scalars: []
+      name: custom_types custom_types
+      reason: 'Inconsistent object: validation for the given custom types failed because the type "unknown_type"
+        for field "unknown_pgtype" in  object type "User" does not exist'
+      type: custom_types

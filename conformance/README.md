@@ -111,6 +111,10 @@ finishes, so engines are still reused across suites. A helper that died is start
 new port, which restarts the engine too. Helper output is appended to
 `$TMPDIR/hge-conformance-<slot>-<name>.log`, which is kept after the run.
 
+Helpers that call back into the engine (the action handler does) find it through
+`$HGE_CONFORMANCE_ENGINE`: the path of a JSON file, `{"url": ..., "admin_secret": ...}`, that the
+runner writes for the slot's current engine before a suite's cases run.
+
 ### JWTs
 
 A header value (or a value inside a websocket message) can be a token the runner signs when

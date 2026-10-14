@@ -1,0 +1,72 @@
+upstream:
+  file: test_actions.py
+  class: TestActionsSync
+  method: test_expecting_number_scalar_array_output_type_got_string_array
+  fixtures:
+  - queries/actions/sync/get_string_scalar_array_action_output_type_expecting_number_array.yaml
+steps:
+- description: Update action definition to expect array of Int - `[Int]`
+  url: /v1/query
+  status: 200
+  query:
+    type: update_action
+    args:
+      name: scalar_array_response
+      definition:
+        kind: synchronous
+        arguments: null
+        output_type: '[Int]!'
+        handler: '{{ACTION_WEBHOOK_HANDLER}}/scalar-array-response'
+  response:
+    message: success
+- description: Run scalar-array-response sync action
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        scalar_array_response
+      }
+  response:
+    errors:
+    - message: got scalar String for the action webhook response, expecting Int
+      extensions:
+        path: $
+        code: unexpected
+        internal:
+          error: unexpected response
+          request:
+            action:
+              name: scalar_array_response
+            input: {}
+            request_query: |
+              mutation {
+                scalar_array_response
+              }
+            transformed_request: null
+            url: '{{ACTION_WEBHOOK_HANDLER}}/scalar-array-response'
+          response:
+            body:
+            - foo
+            - bar
+            - null
+            headers:
+            - name: Content-Type
+              value: application/json
+            - name: Set-Cookie
+              value: abcd
+            status: 200
+- description: Revert action wehbook
+  url: /v1/query
+  status: 200
+  query:
+    type: update_action
+    args:
+      name: scalar_array_response
+      definition:
+        kind: synchronous
+        arguments: null
+        output_type: '[String]!'
+        handler: '{{ACTION_WEBHOOK_HANDLER}}/scalar-array-response'
+  response:
+    message: success

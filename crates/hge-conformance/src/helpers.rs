@@ -275,6 +275,12 @@ fn map_strings<E>(v: &Value, f: &mut impl FnMut(&str) -> Result<String, E>) -> R
     })
 }
 
+/// Where a slot writes its engine's URL and admin secret (`{"url": ..., "admin_secret": ...}`)
+/// once the engine serves a suite; helpers get the path as `$HGE_CONFORMANCE_ENGINE`.
+pub fn engine_file(slot: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("hge-conformance-{slot}-engine.json"))
+}
+
 async fn start(slot: &str, name: &str) -> Result<Helper> {
     check_name(name)?;
     let port = std::net::TcpListener::bind("127.0.0.1:0")?
@@ -291,6 +297,7 @@ async fn start(slot: &str, name: &str) -> Result<Helper> {
         .arg(dir().join(format!("{name}.py")))
         .arg(port.to_string())
         .env("PYTHONUNBUFFERED", "1")
+        .env("HGE_CONFORMANCE_ENGINE", engine_file(slot))
         .stdin(Stdio::null())
         .stdout(file.try_clone()?)
         .stderr(file)

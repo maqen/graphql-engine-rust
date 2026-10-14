@@ -1,0 +1,23 @@
+upstream:
+  file: test_actions.py
+  class: TestActionsSync
+  method: test_omitted_field_response_for_nullable_field
+  fixtures:
+  - queries/actions/sync/omitted_field_response_for_nullable_field.yaml
+steps:
+- description: Omitted field response should be shown as null
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        omitted_response_field {
+          city
+          country
+        }
+      }
+  response:
+    data:
+      omitted_response_field:
+        city: null
+        country: India

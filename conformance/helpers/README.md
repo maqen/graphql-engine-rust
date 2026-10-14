@@ -8,3 +8,6 @@ Helper servers for the conformance suite, vendored from hasura/graphql-engine
 - `query_echo.py`: the POST-mode webhook of `test_webhook_request_context.py`.
 - `graphql_server.py` (with `webserver.py`): upstream's remote GraphQL server, without TLS.
   Needs `pip install -r requirements.txt` (graphene 2).
+- `actions_webhook.py`: upstream's `ActionsWebhookHandler` (context.py), the action handler of
+  `test_actions.py`. Some actions call back into the engine; it reads the engine's URL and admin
+  secret from the JSON file named by `$HGE_CONFORMANCE_ENGINE`.

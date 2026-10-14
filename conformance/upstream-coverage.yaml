@@ -8,31 +8,89 @@
     test_output_types: ported
 - file: test_actions.py
   class: TestActionTimeout
-  skipped: needs use_action_fixtures
+  area: actions
+  tests:
+    test_action_timeout_fail: 'skipped: custom test logic: graphql_mutation = ''\n        mutation {\n          create_u'
 - file: test_actions.py
   class: TestActionsAsync
-  skipped: needs use_action_fixtures
+  area: actions
+  tests:
+    test_create_user_fail: 'skipped: custom test logic: graphql_mutation = ''\n        mutation {\n          create_u'
+    test_async_actions_error_response_user_role: 'skipped: custom test logic: graphql_mutation = ''\n        mutation
+      {\n          test_asy'
+    test_async_actions_error_response_admin_role: 'skipped: custom test logic: graphql_mutation = ''\n        mutation
+      {\n          test_asy'
+    test_create_user_success: 'skipped: custom test logic: graphql_mutation = ''\n        mutation {\n          create_u'
+    test_create_user_roles: 'skipped: custom test logic: graphql_mutation = ''\n        mutation {\n          create_u'
+    test_create_user_transformed_success: 'skipped: custom test logic: graphql_mutation = ''\n        mutation
+      {\n          create_u'
+    test_create_user_nested_success: 'skipped: custom test logic: graphql_mutation = ''\n        mutation
+      {\n          create_u'
 - file: test_actions.py
   class: TestActionsMetadata
-  skipped: needs fixture actions_fixture
+  area: actions
+  tests:
+    test_recreate_permission: 'skipped: step 0: upstream returned 400, its fixture expects 200: {"error":
+      "permission for role \"user\" is already defined on \"create_user\"", "path": "$.args", "code":
+      "already-exists"}'
+    test_create_with_headers: ported
 - file: test_actions.py
   class: TestActionsRelationshipsBasic
-  skipped: needs fixture actions_fixture, graphql_service
+  skipped: needs fixture graphql_service
 - file: test_actions.py
   class: TestActionsSync
-  skipped: needs use_action_fixtures
+  area: actions
+  tests:
+    test_null_response: ported
+    test_omitted_field_response_for_nullable_field: ported
+    test_expecting_object_response_got_null: ported
+    test_expecting_array_response_got_null: ported
+    test_expecting_object_response_got_array: ported
+    test_expecting_array_response_got_object: ported
+    test_expecting_scalar_output_type_success: ported
+    test_expecting_scalar_string_output_type_got_object: ported
+    test_expecting_object_output_type_got_scalar_string: ported
+    test_scalar_response_action_transformed_output: ported
+    test_object_response_action_transformed_output: ported
+    test_expecting_string_scalar_array_output_type_success: ported
+    test_expecting_number_scalar_array_output_type_got_string_array: ported
+    test_scalar_array_field_nullability_check: ported
+    test_expecting_object_response_with_nested_null: ported
+    test_expecting_jsonb_response_success: ported
+    test_expecting_custom_scalar_response_success: ported
+    test_expecting_custom_scalar_array_response_success: ported
+    test_expecting_custom_scalar_array_response_got_different_type: 'skipped: custom test logic: query_obj
+      = {''query'': ''\n                mutation {\n       '
+    test_expecting_object_response_with_nested_null_wrong_field: 'skipped: custom test logic: query_obj
+      = {''query'': ''\n                query {\n          '
+    test_mirror_action_not_null: ported
+    test_mirror_action_unexpected_field: ported
+    test_mirror_action_no_field: ported
+    test_mirror_action_success: ported
+    test_mirror_action_transformed_success: ported
+    test_mirror_action_transformed_output_success: ported
+    test_mirror_headers: 'skipped: custom test logic: query = ''\n          query {\n            mirror_headers
+      {\n'
+    test_results_list_transformed_output_success: ported
+    test_create_users_output_type: 'skipped: custom test logic: gql_query = ''\n        query {\n          __type(name:
+      "muta'
 - file: test_actions.py
   class: TestActionsSyncResponseHeaders
-  skipped: needs use_action_fixtures
+  area: actions
+  tests:
+    test_set_cookie_header: 'skipped: custom test logic: mutation = ''\n          mutation {\n            create_user('
 - file: test_actions.py
   class: TestActionsSyncWebsocket
-  skipped: needs use_action_fixtures
+  skipped: websocket transport only
 - file: test_actions.py
   class: TestActionsSyncWithRemoteJoins
-  skipped: needs fixture actions_fixture, graphql_service
+  skipped: needs fixture graphql_service
 - file: test_actions.py
   class: TestCreateActionNestedTypeWithRelation
-  skipped: needs use_action_fixtures
+  area: actions
+  tests:
+    test_create_async_action_with_nested_output_and_relation_fail: ported
+    test_create_sync_action_with_nested_output_and_nested_relation: ported
 - file: test_actions.py
   class: TestFunctionReturnTypeIntrospection
   area: actions
@@ -40,10 +98,37 @@
     test_function_return_type: ported
 - file: test_actions.py
   class: TestQueryActions
-  skipped: needs use_action_fixtures
+  area: actions
+  tests:
+    test_query_action_extensions_code_both_codes_fail: ported
+    test_query_action_extensions_code_toplevel_empty_extensions_fail: ported
+    test_query_action_extensions_code_toplevel_no_extensions_fail: ported
+    test_query_action_extensions_code_only_extensions_code_fail: ported
+    test_query_action_extensions_code_only_empty_extensions_fail: ported
+    test_query_action_extensions_code_nothing_fail: ported
+    test_query_action_fail: ported
+    test_query_action_success_output_object: 'skipped: custom test logic: gql_query = ''\n        mutation
+      {\n          insert_user_one'
+    test_query_action_success_output_nested_object: 'skipped: custom test logic: gql_query = ''\n        mutation
+      {\n          insert_user_one'
+    test_query_action_success_output_nested_join: 'skipped: custom test logic: gql_query = ''\n        mutation
+      {\n          insert_user_one'
+    test_query_action_success_output_list: 'skipped: custom test logic: gql_query = ''\n        mutation
+      {\n          insert_user(obj'
+    test_query_action_should_not_throw_validation_error: |-
+      skipped: custom test logic: for _ in range(25):
+          self.test_query_action_success_outpu
+    test_query_action_with_relationship: ported
+    test_query_action_recursive_output: ported
 - file: test_actions.py
   class: TestSetCustomTypes
-  skipped: needs fixture actions_fixture
+  area: actions
+  tests:
+    test_reuse_pgscalars: ported
+    test_reuse_unknown_pgscalar: ported
+    test_create_action_pg_scalar: ported
+    test_list_type_relationship: ported
+    test_drop_relationship: ported
 - file: test_allowlist_queries.py
   class: TestAllowlistMetadata
   skipped: needs fixture clean_allowlist

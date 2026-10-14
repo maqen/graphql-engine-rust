@@ -1,0 +1,77 @@
+upstream:
+  file: test_actions.py
+  class: TestActionsSync
+  method: test_expecting_object_output_type_got_scalar_string
+  fixtures:
+  - queries/actions/sync/expecting_object_response_got_scalar.yaml
+steps:
+- description: Update actions webhook to another route which returns scalar string response
+  url: /v1/query
+  status: 200
+  query:
+    type: update_action
+    args:
+      name: create_user
+      definition:
+        kind: synchronous
+        arguments: null
+        output_type: UserId
+        handler: '{{ACTION_WEBHOOK_HANDLER}}/scalar-response'
+  response:
+    message: success
+- description: Run create_user sync action
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        create_user{
+          id
+        }
+      }
+  response:
+    errors:
+    - message: got scalar String for the action webhook response, expecting UserId
+      extensions:
+        path: $
+        code: unexpected
+        internal:
+          error: unexpected response
+          request:
+            action:
+              name: create_user
+            input: {}
+            request_query: |
+              mutation {
+                create_user{
+                  id
+                }
+              }
+            transformed_request: null
+            url: '{{ACTION_WEBHOOK_HANDLER}}/scalar-response'
+          response:
+            body: some-string
+            headers:
+            - name: Content-Type
+              value: application/json
+            - name: Set-Cookie
+              value: abcd
+            status: 200
+- description: Revert action wehbook
+  url: /v1/query
+  status: 200
+  query:
+    type: update_action
+    args:
+      name: create_user
+      definition:
+        kind: synchronous
+        arguments:
+        - name: email
+          type: String!
+        - name: name
+          type: String!
+        output_type: UserId
+        handler: '{{ACTION_WEBHOOK_HANDLER}}/create-user'
+  response:
+    message: success

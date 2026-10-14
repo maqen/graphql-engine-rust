@@ -1,0 +1,26 @@
+upstream:
+  file: test_actions.py
+  class: TestActionsSync
+  method: test_mirror_action_transformed_output_success
+  fixtures:
+  - queries/actions/sync/mirror_action_transformed_output_success.yaml
+steps:
+- description: A successful query to mirror action
+  url: /v1/graphql
+  status: 200
+  query:
+    variables:
+      id: some-id
+      name: Alice
+    query: |
+      mutation ($id: ID, $name: String) {
+        mirror_transformed_output(arg: {id: $id, name: $name}){
+          foo
+          bar
+        }
+      }
+  response:
+    data:
+      mirror_transformed_output:
+        foo: some-id
+        bar: Alice

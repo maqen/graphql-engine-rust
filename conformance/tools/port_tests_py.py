@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Port Hasura's server/tests-py suites into conformance/suites/.
 
-For every upstream test class that only needs Postgres (no webhook, JWT, remote schema or
-action servers) and whose test methods only call `check_query_f`, this tool:
+For every upstream test class that needs only Postgres, or also one of upstream's servers this
+tool can start (the fixtures in HELPER_FIXTURES: the action handler, the remote GraphQL server),
+and whose test methods only call `check_query_f`, this tool:
 
 1. runs the class's upstream setup files against a real Hasura v2 CE container,
 2. snapshots the result as `setup.sql` (pg_dump of the source database), `metadata.json`
@@ -24,7 +25,8 @@ Usage (needs docker, psql and pg_dump on PATH):
 
 Postgres must be reachable from containers started with `--network host` at the same URL
 (e.g. `docker run -d --network host -e POSTGRES_PASSWORD=postgres -e PGPORT=55432
-postgis/postgis:15-3.4`).
+postgis/postgis:15-3.4`). Helper fixtures run conformance/helpers/<name>.py with
+`$CONFORMANCE_PYTHON` (default: this interpreter), which needs conformance/helpers/requirements.txt.
 """
 
 import argparse
@@ -33,8 +35,10 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -63,7 +67,15 @@ HAND_PORTED = {
 # Fixtures that only open websocket connections, which hand-ported cases do themselves.
 WS_FIXTURES = {"ws_conn_init", "ws_conn_init_graphql_ws"}
 
-SUPPORTED_FIXTURES = {
+# Fixtures that start one of upstream's servers, run here as a helper
+# (conformance/helpers/<helper>.py): fixture -> (helper, the environment variable with its URL).
+HELPER_FIXTURES = {
+    "actions_fixture": ("actions_webhook", "ACTION_WEBHOOK_HANDLER"),
+    "gql_server": ("graphql_server", "REMOTE_SCHEMAS_WEBHOOK_DOMAIN"),
+}
+HELPERS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "helpers")
+
+SUPPORTED_FIXTURES = set(HELPER_FIXTURES) | {
     "per_class_tests_db_state",
     "per_method_tests_db_state",
     "per_class_db_schema_for_mutation_tests",
@@ -165,7 +177,9 @@ def method_files(fn, cls_dir):
                 continue  # docstring
             if isinstance(st, ast.Expr) and isinstance(st.value, ast.Call):
                 call = st.value
-                if ast.unparse(call.func) != "check_query_f":
+                # test_actions.py's check_query_secret: check_query_f that always sends the
+                # admin secret, which the runner does with admin_secret_header (the default).
+                if ast.unparse(call.func) not in ("check_query_f", *SECRET_CHECKERS):
                     raise Skip(f"calls {ast.unparse(call.func)}")
                 files.append(literal(call.args[1], cls_dir))
                 for kw in call.keywords:
@@ -201,13 +215,25 @@ def method_files(fn, cls_dir):
 
 def discover(upstream):
     """Yield (test_file, class_name, info-or-skip-reason)."""
+    # Markers that test files import from conftest.py, such as use_action_fixtures.
+    conftest = {}
+    for node in ast.parse(open(os.path.join(upstream, "conftest.py")).read()).body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            conftest[node.targets[0].id] = node.value
     for test_file in sorted(os.listdir(upstream)):
         if not (test_file.startswith("test_") and test_file.endswith(".py")):
             continue
         tree = ast.parse(open(os.path.join(upstream, test_file)).read())
+        SECRET_CHECKERS.clear()
+        if any(isinstance(n, ast.FunctionDef) and n.name == "check_query_secret" for n in tree.body):
+            SECRET_CHECKERS.add("check_query_secret")
         aliases = {}
         classes = {}
         for node in tree.body:
+            if isinstance(node, ast.ImportFrom) and node.module == "conftest":
+                for n in node.names:
+                    if n.name in conftest:
+                        aliases[n.asname or n.name] = conftest[n.name]
             if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
                 aliases[node.targets[0].id] = node.value
             if isinstance(node, ast.ClassDef):
@@ -267,6 +293,8 @@ def class_info(node, aliases, classes, hand_ported=False):
             pname = ast.literal_eval(args[0])
             if pname != "transport":
                 raise Skip(f"parametrized by {pname}")
+            if "http" not in ast.literal_eval(args[1]):
+                raise Skip("websocket transport only")
         elif name.endswith("mark.skipif") or name.endswith("mark.skip"):
             raise Skip("skipped upstream")
         else:
@@ -278,6 +306,10 @@ def class_info(node, aliases, classes, hand_ported=False):
         raise Skip(f"needs fixture {', '.join(sorted(unsupported))}")
     if not fixtures & {"per_class_tests_db_state", "per_method_tests_db_state", "per_class_db_schema_for_mutation_tests"}:
         raise Skip("no database state fixture")
+    helpers = sorted(HELPER_FIXTURES[f][0] for f in fixtures if f in HELPER_FIXTURES)
+    for f in fixtures & set(HELPER_FIXTURES):
+        helper, var = HELPER_FIXTURES[f]
+        env[var] = "{{helper:%s}}" % helper
 
     attrs = {}
     methods = {}
@@ -309,6 +341,8 @@ def class_info(node, aliases, classes, hand_ported=False):
             for d in fn.decorator_list:
                 dn = ast.unparse(d)
                 if "parametrize" in dn and "transport" in dn:
+                    if "http" not in ast.literal_eval(d.args[1]):
+                        raise Skip("websocket transport only")
                     continue
                 raise Skip(f"decorated with {dn[:50]}")
             if [a.arg for a in fn.args.args] not in (["self", "hge_ctx"], ["self", "hge_ctx", "transport"]):
@@ -320,6 +354,7 @@ def class_info(node, aliases, classes, hand_ported=False):
         "dir": cls_dir,
         "fixtures": sorted(fixtures),
         "env": env,
+        "helpers": helpers,
         "admin_secret": admin_secret,
         "version": version,
         "files": files,
@@ -372,10 +407,79 @@ def pg_dump(url, data_only=False):
     return out
 
 
+class Helpers:
+    """Upstream's servers, started as the conformance runner starts them (see Helper servers
+    in conformance/README.md), each on a free port."""
+
+    def __init__(self, base_port):
+        self.base_port = base_port
+        self.running = {}  # name -> (process, port)
+        self.engine_file = os.path.join(tempfile.gettempdir(), f"conf-port-engine-{base_port}.json")
+
+    def url(self, name):
+        if name not in self.running:
+            with socket.socket() as s:
+                s.bind(("127.0.0.1", 0))
+                port = s.getsockname()[1]
+            python = os.environ.get("CONFORMANCE_PYTHON", sys.executable)
+            env = {**os.environ, "HGE_CONFORMANCE_ENGINE": self.engine_file, "PYTHONUNBUFFERED": "1"}
+            log = open(os.path.join(tempfile.gettempdir(), f"conf-port-{self.base_port}-{name}.log"), "w")
+            proc = subprocess.Popen([python, os.path.join(HELPERS_DIR, f"{name}.py"), str(port)], env=env,
+                                    stdout=log, stderr=subprocess.STDOUT)
+            for _ in range(100):
+                if proc.poll() is not None:
+                    raise RuntimeError(f"helper {name} exited")
+                try:
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=1)
+                    break
+                except urllib.error.HTTPError:
+                    break
+                except Exception:
+                    time.sleep(0.1)
+            else:
+                proc.kill()
+                proc.wait()
+                raise RuntimeError(f"helper {name} not ready, see {log.name}")
+            self.running[name] = (proc, port)
+        return f"http://127.0.0.1:{self.running[name][1]}"
+
+    def expand(self, value):
+        return re.sub(r"\{\{helper:([A-Za-z0-9_-]+)\}\}", lambda m: self.url(m.group(1)), value)
+
+    def unexpand(self, v):
+        """Recorded values: helper URLs (and `port` fields holding a helper's port) become
+        placeholders again, as the runner records them."""
+        if isinstance(v, str):
+            for name, (_, port) in self.running.items():
+                v = re.sub(r"http://127\.0\.0\.1:%d(?![0-9])" % port, "{{helper:%s}}" % name, v)
+            return v
+        if isinstance(v, list):
+            return [self.unexpand(x) for x in v]
+        if isinstance(v, dict):
+            out = {}
+            for k, x in v.items():
+                names = [n for n, (_, p) in self.running.items() if k == "port" and x == p and type(x) is int]
+                out[k] = "{{helper_port:%s}}" % names[0] if names else self.unexpand(x)
+            return out
+        return v
+
+    def stop(self):
+        for proc, _ in self.running.values():
+            proc.kill()
+            proc.wait()
+        self.running = {}
+
+
+HELPERS = None  # set in main()
+# Functions of the test file being ported that are read as check_query_f.
+SECRET_CHECKERS = set()
+
+
 class Hasura:
     """A Hasura CE container (host network) with a given environment."""
 
     def __init__(self, pg_url, env, admin_secret, port, image):
+        env = {k: HELPERS.expand(v) for k, v in env.items()}
         self.port = port
         self.url = f"http://127.0.0.1:{port}"
         self.secret = ADMIN_SECRET if admin_secret else None
@@ -397,6 +501,8 @@ class Hasura:
         for _ in range(120):
             try:
                 urllib.request.urlopen(self.url + "/healthz", timeout=2)
+                with open(HELPERS.engine_file, "w") as f:
+                    json.dump({"url": self.url, "admin_secret": self.secret}, f)
                 return
             except Exception:
                 time.sleep(0.5)
@@ -510,7 +616,7 @@ def run_upstream_setup(hge, pg_url, up, info):
     if len(sources) != 1:
         raise Skip(f"setup leaves {len(sources)} sources")
     sources[0]["configuration"]["connection_info"]["database_url"] = {"from_env": "HASURA_GRAPHQL_DATABASE_URL"}
-    return setup_sql, data_sql, metadata
+    return setup_sql, data_sql, HELPERS.unexpand(metadata)
 
 
 def unordered_equal(a, b):
@@ -557,7 +663,7 @@ def record_case(hge, up, files, add_secret):
             if k in step:
                 rec[k] = step[k]
         rec["status"] = status
-        rec["response"] = body
+        rec["response"] = HELPERS.unexpand(body)
         if step.get("resp_headers"):
             rec["resp_headers"] = {k: rh.get(k) for k in step["resp_headers"]}
         out.append(rec)
@@ -630,6 +736,7 @@ def port_class(hge, pg_url, up, out_root, test_file, cls, info, coverage):
         "upstream": {"file": test_file, "class": cls, "dir": info["dir"]},
         "admin_secret": info["admin_secret"],
         "env": {"HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES": "true", **info["env"]},
+        **({"helpers": info["helpers"]} if info["helpers"] else {}),
         "isolation": isolation,
     }
     with open(os.path.join(suite_dir, "suite.yaml"), "w") as f:
@@ -672,7 +779,9 @@ def hand_coverage(out_root):
         for suite in sorted(os.listdir(os.path.join(out_root, area))):
             for _, text in hand_cases(os.path.join(out_root, area, suite)).values():
                 up = yaml.safe_load(text)["upstream"]
-                out.setdefault((up["file"], up["class"]), {})[up["method"]] = "ported by hand"
+                # Some hand-written cases cite a file only, not a test method.
+                if "class" in up and "method" in up:
+                    out.setdefault((up["file"], up["class"]), {})[up["method"]] = "ported by hand"
     return out
 
 
@@ -703,6 +812,15 @@ def main():
     ap.add_argument("--port", type=int, default=58180)
     args = ap.parse_args()
 
+    global HELPERS
+    HELPERS = Helpers(args.port + 500)
+    try:
+        port_all(args)
+    finally:
+        HELPERS.stop()
+
+
+def port_all(args):
     found = list(discover(args.upstream))
     coverage = []
     groups = {}

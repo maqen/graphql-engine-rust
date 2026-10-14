@@ -5,3 +5,4 @@ aniso8601==7.0.0
 promise==2.3
 Rx==1.6.3
 six==1.17.0
+requests==2.32.3
