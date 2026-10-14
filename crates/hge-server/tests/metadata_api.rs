@@ -7,6 +7,11 @@
 //! marked `todo` are known differences: they must still differ, so fixing one means
 //! removing its marker.
 //!
+//! `metadata_objects.json` (the remaining metadata objects: query collections, REST
+//! endpoints, inherited roles, functions, computed fields, logical models, native queries,
+//! …) is recorded the same way and replayed afterwards on a fresh catalog, in the same test
+//! so the two scenarios never run against the database at the same time.
+//!
 //! The test runs in a throwaway database on the Postgres server `HASURA_GRAPHQL_DATABASE_URL`
 //! points at (see `hge-testdb`); without it the test is skipped.
 
@@ -18,6 +23,7 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 
 const SCENARIO: &str = include_str!("metadata_core.json");
+const OBJECTS_SCENARIO: &str = include_str!("metadata_objects.json");
 
 #[derive(Deserialize)]
 struct Scenario {
@@ -88,10 +94,36 @@ async fn metadata_api_matches_v2() {
     let engine = hge_server::build_engine(config.clone()).await.unwrap();
     let router = hge_server::routes::router(engine.clone());
 
-    let scenario: Scenario = serde_json::from_str(SCENARIO).unwrap();
+    let failures = replay(&router, SCENARIO).await;
+    assert!(
+        failures.is_empty(),
+        "{} step(s) failed:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+
+    session_recorded(&router).await;
+    replicas_sync(&router, config.clone()).await;
+
+    reset_database(config.database_url.as_deref().unwrap()).await;
+    let engine = hge_server::build_engine(config).await.unwrap();
+    let router = hge_server::routes::router(engine.clone());
+    let failures = replay(&router, OBJECTS_SCENARIO).await;
+    assert!(
+        failures.is_empty(),
+        "metadata_objects.json: {} step(s) failed:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+/// Replay a recorded scenario; returns a description of each step that does not behave as
+/// recorded (or that matches although marked `todo`).
+async fn replay(router: &axum::Router, scenario: &str) -> Vec<String> {
+    let scenario: Scenario = serde_json::from_str(scenario).unwrap();
     let mut failures = vec![];
     for (i, step) in scenario.steps.iter().enumerate() {
-        let (status, actual) = post(&router, &step.url, &step.query).await;
+        let (status, actual) = post(router, &step.url, &step.query).await;
         let matches = status == step.status && normalise(&actual) == normalise(&step.response);
         match (&step.todo, matches) {
             (None, true) | (Some(_), false) => {}
@@ -108,15 +140,7 @@ async fn metadata_api_matches_v2() {
             )),
         }
     }
-    assert!(
-        failures.is_empty(),
-        "{} step(s) failed:\n{}",
-        failures.len(),
-        failures.join("\n")
-    );
-
-    session_recorded(&router).await;
-    replicas_sync(&router, config).await;
+    failures
 }
 
 /// run_sql records the caller's session variables for event triggers, as V2 does.

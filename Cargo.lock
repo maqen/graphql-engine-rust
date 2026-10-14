@@ -1107,6 +1107,7 @@ dependencies = [
 name = "hge-metadata-api"
 version = "0.1.0"
 dependencies = [
+ "async-graphql-parser",
  "deadpool-postgres",
  "futures",
  "hge-actions",
@@ -1116,6 +1117,7 @@ dependencies = [
  "hge-postgres",
  "hge-transforms",
  "indexmap",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",

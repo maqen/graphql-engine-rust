@@ -6,6 +6,7 @@
 pub mod actions;
 mod actions_sdl;
 pub mod collections;
+pub mod consistency;
 pub mod dir;
 pub mod export;
 pub mod model;

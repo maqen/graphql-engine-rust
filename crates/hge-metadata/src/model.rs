@@ -107,6 +107,29 @@ pub struct Source {
     pub extra: Extra,
 }
 
+impl Source {
+    /// Every function the metadata refers to (tracked functions and computed fields),
+    /// sorted and deduplicated; these are introspected along with the tables.
+    pub fn referenced_functions(&self) -> Vec<QualifiedTable> {
+        let name = |v: Option<&Value>| {
+            v.and_then(|v| serde_json::from_value::<QualifiedTable>(v.clone()).ok())
+        };
+        let mut out: Vec<QualifiedTable> = self
+            .functions
+            .iter()
+            .filter_map(|f| name(f.get("function")))
+            .chain(self.tables.iter().flat_map(|t| {
+                t.computed_fields
+                    .iter()
+                    .filter_map(|c| name(c.pointer("/definition/function")))
+            }))
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+}
+
 fn default_kind() -> String {
     "postgres".to_owned()
 }

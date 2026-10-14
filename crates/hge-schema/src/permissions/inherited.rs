@@ -116,31 +116,33 @@ pub fn order_roles<'m>(
         }
         order.retain(|r| !in_cycle.contains(r.role_name.as_str()));
     }
-    // A role built on an invalid inherited role is invalid too (parents come first).
+    // A role built on an invalid inherited role cannot be built either; V2 does not report
+    // it (parents come first).
     let mut kept: HashSet<&str> = HashSet::new();
     order.retain(|r| {
-        let missing: Vec<&str> = r
+        let ok = r
             .role_set
             .iter()
-            .map(String::as_str)
-            .filter(|p| by_name.contains_key(p) && !kept.contains(p))
-            .collect();
-        if missing.is_empty() {
+            .all(|p| !by_name.contains_key(p.as_str()) || kept.contains(p.as_str()));
+        if ok {
             kept.insert(&r.role_name);
-            return true;
         }
-        inconsistencies.push(invalid(r, parents_not_found(&missing, &r.role_name)));
-        false
+        ok
     });
     order
 }
 
+/// V2's `MOInheritedRole` inconsistency; its role set is a set (sorted here).
 fn invalid(role: &InheritedRole, reason: String) -> InconsistentObject {
+    let name = &role.role_name;
+    let mut role_set: Vec<&String> = role.role_set.iter().collect();
+    role_set.sort();
+    role_set.dedup();
     InconsistentObject::new(
         "inherited_role",
-        format!("inherited role {}", role.role_name),
-        reason,
-        serde_json::to_value(role).unwrap_or_default(),
+        format!("inherited_role inherited role {name}"),
+        format!("in inherited role {name}: {reason}"),
+        serde_json::json!({"role_name": name, "role_set": role_set}),
     )
 }
 

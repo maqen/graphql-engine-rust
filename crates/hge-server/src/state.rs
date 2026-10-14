@@ -246,6 +246,19 @@ impl Engine {
 impl Runtime for Engine {
     type Prepared = Prepared;
 
+    async fn run_dml(
+        &self,
+        session: &hge_core::Session,
+        kind: &str,
+        args: &serde_json::Value,
+    ) -> Result<serde_json::Value, hge_metadata_api::ApiError> {
+        // The same JSON DML as `/v1/query`, which takes `source` in its args too.
+        let body = serde_json::json!({"type": kind, "args": args}).to_string();
+        let out = crate::v1_query::run(self, session, body.as_bytes()).await?;
+        serde_json::from_str(&out)
+            .map_err(|e| hge_core::Error::unexpected(format!("invalid DML response: {e}")).into())
+    }
+
     fn lock(&self) -> impl Future<Output = tokio::sync::MutexGuard<'_, ()>> + Send {
         self.metadata_lock.lock()
     }
@@ -354,6 +367,27 @@ impl Runtime for Engine {
         match prepared {
             Some(p) => remote(p),
             None => remote(&self.state.load().prepared),
+        }
+    }
+
+    fn table_roles(
+        &self,
+        prepared: Option<&Prepared>,
+        source: &str,
+        table: &hge_core::QualifiedTable,
+    ) -> Option<Vec<String>> {
+        let roles = |tables: &Tables| {
+            tables.get(source, table).map(|t| {
+                t.permissions
+                    .keys()
+                    .filter(|r| **r != RoleName::admin())
+                    .map(|r| r.as_str().to_owned())
+                    .collect()
+            })
+        };
+        match prepared {
+            Some(p) => roles(&p.tables),
+            None => roles(&self.state.load().tables),
         }
     }
 

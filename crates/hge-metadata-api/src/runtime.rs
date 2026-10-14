@@ -8,11 +8,14 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::Arc;
 
-use hge_core::{InconsistentObject, SourceCatalog};
+use hge_core::{Code, InconsistentObject, Session, SourceCatalog};
 use hge_metadata::store::MetadataStore;
 use hge_metadata::{Metadata, Source};
 use hge_postgres::PgSource;
+use serde_json::Value;
 use tokio::sync::MutexGuard;
+
+use crate::response::{ApiError, ApiResult};
 
 /// Which sources a rebuild must reconnect and re-introspect.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -181,6 +184,15 @@ pub trait Runtime: Send + Sync {
         None
     }
 
+    /// Roles with a permission on a resolved table (inherited roles included, `admin` not)
+    /// of a prepared (or else the installed) state; `None` when the table is not resolved.
+    fn table_roles(
+        &self,
+        prepared: Option<&Self::Prepared>,
+        source: &str,
+        table: &hge_core::QualifiedTable,
+    ) -> Option<Vec<String>>;
+
     /// Atomically swap in a prepared state. In-flight requests finish on the old one.
     fn install(&self, prepared: Self::Prepared, metadata: Metadata, resource_version: i64);
 
@@ -194,6 +206,23 @@ pub trait Runtime: Send + Sync {
     ) -> impl Future<Output = ()> + Send {
         let _ = (source, pg);
         async {}
+    }
+
+    /// `/v2/query` JSON DML (`select`, `count`, `insert`, `update`, `delete`): the server
+    /// runs `{"type": kind, "args": args}` through its query executor. Error paths are
+    /// relative to that envelope (`$.args.where`).
+    fn run_dml(
+        &self,
+        session: &Session,
+        kind: &str,
+        args: &Value,
+    ) -> impl Future<Output = ApiResult<Value>> + Send {
+        let _ = (session, args);
+        let e = ApiError::bad(
+            Code::NotSupported,
+            format!("the \"{kind}\" query is not supported yet"),
+        );
+        async move { Err(e) }
     }
 }
 

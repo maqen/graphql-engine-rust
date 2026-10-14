@@ -188,6 +188,16 @@ async fn handle<R: Runtime>(rt: &R, session: &hge_core::Session, body: &[u8]) ->
             "metadata cannot be modified in read-only mode",
         ));
     }
+    // Probing an agent can take seconds; it never holds the metadata lock.
+    if cmd.name == "dc_add_agent" {
+        return ops::objects::dc_add_agent(&cmd.args).await.map_err(|e| {
+            if e.error.path == "$" {
+                e.with_path("$.args")
+            } else {
+                e
+            }
+        });
+    }
     let mut ctx = Ctx::begin(rt, session, modifies).await?;
     if modifies {
         ctx.expect_version(resource_version)?;

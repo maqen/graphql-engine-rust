@@ -295,7 +295,11 @@ pub async fn run_checked<R: Runtime>(ctx: &mut Ctx<'_, R>, args: &RunSql) -> Api
         .source(&args.source)
         .map(|s| s.tables.iter().map(|t| t.table.clone()).collect())
         .unwrap_or_default();
-    let mut catalog = introspect_in(&tx, &tables).await?;
+    let functions = metadata
+        .source(&args.source)
+        .map(hge_metadata::Source::referenced_functions)
+        .unwrap_or_default();
+    let mut catalog = introspect_in(&tx, &tables, &functions).await?;
     if let Some(source) = metadata.source(&args.source) {
         let enum_tables: Vec<QualifiedTable> = source
             .tables
@@ -392,10 +396,11 @@ fn row_snapshot(row: &tokio_postgres::Row) -> ApiResult<TableSnapshot> {
     })
 }
 
-/// Introspect `tables` through `tx` (so uncommitted DDL is visible).
+/// Introspect `tables` and `functions` through `tx` (so uncommitted DDL is visible).
 async fn introspect_in(
     tx: &tokio_postgres::Transaction<'_>,
     tables: &[QualifiedTable],
+    functions: &[QualifiedTable],
 ) -> ApiResult<hge_core::SourceCatalog> {
     use tokio_postgres::types::Type;
     let param = introspect::tables_param(tables);
@@ -411,10 +416,21 @@ async fn introspect_in(
         .map_err(|e| sql_error(e, introspect::ENUMS_SQL))?
         .first()
         .and_then(|r| r.get(0));
-    Ok(introspect::parse_catalog(
+    let mut catalog = introspect::parse_catalog(
         tables_json.as_deref().unwrap_or("[]"),
         enums_json.as_deref().unwrap_or("[]"),
-    )?)
+    )?;
+    if !functions.is_empty() {
+        let param = introspect::tables_param(functions);
+        let functions_json: Option<String> = tx
+            .query_typed(introspect::FUNCTIONS_SQL, &[(&param, Type::TEXT)])
+            .await
+            .map_err(|e| sql_error(e, introspect::FUNCTIONS_SQL))?
+            .first()
+            .and_then(|r| r.get(0));
+        catalog.functions = introspect::parse_functions(functions_json.as_deref().unwrap_or("[]"))?;
+    }
+    Ok(catalog)
 }
 
 /// Read the rows of the enum tables through `tx`: the pool would not see uncommitted DDL
