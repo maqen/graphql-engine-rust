@@ -214,15 +214,10 @@ async fn run(
     req: GraphQLRequest,
     op_type: &mut metrics::OperationType,
 ) -> Result<(String, Vec<String>), Failure> {
-<<<<<<< HEAD
     // Introspection-only responses are cached per schema. A cached response skips planning,
     // so with `query-log` on every request is planned (and logged) instead.
     let logging = query_log::enabled();
-    let schema_key = state.schema_key(&session.role, session.backend_only);
-=======
-    // Introspection-only responses are cached per schema.
     let schema_key = state.schema_key(&session.role, session.backend_only, req.relay);
->>>>>>> deb0a9d (feat(relay): Relay API with node ids, connections and pagination)
     let cache_key = cache_key(state, session, &schema_key, &req);
     if let Some(key) = cache_key.as_ref().filter(|_| !logging)
         && let Some(body) = state.responses.get(key)
@@ -301,17 +296,12 @@ fn plan_request(
             return Err(Error::validation("variables must be an object").with_path("$.variables"));
         }
     };
-<<<<<<< HEAD
-    let rs = state.role_schema(&session.role, session.backend_only);
+    let rs = state.role_schema_of_kind(&session.role, session.backend_only, req.relay);
     let cached = state.documents.get(query);
     let doc = match &cached {
         Some(doc) => doc.clone(),
         None => Arc::new(hge_schema::parse_query(query)?),
     };
-=======
-    let rs = state.role_schema_of_kind(&session.role, session.backend_only, req.relay);
-    let doc = hge_schema::parse_query(query)?;
->>>>>>> deb0a9d (feat(relay): Relay API with node ids, connections and pagination)
     crate::policies::check_allowlist(state, session, &doc, query)?;
     let op = hge_schema::plan(&rs, &doc, req.operation_name.as_deref(), variables)?;
     // Only documents of requests that got this far are kept, so the cache cannot be filled
