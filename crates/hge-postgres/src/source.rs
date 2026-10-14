@@ -374,8 +374,11 @@ pub fn pg_error_with(e: tokio_postgres::Error, sql: &str, prepared: bool) -> Err
             if code != Code::Unexpected {
                 return Error::new(code, message);
             }
+            // V2 also lists the arguments of a prepared statement, rendered by Haskell's
+            // `show`; ours are not comparable, so like V2's unprepared statements, none.
             Error::new(code, message).with_internal(json!({
                 "statement": sql,
+                "arguments": [],
                 "prepared": prepared,
                 "error": {
                     "exec_status": "FatalError",

@@ -565,19 +565,21 @@ impl MutationLowerer<'_, '_> {
                     _ => unreachable!("listed operators"),
                 };
                 if set.iter().any(|(c, _)| c == &col.name) {
-                    duplicates.push(col.gql_name.clone());
+                    duplicates.push(col.name.clone());
                 }
                 set.push((col.name.clone(), exp));
             }
         }
         for (c, _) in &ua.presets {
             if set.iter().any(|(name, _)| name == c) {
-                duplicates.push(table.columns.get(c).map_or(c, |col| &col.gql_name).clone());
+                duplicates.push(c.clone());
             }
         }
         if !duplicates.is_empty() {
+            // V2 lists the database column names in its HashMap's order.
             duplicates.sort();
             duplicates.dedup();
+            hge_core::sort_v2_hash_order(&mut duplicates);
             let list: Vec<String> = duplicates.iter().map(|c| format!("'{c}'")).collect();
             return Err(Error::validation(format!(
                 "Column found in multiple operators: [{}].",
