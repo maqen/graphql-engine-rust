@@ -47,6 +47,8 @@ axum = { version = "0.8", features = ["http1", "http2", "json", "tokio", "ws"] }
 bytes = "1"
 clap = { version = "4", features = ["derive", "env"] }
 deadpool-postgres = "0.14"
+# Only to select the zlib-rs backend for tower-http's gzip (much faster than miniz_oxide).
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 futures = "0.3"
 httpdate = "1"
 http = "1"
