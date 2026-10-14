@@ -461,7 +461,7 @@ fn parse_input_value(v: &Json, path: &str) -> Result<InputValueDef, String> {
         description: description(o, path)?,
         ty,
         default_value,
-        column: false,
+        parser: ValueParser::Strict,
     })
 }
 

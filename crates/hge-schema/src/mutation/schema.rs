@@ -545,17 +545,17 @@ impl Builder<'_> {
                 let fields = applicable
                     .iter()
                     .map(|c| {
-                        let (ty, column) = match *arg {
-                            "_delete_key" => (TypeRef::named("String"), false),
-                            "_delete_elem" => (TypeRef::named("Int"), false),
-                            "_delete_at_path" => (TypeRef::nn("String").list(), false),
-                            _ => (self.column_value_type(c, true), true),
+                        let (ty, parser) = match *arg {
+                            "_delete_key" => (TypeRef::named("String"), ValueParser::Strict),
+                            "_delete_elem" => (TypeRef::named("Int"), ValueParser::Strict),
+                            "_delete_at_path" => {
+                                (TypeRef::nn("String").list(), ValueParser::Strict)
+                            }
+                            _ => (self.column_value_type(c, true), ValueParser::Column),
                         };
-                        InputValueDef {
-                            column,
-                            ..InputValueDef::new(c.gql_name.clone(), ty)
-                                .describe_opt(c.description.clone())
-                        }
+                        InputValueDef::new(c.gql_name.clone(), ty)
+                            .describe_opt(c.description.clone())
+                            .with_parser(parser)
                     })
                     .collect();
                 let description = match *arg {

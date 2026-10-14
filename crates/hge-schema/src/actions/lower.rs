@@ -155,9 +155,7 @@ fn object_fields(
                         mapping.push((field.clone(), column.clone(), col.ty.clone()));
                     }
                     let target = if matches!(def.kind, FieldKind::ActionRelationshipAggregate(_)) {
-                        ActionRelTarget::Aggregate(
-                            crate::lower::Lowerer { rs }.aggregate_select(table, sel)?,
-                        )
+                        ActionRelTarget::Aggregate(crate::lower::aggregate_select(rs, table, sel)?)
                     } else if rel.array {
                         ActionRelTarget::Array(crate::lower::table_select(rs, table, sel, true)?)
                     } else {

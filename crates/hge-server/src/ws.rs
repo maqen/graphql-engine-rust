@@ -744,6 +744,7 @@ impl Connection {
             query: Some(query.clone()),
             variables: payload.variables,
             operation_name: payload.operation_name,
+            extensions: None,
             read_only: false,
         };
         let op = match graphql::plan(&state, &session, req) {

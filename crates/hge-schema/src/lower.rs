@@ -24,7 +24,7 @@ use crate::tables::{RelKind, RelationshipInfo, TableInfo};
 const NO_QUERIES_MESSAGE: &str = "There are no queries available to the current role. Either there are no sources or remote schemas configured, or the current role doesn't have the required permissions.";
 
 pub fn lower(rs: &RoleSchema, op: &NormalizedOperation<'_>) -> Result<Operation, Error> {
-    let lw = Lowerer { rs };
+    let lw = Lowerer::new(rs);
     let mut root_fields = Vec::with_capacity(op.fields.len());
     for field in &op.fields {
         let rf = match field.kind {
@@ -76,6 +76,7 @@ pub fn lower(rs: &RoleSchema, op: &NormalizedOperation<'_>) -> Result<Operation,
         };
         root_fields.push((field.alias.clone(), rf));
     }
+    lw.deferred_error()?;
     Ok(Operation {
         kind: op.kind,
         root_fields,
@@ -91,11 +92,50 @@ pub(crate) fn table_select(
     field: &SelectedField<'_>,
     with_args: bool,
 ) -> Result<Select, Error> {
-    Lowerer { rs }.select(table, field, with_args)
+    let lw = Lowerer::new(rs);
+    let select = lw.select(table, field, with_args)?;
+    lw.deferred_error()?;
+    Ok(select)
+}
+
+/// `T_aggregate(…) { … }` over rows of `table`, outside a root field (an action
+/// relationship's aggregate).
+pub(crate) fn aggregate_select(
+    rs: &RoleSchema,
+    table: &TableInfo,
+    field: &SelectedField<'_>,
+) -> Result<hge_ir::AggregateSelect, Error> {
+    let lw = Lowerer::new(rs);
+    let select = lw.aggregate_select(table, field)?;
+    lw.deferred_error()?;
+    Ok(select)
 }
 
 pub(crate) struct Lowerer<'a> {
     pub(crate) rs: &'a RoleSchema,
+    /// An error V2 only meets when Postgres runs the query (a negative offset), so it comes
+    /// after every validation error.
+    deferred: std::cell::RefCell<Option<Error>>,
+}
+
+impl<'a> Lowerer<'a> {
+    pub(crate) fn new(rs: &'a RoleSchema) -> Self {
+        Lowerer {
+            rs,
+            deferred: Default::default(),
+        }
+    }
+
+    fn defer(&self, e: Error) {
+        self.deferred.borrow_mut().get_or_insert(e);
+    }
+
+    fn deferred_error(&self) -> Result<(), Error> {
+        match self.deferred.borrow_mut().take() {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
 }
 
 impl Lowerer<'_> {
@@ -485,7 +525,16 @@ impl Lowerer<'_> {
             }
         }
         args.limit = non_negative(field.arg("limit"), &field.arg_path("limit"))?;
-        args.offset = non_negative(field.arg("offset"), &field.arg_path("offset"))?;
+        args.offset = match field.arg("offset").and_then(Json::as_i64) {
+            // Postgres rejects a negative OFFSET when V2 runs the query.
+            Some(i) if i < 0 => {
+                self.defer(
+                    Error::new(Code::DataException, "OFFSET must not be negative").with_path("$"),
+                );
+                None
+            }
+            _ => non_negative(field.arg("offset"), &field.arg_path("offset"))?,
+        };
         if let Some(Json::Array(cols)) = field.arg("distinct_on") {
             for c in cols {
                 let name = c.as_str().unwrap_or_default();
@@ -496,17 +545,28 @@ impl Lowerer<'_> {
                 args.distinct_on.push(self.column_target(table, &col.name));
             }
             if !args.distinct_on.is_empty() && !args.order_by.is_empty() {
-                let prefix_ok = args.order_by.len() >= args.distinct_on.len()
+                // V2: the first n order_by items are columns, and every distinct_on column is
+                // among them (in any order).
+                let n = args.distinct_on.len();
+                let leading = &args.order_by[..n.min(args.order_by.len())];
+                let prefix_ok = leading.len() == n
+                    && leading.iter().all(|o| {
+                        matches!(
+                            o.target,
+                            OrderByTarget::Column(_) | OrderByTarget::RedactedColumn { .. }
+                        )
+                    })
                     && args
                         .distinct_on
                         .iter()
-                        .zip(&args.order_by)
-                        .all(|(d, o)| *d == o.target);
+                        .all(|d| leading.iter().any(|o| *d == o.target));
                 if !prefix_ok {
+                    let path = field.arg_path("distinct_on");
+                    let args_path = path.strip_suffix(".distinct_on").unwrap_or(&path);
                     return Err(Error::validation(
                         "\"distinct_on\" columns must match initial \"order_by\" columns",
                     )
-                    .with_path(field.arg_path("distinct_on")));
+                    .with_path(args_path.to_owned()));
                 }
             }
         }
