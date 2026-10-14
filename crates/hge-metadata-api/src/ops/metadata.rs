@@ -216,9 +216,20 @@ pub async fn clear_metadata<R: Runtime>(ctx: &mut Ctx<'_, R>) -> ApiResult<Value
         .filter(|t| excluded_cron(t))
         .cloned()
         .collect();
+    // V2 drops every source (running its `postDropSourceHook`) before re-adding an empty
+    // `default`, so the engine's event catalog goes even from the database that stays.
+    let dropped: Vec<_> = ctx
+        .metadata
+        .sources
+        .iter()
+        .filter_map(|s| Some((s.clone(), ctx.rt.source(ctx.prepared.as_ref(), &s.name)?)))
+        .collect();
     ctx.metadata = md;
     ctx.reload.merge(Reload::Introspect);
     ctx.check(Check::None).await?;
+    for (source, pg) in dropped {
+        ctx.rt.post_drop_source(&source, pg).await;
+    }
     Ok(success())
 }
 
