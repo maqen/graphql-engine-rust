@@ -218,10 +218,15 @@ impl Sci {
         };
         let (int, frac) = mantissa.split_once('.').unwrap_or((mantissa, ""));
         let mut digits: Vec<u8> = int.bytes().chain(frac.bytes()).map(|b| b - b'0').collect();
-        let mut exponent = exp + int.len() as i64;
-        while digits.first() == Some(&0) {
-            digits.remove(0);
-            exponent -= 1;
+        // Exponents near the i64 limits are refused ("out of range") rather than wrapped.
+        const LIMIT: i64 = i64::MAX / 2;
+        let leading_zeros = digits.iter().take_while(|d| **d == 0).count();
+        digits.drain(..leading_zeros);
+        let mut exponent = exp
+            .checked_add(int.len() as i64)?
+            .checked_sub(leading_zeros as i64)?;
+        if !(-LIMIT..=LIMIT).contains(&exponent) {
+            return None;
         }
         while digits.last() == Some(&0) {
             digits.pop();
@@ -617,6 +622,9 @@ mod tests {
         assert_eq!(show("1.5"), "1.5");
         assert_eq!(show("99999999999"), "9.9999999999e10");
         assert_eq!(show("1e400"), "1.0e400");
+        assert_eq!(show("000.0012"), "1.2e-3");
+        assert!(Sci::parse("1e9223372036854775807").is_none());
+        assert!(Sci::parse("0.0001e-9223372036854775808").is_none());
         assert_eq!(show("0.05"), "5.0e-2");
         assert_eq!(show("0.5"), "0.5");
         assert_eq!(show("1234567"), "1234567.0");
