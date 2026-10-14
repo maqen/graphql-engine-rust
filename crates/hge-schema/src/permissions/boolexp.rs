@@ -245,6 +245,8 @@ impl Parser<'_> {
             })
         };
         let scalar = |v: &Json| value(v, ty);
+        let adapt =
+            |v: &Json, ty: &ColumnType, _: &str| value(v, ty).map_err(hge_core::Error::validation);
         match name {
             "eq" => self.equality(col, v, col.nullable, false),
             "ne" | "neq" => self.equality(col, v, col.nullable, true),
@@ -367,13 +369,13 @@ impl Parser<'_> {
             }
             "cast" => self.cast(table, root, col, v),
             "ancestor" | "ancestor_any" | "descendant" | "descendant_any" | "matches"
-            | "matches_any" | "matches_fulltext" => Err(format!(
-                "the operator {op} is not supported in permissions yet"
-            )),
+            | "matches_any" | "matches_fulltext" => {
+                match crate::operators::ltree_op(name, v, ty, "$", &adapt) {
+                    Some(op) => cmp(op.map_err(|e| e.message)?),
+                    None => Err(format!("operator {op} is only supported on ltree columns")),
+                }
+            }
             _ if name.starts_with("st_") => {
-                let adapt = |v: &Json, ty: &ColumnType, _: &str| {
-                    value(v, ty).map_err(hge_core::Error::validation)
-                };
                 match crate::operators::spatial_op(name, v, ty, "$", &adapt) {
                     Some(op) => cmp(op.map_err(|e| e.message)?),
                     None if scalars::is_geo(ty) => Err(format!(

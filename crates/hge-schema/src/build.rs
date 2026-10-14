@@ -840,6 +840,10 @@ impl Builder<'_> {
             fields.push(InputValueDef::new("_cast", TypeRef::named(cast_name)));
         }
         fields.extend(crate::operators::spatial_fields(&mut self.schema, ty));
+        fields.extend(crate::operators::ltree_fields(ty));
+        for t in crate::operators::ltree_scalars(ty) {
+            self.note_scalar(&t);
+        }
         fields.push(InputValueDef::new("_eq", value_ty.clone()));
         fields.push(InputValueDef::new("_gt", value_ty.clone()));
         fields.push(InputValueDef::new("_gte", value_ty.clone()));

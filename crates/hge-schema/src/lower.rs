@@ -598,7 +598,9 @@ impl Lowerer<'_> {
                 out.extend(self.cast_comparisons(ty, v, &op_path)?);
                 continue;
             }
-            if let Some(cmp) = crate::operators::graphql_spatial_op(op, v, ty, &op_path) {
+            if let Some(cmp) = crate::operators::graphql_spatial_op(op, v, ty, &op_path)
+                .or_else(|| crate::operators::graphql_ltree_op(op, v, ty, &op_path))
+            {
                 out.push(cmp?);
                 continue;
             }
@@ -788,6 +790,18 @@ pub(crate) fn non_negative(v: Option<&Json>, path: &str) -> Result<Option<u64>, 
 }
 
 /// Convert a coerced JSON input value to a typed IR value (text representation).
+/// V2's `FromJSON Ltree`: a string of non-empty labels separated by dots.
+fn ltree_text(v: &Json, path: &str) -> Result<String, Error> {
+    match v {
+        Json::String(s) if !s.split('.').any(str::is_empty) => Ok(s.clone()),
+        _ => Err(Error::new(
+            Code::ParseFailed,
+            "Expecting label path: a sequence of zero or more labels separated by dots, for example L1.L2.L3",
+        )
+        .with_path(path.to_owned())),
+    }
+}
+
 pub fn to_value(v: &Json, ty: &ColumnType, path: &str) -> Result<Value, Error> {
     Ok(Value::Literal {
         text: to_text(v, ty, path)?,
@@ -811,7 +825,7 @@ fn to_text(v: &Json, ty: &ColumnType, path: &str) -> Result<Option<String>, Erro
                     if i > 0 {
                         out.push(',');
                     }
-                    match to_text(item, &elem, path)? {
+                    match to_text(item, &elem, &format!("{path}[{i}]"))? {
                         None => out.push_str("NULL"),
                         Some(t) if elem.is_array() => out.push_str(&t),
                         Some(t) => {
@@ -840,6 +854,9 @@ fn to_text(v: &Json, ty: &ColumnType, path: &str) -> Result<Option<String>, Erro
     }
     if scalars::is_json_like(ty) {
         return Ok(Some(v.to_string()));
+    }
+    if ty.name == "ltree" {
+        return ltree_text(v, path).map(Some);
     }
     if scalars::is_geo(ty) {
         crate::geojson::validate(v)
