@@ -306,6 +306,10 @@ impl Runtime for Engine {
         &prepared.inconsistencies
     }
 
+    fn schema_error<'p>(&self, prepared: &'p Prepared) -> Option<&'p str> {
+        prepared.tables.schema_error.as_deref()
+    }
+
     fn source(&self, prepared: Option<&Prepared>, name: &str) -> Option<Arc<PgSource>> {
         match prepared {
             Some(p) => p.sources.get(name).map(|s| s.pg.clone()),

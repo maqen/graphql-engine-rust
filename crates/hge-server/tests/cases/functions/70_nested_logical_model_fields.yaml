@@ -1,0 +1,393 @@
+# Recorded on hasura/graphql-engine:v2.51.0-ce.
+config:
+  fixture: functions
+cases:
+- description: track the inner logical model
+  url: /v1/metadata
+  query:
+    type: pg_track_logical_model
+    args:
+      source: default
+      name: nested_inner
+      fields:
+      - name: a
+        type:
+          scalar: int4
+  response:
+    message: success
+- description: a native query over it
+  url: /v1/metadata
+  query:
+    type: pg_track_native_query
+    args:
+      source: default
+      root_field_name: nested_inner_q
+      returns: nested_inner
+      arguments: {}
+      code: SELECT 1 AS a
+  response:
+    message: success
+- description: 'object field without a relationship: track the logical model'
+  url: /v1/metadata
+  query:
+    type: pg_track_logical_model
+    args:
+      source: default
+      name: nested_outer
+      fields:
+      - name: id
+        type:
+          scalar: int4
+      - &id001
+        name: one
+        type:
+          logical_model: nested_inner
+          nullable: true
+  response:
+    message: success
+- description: 'object field without a relationship: track a native query returning it'
+  url: /v1/metadata
+  query:
+    type: pg_track_native_query
+    args:
+      source: default
+      root_field_name: nested_q
+      returns: nested_outer
+      arguments: {}
+      code: SELECT 1 AS id
+  response:
+    error: Unexpected logical model object field 'one'.
+    path: $.args
+    code: unexpected
+  status: 500
+- description: 'object field without a relationship: untrack the logical model'
+  url: /v1/metadata
+  query:
+    type: pg_untrack_logical_model
+    args:
+      source: default
+      name: nested_outer
+  response:
+    message: success
+- description: 'array field without a relationship: track the logical model'
+  url: /v1/metadata
+  query:
+    type: pg_track_logical_model
+    args:
+      source: default
+      name: nested_outer
+      fields:
+      - name: id
+        type:
+          scalar: int4
+      - &id002
+        name: many
+        type:
+          array:
+            logical_model: nested_inner
+          nullable: true
+  response:
+    message: success
+- description: 'array field without a relationship: track a native query returning it'
+  url: /v1/metadata
+  query:
+    type: pg_track_native_query
+    args:
+      source: default
+      root_field_name: nested_q
+      returns: nested_outer
+      arguments: {}
+      code: SELECT 1 AS id
+      array_relationships:
+      - name: other
+        using:
+          column_mapping:
+            id: a
+          remote_native_query: nested_inner_q
+  response:
+    error: Unexpected logical model array field 'many'.
+    path: $.args
+    code: unexpected
+  status: 500
+- description: 'array field without a relationship: untrack the logical model'
+  url: /v1/metadata
+  query:
+    type: pg_untrack_logical_model
+    args:
+      source: default
+      name: nested_outer
+  response:
+    message: success
+- description: 'array of scalars, even with a relationship of its name: track the logical model'
+  url: /v1/metadata
+  query:
+    type: pg_track_logical_model
+    args:
+      source: default
+      name: nested_outer
+      fields:
+      - name: id
+        type:
+          scalar: int4
+      - &id003
+        name: tags
+        type:
+          array:
+            scalar: text
+          nullable: true
+  response:
+    message: success
+- description: 'array of scalars, even with a relationship of its name: track a native query returning
+    it'
+  url: /v1/metadata
+  query:
+    type: pg_track_native_query
+    args:
+      source: default
+      root_field_name: nested_q
+      returns: nested_outer
+      arguments: {}
+      code: SELECT 1 AS id
+      array_relationships:
+      - name: tags
+        using:
+          column_mapping:
+            id: a
+          remote_native_query: nested_inner_q
+  response:
+    error: Arrays of scalar types are not currently implemented
+    path: $.args
+    code: unexpected
+  status: 500
+- description: 'array of scalars: untrack the logical model'
+  url: /v1/metadata
+  query:
+    type: pg_untrack_logical_model
+    args:
+      source: default
+      name: nested_outer
+  response:
+    message: success
+- description: 'object field filled by an array relationship: track the logical model'
+  url: /v1/metadata
+  query:
+    type: pg_track_logical_model
+    args:
+      source: default
+      name: nested_outer
+      fields:
+      - name: id
+        type:
+          scalar: int4
+      - *id001
+  response:
+    message: success
+- description: 'object field filled by an array relationship: track a native query returning it'
+  url: /v1/metadata
+  query:
+    type: pg_track_native_query
+    args:
+      source: default
+      root_field_name: nested_q
+      returns: nested_outer
+      arguments: {}
+      code: SELECT 1 AS id
+      array_relationships:
+      - name: one
+        using:
+          column_mapping:
+            id: a
+          remote_native_query: nested_inner_q
+  response:
+    message: success
+- description: the relationship fills the nested field
+  query:
+    query: '{ nested_q { id one { a } } }'
+  response:
+    data:
+      nested_q:
+      - id: 1
+        one:
+        - a: 1
+- description: 'object field filled by an array relationship: untrack the native query'
+  url: /v1/metadata
+  query:
+    type: pg_untrack_native_query
+    args:
+      source: default
+      root_field_name: nested_q
+  response:
+    message: success
+- description: 'object field filled by an array relationship: untrack the logical model'
+  url: /v1/metadata
+  query:
+    type: pg_untrack_logical_model
+    args:
+      source: default
+      name: nested_outer
+  response:
+    message: success
+- description: 'array field filled by an object relationship: track the logical model'
+  url: /v1/metadata
+  query:
+    type: pg_track_logical_model
+    args:
+      source: default
+      name: nested_outer
+      fields:
+      - name: id
+        type:
+          scalar: int4
+      - *id002
+  response:
+    message: success
+- description: 'array field filled by an object relationship: track a native query returning it'
+  url: /v1/metadata
+  query:
+    type: pg_track_native_query
+    args:
+      source: default
+      root_field_name: nested_q
+      returns: nested_outer
+      arguments: {}
+      code: SELECT 1 AS id
+      object_relationships:
+      - name: many
+        using:
+          column_mapping:
+            id: a
+          remote_native_query: nested_inner_q
+  response:
+    message: success
+- description: the object relationship fills the array field
+  query:
+    query: '{ nested_q { id many { a } } }'
+  response:
+    data:
+      nested_q:
+      - id: 1
+        many:
+          a: 1
+- description: 'array field filled by an object relationship: untrack the native query'
+  url: /v1/metadata
+  query:
+    type: pg_untrack_native_query
+    args:
+      source: default
+      root_field_name: nested_q
+  response:
+    message: success
+- description: 'array field filled by an object relationship: untrack the logical model'
+  url: /v1/metadata
+  query:
+    type: pg_untrack_logical_model
+    args:
+      source: default
+      name: nested_outer
+  response:
+    message: success
+- description: inline returns with a nested field
+  url: /v1/metadata
+  query:
+    type: pg_track_native_query
+    args:
+      source: default
+      root_field_name: nested_q
+      returns:
+        fields:
+        - name: id
+          type:
+            scalar: int4
+        - *id001
+      arguments: {}
+      code: SELECT 1 AS id
+  response:
+    error: Unexpected logical model object field 'one'.
+    path: $.args
+    code: unexpected
+  status: 500
+- description: 'nested arrays: track the logical model'
+  url: /v1/metadata
+  query:
+    type: pg_track_logical_model
+    args:
+      source: default
+      name: nested_outer
+      fields:
+      - name: id
+        type:
+          scalar: int4
+      - name: many
+        type:
+          array:
+            array:
+              logical_model: nested_inner
+  response:
+    message: success
+- description: nested arrays fail even with a relationship of their name
+  url: /v1/metadata
+  query:
+    type: pg_track_native_query
+    args:
+      source: default
+      root_field_name: nested_q
+      returns: nested_outer
+      arguments: {}
+      code: SELECT 1 AS id
+      array_relationships:
+      - name: many
+        using:
+          column_mapping:
+            id: a
+          remote_native_query: nested_inner_q
+  response:
+    error: Nested arrays are not currently implemented
+    path: $.args
+    code: unexpected
+  status: 500
+- description: 'nested arrays: untrack the logical model'
+  url: /v1/metadata
+  query:
+    type: pg_untrack_logical_model
+    args:
+      source: default
+      name: nested_outer
+  response:
+    message: success
+- description: a logical model with nested fields alone is fine
+  url: /v1/metadata
+  query:
+    type: pg_track_logical_model
+    args:
+      source: default
+      name: nested_outer
+      fields:
+      - name: id
+        type:
+          scalar: int4
+      - *id003
+      - *id002
+      - *id001
+  response:
+    message: success
+- description: the first unsupported field in order is reported
+  url: /v1/metadata
+  query:
+    type: pg_track_native_query
+    args:
+      source: default
+      root_field_name: nested_q
+      returns: nested_outer
+      arguments: {}
+      code: SELECT 1 AS id
+      array_relationships:
+      - name: many
+        using:
+          column_mapping:
+            id: a
+          remote_native_query: nested_inner_q
+  response:
+    error: Arrays of scalar types are not currently implemented
+    path: $.args
+    code: unexpected
+  status: 500
