@@ -179,6 +179,11 @@ pub struct Tables {
     pub logical_models: Vec<Arc<TableInfo>>,
     /// Native queries of all sources, in metadata order.
     pub native_queries: Vec<Arc<crate::native::NativeQueryInfo>>,
+    /// Why V2 could not build the GraphQL schema for this metadata (for example a native
+    /// query returning a nested logical model). Metadata commands that re-resolve into such
+    /// a state fail with V2's `500 unexpected`, whatever their inconsistency handling;
+    /// `reload_metadata` and startup keep serving.
+    pub schema_error: Option<String>,
 }
 
 impl Tables {

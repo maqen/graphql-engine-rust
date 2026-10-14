@@ -152,6 +152,12 @@ pub trait Runtime: Send + Sync {
 
     fn inconsistencies<'p>(&self, prepared: &'p Self::Prepared) -> &'p [InconsistentObject];
 
+    /// Why the GraphQL schema of a prepared state cannot be built, as V2 reports it; the
+    /// metadata command fails with it whatever its inconsistency handling.
+    fn schema_error<'p>(&self, _prepared: &'p Self::Prepared) -> Option<&'p str> {
+        None
+    }
+
     /// A connected source of a prepared (or else the installed) state.
     fn source(&self, prepared: Option<&Self::Prepared>, name: &str) -> Option<Arc<PgSource>>;
 

@@ -229,3 +229,54 @@ fn drops_native_queries_with_conflicting_root_fields() {
         issues[0].reason
     );
 }
+
+#[test]
+fn nested_logical_model_fields_fail_the_schema_as_in_v2() {
+    let mut tables = Tables::default();
+    resolve(&source(), &catalog(), &mut tables, &mut vec![]);
+    assert_eq!(
+        tables.schema_error.as_deref(),
+        Some("Unexpected logical model object field 'nested'.")
+    );
+
+    let field = |name: &str, ty| LogicalModelField {
+        name: name.into(),
+        ty,
+        description: None,
+    };
+    let nq: NativeQueryMeta = serde_json::from_value(json!({
+        "root_field_name": "q", "code": "SELECT 1", "returns": "m",
+        "object_relationships": [{"name": "rel", "using": {"column_mapping": {}, "remote_native_query": "o"}}]
+    }))
+    .unwrap();
+    let array = json!({"array": {"logical_model": "m"}});
+    assert_eq!(
+        unsupported_field(&[field("f", array.clone())], &nq).as_deref(),
+        Some("Unexpected logical model array field 'f'.")
+    );
+    // A relationship of the same name, of either kind, fills a nested field.
+    assert_eq!(unsupported_field(&[field("rel", array.clone())], &nq), None);
+    assert_eq!(
+        unsupported_field(&[field("rel", json!({"array": array}))], &nq).as_deref(),
+        Some("Nested arrays are not currently implemented")
+    );
+    assert_eq!(
+        unsupported_field(
+            &[
+                field("id", json!({"scalar": "int4"})),
+                field("rel", json!({"array": {"scalar": "text"}})),
+                field("f", json!({"logical_model": "m"})),
+            ],
+            &nq
+        )
+        .as_deref(),
+        Some("Arrays of scalar types are not currently implemented")
+    );
+
+    // A logical model no native query returns does not reach the schema.
+    let mut src = source();
+    src.extra["native_queries"] = json!([]);
+    let mut tables = Tables::default();
+    resolve(&src, &catalog(), &mut tables, &mut vec![]);
+    assert_eq!(tables.schema_error, None);
+}

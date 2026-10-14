@@ -188,6 +188,9 @@ impl<'a, R: Runtime> Ctx<'a, R> {
                 },
             )
             .await;
+        if let Some(e) = self.rt.schema_error(&prepared) {
+            return Err(ApiError::new(500, Code::Unexpected, e));
+        }
         let found = self.rt.inconsistencies(&prepared).to_vec();
         let new: Vec<&InconsistentObject> = found
             .iter()

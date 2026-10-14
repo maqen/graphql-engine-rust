@@ -513,9 +513,44 @@ pub fn resolve(
     let dropped = check_dependencies(source, catalog, &models, &resolved, tables, issues);
     for (nq, info) in resolved {
         if !dropped.contains(&nq.root_field_name) {
+            // V2 fails while building the source's schema, before root field clashes
+            // (`drop_conflicting`) are found.
+            if tables.schema_error.is_none() {
+                tables.schema_error = nq
+                    .model(&models)
+                    .and_then(|m| unsupported_field(&m.fields, &nq));
+            }
             tables.native_queries.push(Arc::new(info));
         }
     }
+}
+
+/// V2 cannot build root fields for a native query whose logical model has a nested array, an
+/// array of scalars, or a nested object or array field that no relationship of the same name (of
+/// either kind) fills: its `logicalModelFieldMapper` rejects them while building the schema.
+fn unsupported_field(fields: &[LogicalModelField], nq: &NativeQueryMeta) -> Option<String> {
+    let has_relationship = |name: &str| {
+        (nq.array_relationships.iter())
+            .chain(&nq.object_relationships)
+            .any(|r| r.name == name)
+    };
+    fields.iter().find_map(|f| match f.ty.get("array") {
+        Some(element) if element.get("array").is_some() => {
+            Some("Nested arrays are not currently implemented".to_owned())
+        }
+        Some(element) if element.get("logical_model").is_none() => {
+            Some("Arrays of scalar types are not currently implemented".to_owned())
+        }
+        Some(_) if !has_relationship(&f.name) => Some(format!(
+            "Unexpected logical model array field '{}'.",
+            f.name
+        )),
+        None if f.ty.get("logical_model").is_some() && !has_relationship(&f.name) => Some(format!(
+            "Unexpected logical model object field '{}'.",
+            f.name
+        )),
+        _ => None,
+    })
 }
 
 /// V2's `inner_logical_model_<name>` objects: a logical model field (or array element)
