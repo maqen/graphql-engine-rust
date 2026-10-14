@@ -134,7 +134,7 @@ impl AppState {
             && admin.options == options
             && !introspection_disabled.contains(&RoleName::admin())
         {
-            schemas.insert(Some((RoleName::admin(), false)), admin);
+            schemas.insert((Some((RoleName::admin(), false)), false), admin);
         }
         let state = AppState {
             known_roles,
