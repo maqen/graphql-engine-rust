@@ -6,6 +6,7 @@ pub mod console;
 pub mod events;
 pub mod explain;
 pub mod graphql;
+pub mod input_validation;
 pub mod load;
 pub mod migrations;
 pub mod policies;

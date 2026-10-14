@@ -547,3 +547,56 @@ fn invalid_inherited_roles() {
     }
     assert!(select_of(&tables, "ok").is_some());
 }
+
+#[test]
+fn validate_input_is_parsed() {
+    let hook = |ty: &str| {
+        json!({"type": ty, "definition": {
+            "url": "{{BASE}}/check",
+            "headers": [{"name": "X-A", "value": "a"}, {"name": "X-B", "value_from_env": "B"}],
+        }})
+    };
+    let (tables, errs) = resolve_with(
+        json!({
+            "insert_permissions": [{"role": "user", "permission": {"check": {}, "validate_input": hook("http")}}],
+            "delete_permissions": [{"role": "user", "permission": {"filter": {}, "validate_input": hook("grpc")}}],
+            "update_permissions": [{"role": "user", "permission": {"columns": [], "filter": {},
+                "validate_input": {"type": "http", "definition": {"url": "u",
+                    "headers": [{"name": "X", "value_from_env": "HASURA_GRAPHQL_ADMIN_SECRET"}]}}}}],
+        }),
+        json!({}),
+        json!([]),
+    );
+    assert_eq!(errs.len(), 2, "{errs:?}");
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("expecting only 'http' for 'type' but got grpc")),
+        "{errs:?}"
+    );
+    assert!(
+        errs.iter()
+            .any(|e| e.contains("not allowed in value_from_env: HASURA_GRAPHQL_ADMIN_SECRET")),
+        "{errs:?}"
+    );
+    let perms = table_permissions(author(&tables), &RoleName::new("user")).unwrap();
+    assert!(perms.delete.is_none() && perms.update.is_none());
+    let v = perms
+        .insert
+        .as_ref()
+        .unwrap()
+        .validate_input
+        .as_deref()
+        .unwrap();
+    assert_eq!(
+        *v,
+        hge_ir::InputValidation {
+            url: hge_ir::EnvValue::Template("{{BASE}}/check".into()),
+            headers: vec![
+                ("X-A".into(), hge_ir::EnvValue::Template("a".into())),
+                ("X-B".into(), hge_ir::EnvValue::FromEnv("B".into())),
+            ],
+            timeout_secs: 10,
+            forward_client_headers: false,
+        }
+    );
+}

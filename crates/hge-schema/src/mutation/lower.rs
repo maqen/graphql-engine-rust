@@ -1,12 +1,13 @@
 //! Lowering mutation root fields to IR.
 
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use hge_core::{ColumnType, Error};
 use hge_ir::{
-    BoolExp, CompareOp, Delete, Insert, InsertCheck, InsertInto, InsertObject, Mutation,
-    MutationOutput, MutationResponseField, MutationRootField, MutationTable, OnConflict,
-    RelationshipInsert, RootField, Update, UpdateExp, Value,
+    BoolExp, CompareOp, Delete, InputValidation, InputValidationCall, Insert, InsertCheck,
+    InsertInto, InsertObject, Mutation, MutationOutput, MutationResponseField, MutationRootField,
+    MutationTable, OnConflict, RelationshipInsert, RootField, Update, UpdateExp, Value,
 };
 use hge_metadata::{ObjectFkOn, ObjectRelUsing};
 use serde_json::{Map, Value as Json};
@@ -23,7 +24,10 @@ pub(crate) fn root_field(
     kind: &MutationField,
     field: &SelectedField<'_>,
 ) -> Result<RootField, Error> {
-    let ml = MutationLowerer { lw };
+    let ml = MutationLowerer {
+        lw,
+        validations: RefCell::new(vec![]),
+    };
     let (table, mutation) = match kind {
         MutationField::Insert(t) => (t, ml.insert(t, field, false)?),
         MutationField::InsertOne(t) => (t, ml.insert(t, field, true)?),
@@ -36,14 +40,83 @@ pub(crate) fn root_field(
             return Err(Error::unexpected("mutation response field at the root"));
         }
     };
+    // `validate_input` (spec 04 §10): inserts collect one call per validated table while
+    // lowering; updates and deletes send their arguments as given.
+    let args = || Json::Object(field.args.clone().into_iter().collect());
+    let webhook_input = match kind {
+        MutationField::Update(t) | MutationField::UpdateByPk(t) => ml
+            .update_access(t)?
+            .validate_input
+            .clone()
+            .map(|w| (w, Json::Array(vec![args()]))),
+        MutationField::UpdateMany(t) => ml
+            .update_access(t)?
+            .validate_input
+            .clone()
+            .map(|w| (w, field.arg("updates").cloned().unwrap_or(Json::Null))),
+        MutationField::Delete(t) => ml
+            .delete_validation(t)?
+            .map(|w| (w, Json::Array(vec![args()]))),
+        MutationField::DeleteByPk(t) => ml.delete_validation(t)?.map(|w| {
+            let mut pk = Map::new();
+            pk.insert("pk_columns".to_owned(), args());
+            (w, Json::Array(vec![Json::Object(pk)]))
+        }),
+        _ => None,
+    };
+    let mut validations: Vec<InputValidationCall> = ml
+        .validations
+        .into_inner()
+        .into_iter()
+        .map(|(_, call)| call)
+        .collect();
+    if let Some((webhook, input)) = webhook_input {
+        validations.push(InputValidationCall { webhook, input });
+    }
     Ok(RootField::Mutation(Box::new(MutationRootField {
         source: table.source.clone(),
         mutation,
+        validations,
     })))
 }
 
 struct MutationLowerer<'a, 'b> {
     lw: &'b Lowerer<'a>,
+    /// `validate_input` calls of an insert: one per table, holding every row inserted into
+    /// it, in the order tables are first reached (parents first), as V2 groups them.
+    validations: RefCell<Vec<(hge_core::QualifiedTable, InputValidationCall)>>,
+}
+
+/// An input column value as V2 sends it to `validate_input`: the parsed value, so numbers
+/// given as strings (`bigint`, `numeric`) become JSON numbers. Other values are sent as given.
+fn input_json(given: &Json, parsed: &Value) -> Json {
+    let Value::Literal {
+        text: Some(text),
+        ty,
+    } = parsed
+    else {
+        return given.clone();
+    };
+    let numeric = !ty.is_array()
+        && matches!(
+            ty.name.as_str(),
+            "smallint"
+                | "int2"
+                | "integer"
+                | "int4"
+                | "bigint"
+                | "int8"
+                | "real"
+                | "float4"
+                | "double precision"
+                | "float8"
+                | "numeric"
+                | "decimal"
+        );
+    match serde_json::from_str::<Json>(text) {
+        Ok(n @ Json::Number(_)) if numeric => n,
+        _ => given.clone(),
+    }
 }
 
 fn mutation_table(table: &TableInfo) -> MutationTable {
@@ -122,6 +195,14 @@ impl MutationLowerer<'_, '_> {
             .insert
             .as_ref()
             .ok_or_else(|| Error::unexpected(format!("no insert access to {}", table.name)))
+    }
+
+    fn delete_validation(&self, table: &TableInfo) -> Result<Option<Arc<InputValidation>>, Error> {
+        Ok(self
+            .access(table)?
+            .delete
+            .as_ref()
+            .and_then(|d| d.validate_input.clone()))
     }
 
     fn update_access(&self, table: &TableInfo) -> Result<&UpdateAccess, Error> {
@@ -226,7 +307,7 @@ impl MutationLowerer<'_, '_> {
         };
         let path = arg_path(field, arg);
         let on_conflict = field.arg("on_conflict").filter(|v| !v.is_null());
-        let into = self.insert_into(
+        let (into, _) = self.insert_into(
             table,
             &objects,
             on_conflict,
@@ -239,7 +320,8 @@ impl MutationLowerer<'_, '_> {
     }
 
     /// Rows for `table`. `indexed`: object paths get `[i]`. `parent_columns` are set by the
-    /// parent row and may not appear in the input.
+    /// parent row and may not appear in the input. Also returns the rows as `validate_input`
+    /// sends them, and records this table's `validate_input` call (ahead of nested ones).
     #[allow(clippy::too_many_arguments)]
     fn insert_into(
         &self,
@@ -250,9 +332,27 @@ impl MutationLowerer<'_, '_> {
         on_conflict_path: &str,
         indexed: bool,
         parent_columns: &[String],
-    ) -> Result<InsertInto, Error> {
+    ) -> Result<(InsertInto, Vec<Json>), Error> {
         let ia = self.insert_access(table)?;
+        // Reserved before the rows, so a table's call precedes its nested tables' calls.
+        let slot = ia.validate_input.clone().map(|webhook| {
+            let mut calls = self.validations.borrow_mut();
+            match calls.iter().position(|(t, _)| *t == table.name) {
+                Some(i) => i,
+                None => {
+                    calls.push((
+                        table.name.clone(),
+                        InputValidationCall {
+                            webhook,
+                            input: Json::Array(vec![]),
+                        },
+                    ));
+                    calls.len() - 1
+                }
+            }
+        });
         let mut rows = Vec::with_capacity(objects.len());
+        let mut json_rows = Vec::with_capacity(objects.len());
         for (i, obj) in objects.iter().enumerate() {
             let obj_path = if indexed {
                 format!("{path}[{i}]")
@@ -262,7 +362,14 @@ impl MutationLowerer<'_, '_> {
             let Json::Object(obj) = obj else {
                 return Err(Error::validation("expected an object").with_path(obj_path));
             };
-            rows.push(self.insert_object(table, ia, obj, obj_path, parent_columns)?);
+            let (row, json) = self.insert_object(table, ia, obj, obj_path, parent_columns)?;
+            rows.push(row);
+            json_rows.push(Json::Object(json));
+        }
+        if let Some(i) = slot
+            && let Json::Array(input) = &mut self.validations.borrow_mut()[i].1.input
+        {
+            input.extend(json_rows.iter().cloned());
         }
         let on_conflict = match on_conflict {
             Some(Json::Object(oc)) => Some(self.on_conflict(table, oc, on_conflict_path)?),
@@ -283,13 +390,16 @@ impl MutationLowerer<'_, '_> {
                 update,
             }),
         };
-        Ok(InsertInto {
-            table: mutation_table(table),
-            objects: rows,
-            on_conflict,
-            check,
-            path: path.to_owned(),
-        })
+        Ok((
+            InsertInto {
+                table: mutation_table(table),
+                objects: rows,
+                on_conflict,
+                check,
+                path: path.to_owned(),
+            },
+            json_rows,
+        ))
     }
 
     fn insert_object(
@@ -299,8 +409,9 @@ impl MutationLowerer<'_, '_> {
         obj: &Map<String, Json>,
         path: String,
         parent_columns: &[String],
-    ) -> Result<InsertObject, Error> {
+    ) -> Result<(InsertObject, Map<String, Json>), Error> {
         let mut columns: Vec<(String, Value)> = vec![];
+        let mut json = Map::new();
         let mut before = vec![];
         let mut after = vec![];
         let mut determined_by_parent = vec![];
@@ -312,7 +423,9 @@ impl MutationLowerer<'_, '_> {
                     continue;
                 }
                 check_null(value, col, &key_path)?;
-                columns.push((col.name.clone(), to_value(value, &col.ty, &key_path)?));
+                let parsed = to_value(value, &col.ty, &key_path)?;
+                json.insert(col.name.clone(), input_json(value, &parsed));
+                columns.push((col.name.clone(), parsed));
                 continue;
             }
             let rel = table.relationship_by_name(key).ok_or_else(|| {
@@ -332,8 +445,12 @@ impl MutationLowerer<'_, '_> {
             let is_object = matches!(rel.kind, crate::tables::RelKind::Object);
             if is_object && inserted_before_parent(table, rel) {
                 let data: Vec<&Json> = rel_obj.get("data").into_iter().collect();
-                let insert =
+                let (insert, rows) =
                     self.insert_into(target, &data, oc, &data_path, &oc_path, false, &[])?;
+                json.insert(
+                    rel.name.clone(),
+                    serde_json::json!({"data": rows.into_iter().next().unwrap_or(Json::Null)}),
+                );
                 before.push(RelationshipInsert {
                     name: rel.name.clone(),
                     mapping: rel.mapping.clone(),
@@ -351,7 +468,7 @@ impl MutationLowerer<'_, '_> {
                     .iter()
                     .map(|(_, remote)| remote.clone())
                     .collect();
-                let insert = self.insert_into(
+                let (insert, rows) = self.insert_into(
                     target,
                     &data,
                     oc,
@@ -360,6 +477,12 @@ impl MutationLowerer<'_, '_> {
                     indexed,
                     &child_columns,
                 )?;
+                let data = if indexed {
+                    Json::Array(rows)
+                } else {
+                    rows.into_iter().next().unwrap_or(Json::Null)
+                };
+                json.insert(rel.name.clone(), serde_json::json!({ "data": data }));
                 after.push(RelationshipInsert {
                     name: rel.name.clone(),
                     mapping: rel.mapping.clone(),
@@ -397,12 +520,15 @@ impl MutationLowerer<'_, '_> {
             columns.retain(|(name, _)| name != c);
             columns.push((c.clone(), v.clone()));
         }
-        Ok(InsertObject {
-            columns,
-            before: before_inserts,
-            after,
-            path,
-        })
+        Ok((
+            InsertObject {
+                columns,
+                before: before_inserts,
+                after,
+                path,
+            },
+            json,
+        ))
     }
 
     fn on_conflict(

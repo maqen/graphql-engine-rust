@@ -3,8 +3,10 @@
 //! A view of the role's resolved [`hge_ir::TablePermissions`] (owned by the *Permissions &
 //! roles* workstream) shaped for mutation schema building and lowering.
 
+use std::sync::Arc;
+
 use hge_core::RoleName;
-use hge_ir::{BoolExp, Value};
+use hge_ir::{BoolExp, InputValidation, Value};
 
 use crate::permissions::table_permissions;
 use crate::tables::TableInfo;
@@ -24,6 +26,7 @@ pub struct InsertAccess {
     pub presets: Vec<(String, Value)>,
     pub check: Option<BoolExp>,
     pub backend_only: bool,
+    pub validate_input: Option<Arc<InputValidation>>,
 }
 
 #[derive(Debug, Clone)]
@@ -36,12 +39,14 @@ pub struct UpdateAccess {
     /// Must hold for updated rows.
     pub check: Option<BoolExp>,
     pub backend_only: bool,
+    pub validate_input: Option<Arc<InputValidation>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct DeleteAccess {
     pub filter: Option<BoolExp>,
     pub backend_only: bool,
+    pub validate_input: Option<Arc<InputValidation>>,
 }
 
 impl InsertAccess {
@@ -89,6 +94,7 @@ pub fn mutation_access(table: &TableInfo, role: &RoleName) -> MutationAccess {
             presets: presets(&i.presets),
             check: condition(&i.check),
             backend_only: i.backend_only,
+            validate_input: i.validate_input.clone(),
         }),
         update: p.update.as_ref().map(|u| UpdateAccess {
             columns: u.columns.clone(),
@@ -98,10 +104,12 @@ pub fn mutation_access(table: &TableInfo, role: &RoleName) -> MutationAccess {
             // rows, as V2 does.
             check: u.check.clone(),
             backend_only: u.backend_only,
+            validate_input: u.validate_input.clone(),
         }),
         delete: p.delete.as_ref().map(|d| DeleteAccess {
             filter: condition(&d.filter),
             backend_only: d.backend_only,
+            validate_input: d.validate_input.clone(),
         }),
     }
 }

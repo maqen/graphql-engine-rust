@@ -14,6 +14,16 @@ use crate::{BoolExp, Field, Value};
 pub struct MutationRootField {
     pub source: Arc<str>,
     pub mutation: Mutation,
+    /// `validate_input` webhook calls to make, in order, before the mutation runs (one per
+    /// table of a nested insert whose permission has one).
+    pub validations: Vec<InputValidationCall>,
+}
+
+/// One `validate_input` webhook call: the webhook and the `data.input` it is sent.
+#[derive(Debug, Clone)]
+pub struct InputValidationCall {
+    pub webhook: Arc<crate::InputValidation>,
+    pub input: serde_json::Value,
 }
 
 #[derive(Debug, Clone)]
