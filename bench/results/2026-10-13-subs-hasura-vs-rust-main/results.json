@@ -1,0 +1,166 @@
+{
+  "label": "2026-10-13-subs-hasura-vs-rust-main",
+  "started_at": "2026-10-13T21:58:32+00:00",
+  "machine": {
+    "cpus": 4,
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "os": "Linux 6.18.44-fc-v114"
+  },
+  "config": {
+    "protocol": "graphql-transport-ws",
+    "writes": 10,
+    "write_interval": 2.0,
+    "stream_rows": 10,
+    "stream_subscribers": 50,
+    "workers": 2,
+    "connect_rate": 500,
+    "idle_seconds": 20,
+    "engine_cpuset": "0,1"
+  },
+  "runs": [
+    {
+      "engine": "hasura",
+      "subscribers": 1000,
+      "stream_subscribers": 50,
+      "ready_s": 3.3,
+      "all_initial_results_s": 3.3,
+      "errors": 0,
+      "error_samples": [],
+      "baseline_mem_mb": 104.1,
+      "subscribed_mem_mb": 166.1,
+      "kb_per_subscriber": 60.5,
+      "idle_cpu_cores": 0.09,
+      "write_cpu_cores": 0.1,
+      "peak_mem_mb": 191.4,
+      "db_tps_no_subscribers": 2.8,
+      "db_tps_subscribed": 19.5,
+      "db_tps_polling": 16.6,
+      "update_latency": {
+        "p50_ms": 550.8,
+        "p95_ms": 963.8,
+        "p99_ms": 996.0,
+        "max_ms": 998.5,
+        "samples": 10000,
+        "missed": 0
+      },
+      "stream_latency": {
+        "p50_ms": 635.4,
+        "p95_ms": 980.8,
+        "p99_ms": 981.7,
+        "max_ms": 981.7,
+        "samples": 500,
+        "missed": 0
+      },
+      "client_loop_lag_p99_ms": 1.8,
+      "client_loop_lag_max_ms": 42.1
+    },
+    {
+      "engine": "rust",
+      "subscribers": 1000,
+      "stream_subscribers": 50,
+      "ready_s": 2.5,
+      "all_initial_results_s": 2.5,
+      "errors": 0,
+      "error_samples": [],
+      "baseline_mem_mb": 3.6,
+      "subscribed_mem_mb": 34.9,
+      "kb_per_subscriber": 30.5,
+      "idle_cpu_cores": 0.03,
+      "write_cpu_cores": 0.04,
+      "peak_mem_mb": 35.7,
+      "db_tps_no_subscribers": 5.3,
+      "db_tps_subscribed": 9.6,
+      "db_tps_polling": 4.3,
+      "update_latency": {
+        "p50_ms": 288.4,
+        "p95_ms": 966.6,
+        "p99_ms": 1005.6,
+        "max_ms": 1006.9,
+        "samples": 10000,
+        "missed": 0
+      },
+      "stream_latency": {
+        "p50_ms": 466.7,
+        "p95_ms": 977.9,
+        "p99_ms": 979.9,
+        "max_ms": 980.1,
+        "samples": 500,
+        "missed": 0
+      },
+      "client_loop_lag_p99_ms": 1.4,
+      "client_loop_lag_max_ms": 58.1
+    },
+    {
+      "engine": "rust",
+      "subscribers": 5000,
+      "stream_subscribers": 50,
+      "ready_s": 11.9,
+      "all_initial_results_s": 11.9,
+      "errors": 0,
+      "error_samples": [],
+      "baseline_mem_mb": 3.6,
+      "subscribed_mem_mb": 147.3,
+      "kb_per_subscriber": 29.1,
+      "idle_cpu_cores": 0.11,
+      "write_cpu_cores": 0.14,
+      "peak_mem_mb": 149.7,
+      "db_tps_no_subscribers": 5.3,
+      "db_tps_subscribed": 9.6,
+      "db_tps_polling": 4.3,
+      "update_latency": {
+        "p50_ms": 595.2,
+        "p95_ms": 993.5,
+        "p99_ms": 1030.6,
+        "max_ms": 1035.8,
+        "samples": 50000,
+        "missed": 0
+      },
+      "stream_latency": {
+        "p50_ms": 416.5,
+        "p95_ms": 785.7,
+        "p99_ms": 786.2,
+        "max_ms": 786.2,
+        "samples": 500,
+        "missed": 0
+      },
+      "client_loop_lag_p99_ms": 1.7,
+      "client_loop_lag_max_ms": 158.4
+    },
+    {
+      "engine": "hasura",
+      "subscribers": 5000,
+      "stream_subscribers": 50,
+      "ready_s": 12.6,
+      "all_initial_results_s": 12.6,
+      "errors": 0,
+      "error_samples": [],
+      "baseline_mem_mb": 103.8,
+      "subscribed_mem_mb": 448.2,
+      "kb_per_subscriber": 69.8,
+      "idle_cpu_cores": 0.27,
+      "write_cpu_cores": 0.33,
+      "peak_mem_mb": 535.8,
+      "db_tps_no_subscribers": 3.1,
+      "db_tps_subscribed": 17.0,
+      "db_tps_polling": 14.0,
+      "update_latency": {
+        "p50_ms": 600.5,
+        "p95_ms": 990.3,
+        "p99_ms": 1034.2,
+        "max_ms": 1052.9,
+        "samples": 50000,
+        "missed": 0
+      },
+      "stream_latency": {
+        "p50_ms": 389.8,
+        "p95_ms": 967.4,
+        "p99_ms": 967.8,
+        "max_ms": 968.0,
+        "samples": 500,
+        "missed": 0
+      },
+      "client_loop_lag_p99_ms": 2.3,
+      "client_loop_lag_max_ms": 154.2
+    }
+  ]
+}
