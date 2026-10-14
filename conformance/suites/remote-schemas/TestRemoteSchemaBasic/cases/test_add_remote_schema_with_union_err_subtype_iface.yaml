@@ -1,0 +1,36 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestRemoteSchemaBasic
+  method: test_add_remote_schema_with_union_err_subtype_iface
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: add_remote_schema
+    args:
+      name: simple 1
+      comment: testing simple 1
+      definition:
+        url: '{{helper:graphql_server}}/hello-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: null
+        customization: null
+  response:
+    message: success
+- description: Add a remote schema with a union which has unknown object types
+  url: /v1/query
+  status: 400
+  query:
+    type: add_remote_schema
+    args:
+      name: err-unknown-types
+      definition:
+        url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/union-graphql-err-subtype-iface'
+        headers: []
+        forward_client_headers: true
+  response:
+    error: Union type 'CharacterSearchResult' can only include object types. It cannot include 'Character'
+    path: $.args
+    code: remote-schema-error

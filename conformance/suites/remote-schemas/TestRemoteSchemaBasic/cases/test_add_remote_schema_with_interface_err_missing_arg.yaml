@@ -1,0 +1,36 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestRemoteSchemaBasic
+  method: test_add_remote_schema_with_interface_err_missing_arg
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: add_remote_schema
+    args:
+      name: simple 1
+      comment: testing simple 1
+      definition:
+        url: '{{helper:graphql_server}}/hello-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: null
+        customization: null
+  response:
+    message: success
+- description: Add a remote schema with a field of an object not having the argument of the same field in interface
+  url: /v1/query
+  status: 400
+  query:
+    type: add_remote_schema
+    args:
+      name: err-missing-arg
+      definition:
+        url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/iface-graphql-err-missing-arg'
+        headers: []
+        forward_client_headers: true
+  response:
+    error: Interface field argument 'Character'."id"("ifaceArg":) required, but Object field 'Droid'."id" does not provide it
+    path: $.args
+    code: remote-schema-error

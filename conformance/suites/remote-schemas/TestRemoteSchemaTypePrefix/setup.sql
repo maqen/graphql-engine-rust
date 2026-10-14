@@ -1,0 +1,1 @@
+-- No schema: the class fixture's steps set up each case.

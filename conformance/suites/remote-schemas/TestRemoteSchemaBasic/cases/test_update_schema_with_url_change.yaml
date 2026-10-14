@@ -1,0 +1,75 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestRemoteSchemaBasic
+  method: test_update_schema_with_url_change
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: add_remote_schema
+    args:
+      name: simple 1
+      comment: testing simple 1
+      definition:
+        url: '{{helper:graphql_server}}/hello-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: null
+        customization: null
+  response:
+    message: success
+- url: /v1/query
+  status: 200
+  query:
+    type: update_remote_schema
+    args:
+      name: simple 1
+      comment: testing simple 1
+      definition:
+        url: '{{helper:graphql_server}}/user-graphql'
+        headers: null
+        forward_client_headers: true
+        timeout_seconds: 80
+        customization: null
+  response:
+    message: success
+- url: /v1/query
+  status: 200
+  query:
+    type: export_metadata
+    args: {}
+  response:
+    version: 3
+    sources:
+    - name: default
+      kind: postgres
+      tables: []
+      configuration:
+        connection_info:
+          database_url:
+            from_env: HASURA_GRAPHQL_DATABASE_URL
+          isolation_level: read-committed
+          use_prepared_statements: false
+    remote_schemas:
+    - name: simple 1
+      definition:
+        url: '{{helper:graphql_server}}/user-graphql'
+        timeout_seconds: 80
+        forward_client_headers: true
+      comment: testing simple 1
+- url: /v1/query
+  status: 200
+  query:
+    type: update_remote_schema
+    args:
+      name: simple 1
+      comment: testing simple 1
+      definition:
+        url: '{{helper:graphql_server}}/hello-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: 60
+        customization: null
+  response:
+    message: success

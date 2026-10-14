@@ -1,0 +1,50 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestRemoteSchemaTypePrefix
+  method: test_add_schema
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: add_remote_schema
+    args:
+      name: simple 2
+      comment: testing simple 2
+      definition:
+        url: '{{helper:graphql_server}}/user-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: null
+        customization:
+          type_names:
+            prefix: Foo
+            mapping: {}
+  response:
+    message: success
+- url: /v1/query
+  status: 200
+  query:
+    type: export_metadata
+    args: {}
+  response:
+    version: 3
+    sources:
+    - name: default
+      kind: postgres
+      tables: []
+      configuration:
+        connection_info:
+          database_url:
+            from_env: HASURA_GRAPHQL_DATABASE_URL
+          isolation_level: read-committed
+          use_prepared_statements: false
+    remote_schemas:
+    - name: simple 2
+      definition:
+        url: '{{helper:graphql_server}}/user-graphql'
+        customization:
+          type_names:
+            mapping: {}
+            prefix: Foo
+      comment: testing simple 2

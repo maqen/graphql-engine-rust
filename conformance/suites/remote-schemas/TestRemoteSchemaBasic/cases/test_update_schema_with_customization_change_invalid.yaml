@@ -1,0 +1,75 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestRemoteSchemaBasic
+  method: test_update_schema_with_customization_change_invalid
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: add_remote_schema
+    args:
+      name: simple 1
+      comment: testing simple 1
+      definition:
+        url: '{{helper:graphql_server}}/hello-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: null
+        customization: null
+  response:
+    message: success
+- url: /v1/query
+  status: 400
+  query:
+    type: update_remote_schema
+    args:
+      name: simple 1
+      comment: testing simple 1
+      definition:
+        url: '{{helper:graphql_server}}/hello-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: 60
+        customization:
+          type_names:
+            mapping:
+              String: Foo
+              Hello: Foo
+  response:
+    error: 'Inconsistent object: Type name mappings are not distinct; the following types appear more than once: "Foo"'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: testing simple 1
+        definition:
+          customization:
+            type_names:
+              mapping:
+                Hello: Foo
+                String: Foo
+          forward_client_headers: false
+          timeout_seconds: 60
+          url: '{{helper:graphql_server}}/hello-graphql'
+        name: simple 1
+        permissions: []
+        remote_relationships: []
+      name: remote_schema simple 1
+      reason: 'Inconsistent object: Type name mappings are not distinct; the following types appear more than once: "Foo"'
+      type: remote_schema
+- url: /v1/query
+  status: 200
+  query:
+    type: update_remote_schema
+    args:
+      name: simple 1
+      comment: testing simple 1
+      definition:
+        url: '{{helper:graphql_server}}/hello-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: 60
+        customization: null
+  response:
+    message: success

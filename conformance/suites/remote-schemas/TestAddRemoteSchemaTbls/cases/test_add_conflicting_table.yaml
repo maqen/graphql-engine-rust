@@ -1,0 +1,73 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestAddRemoteSchemaTbls
+  method: test_add_conflicting_table
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: run_sql
+      args:
+        sql: |
+          CREATE TABLE hello (
+            id SERIAL PRIMARY KEY,
+            code TEXT,
+            name TEXT
+          );
+          CREATE TABLE authors (
+            id SERIAL PRIMARY KEY,
+            name TEXT
+          );
+    - type: track_table
+      args:
+        schema: public
+        name: hello
+    - type: track_table
+      args:
+        schema: public
+        name: authors
+    - type: add_remote_schema
+      args:
+        name: simple2-graphql
+        comment: testing
+        definition:
+          url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/user-graphql'
+          forward_client_headers: false
+  response:
+  - result_type: CommandOk
+    result: null
+  - message: success
+  - message: success
+  - message: success
+- url: /v1/query
+  status: 400
+  query:
+    type: bulk
+    args:
+    - type: run_sql
+      args:
+        sql: |
+          create table "user" ( id int );
+    - type: track_table
+      args:
+        schema: public
+        name: user
+  response:
+    error: node user already exists in current graphql schema
+    path: $.args[1].args
+    code: remote-schema-conflicts
+- url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: run_sql
+      args:
+        sql: |
+          drop table "user" cascade;
+  response:
+  - result_type: CommandOk
+    result: null

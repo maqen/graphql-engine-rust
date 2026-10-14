@@ -1,0 +1,41 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestValidateRemoteSchemaNamespaceQuery
+  method: test_remote_schema_namespace_validation
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: add_remote_schema
+    args:
+      name: character-foo
+      comment: testing character-foo
+      definition:
+        url: '{{helper:graphql_server}}/character-iface-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: null
+        customization:
+          root_fields_namespace: foo
+  response:
+    message: success
+- description: query with namespace
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      {
+        foo {
+          hero(episode: 4) {
+            id
+            name
+          }
+        }
+      }
+  response:
+    data:
+      foo:
+        hero:
+          id: '1'
+          name: R2-D2

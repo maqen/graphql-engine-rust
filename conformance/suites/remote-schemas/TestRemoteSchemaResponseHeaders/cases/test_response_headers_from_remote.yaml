@@ -1,0 +1,30 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestRemoteSchemaResponseHeaders
+  method: test_response_headers_from_remote
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: add_remote_schema
+    args:
+      name: sample-auth
+      comment: testing sample-auth
+      definition:
+        url: '{{helper:graphql_server}}/auth-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: null
+        customization: null
+  response:
+    message: success
+- url: /v1/graphql
+  status: 200
+  query:
+    query: 'query { hello (arg: "me") }'
+  response:
+    data:
+      hello: Hello me
+  resp_headers:
+    Set-Cookie: abcd

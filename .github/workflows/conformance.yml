@@ -55,6 +55,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.97
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install helper server dependencies
+        run: pip install -r conformance/helpers/requirements.txt
       - run: cargo build --locked -p graphql-engine -p hge-conformance
       - name: Run conformance suite
         run: >-
@@ -86,6 +91,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.97
       - uses: Swatinem/rust-cache@v2
       - run: docker pull hasura/graphql-engine:v2.51.0-ce
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install helper server dependencies
+        run: pip install -r conformance/helpers/requirements.txt
       - run: cargo build --locked -p hge-conformance
       - name: Verify every case against Hasura v2.51.0-ce
         run: >-

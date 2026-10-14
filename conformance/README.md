@@ -82,6 +82,9 @@ metadata).
 Responses compare exactly: status, body and the listed response headers. Object key order
 matters inside GraphQL `data` (it follows the selection set) and nowhere else; floats may
 differ in the last bit (Postgres float aggregates do, on V2 too).
+An expected value of `'{{any}}'` matches anything, for the parts of a response that Hasura
+does not produce deterministically and upstream does not check (such as the order of
+inconsistencies under `internal`).
 
 ### Helper servers
 

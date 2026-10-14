@@ -1,0 +1,61 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestAddRemoteSchemaTbls
+  method: test_add_schema_duplicate_name
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: run_sql
+      args:
+        sql: |
+          CREATE TABLE hello (
+            id SERIAL PRIMARY KEY,
+            code TEXT,
+            name TEXT
+          );
+          CREATE TABLE authors (
+            id SERIAL PRIMARY KEY,
+            name TEXT
+          );
+    - type: track_table
+      args:
+        schema: public
+        name: hello
+    - type: track_table
+      args:
+        schema: public
+        name: authors
+    - type: add_remote_schema
+      args:
+        name: simple2-graphql
+        comment: testing
+        definition:
+          url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/user-graphql'
+          forward_client_headers: false
+  response:
+  - result_type: CommandOk
+    result: null
+  - message: success
+  - message: success
+  - message: success
+- url: /v1/query
+  status: 400
+  query:
+    type: add_remote_schema
+    args:
+      name: simple2-graphql
+      comment: testing simple2-graphql
+      definition:
+        url: '{{helper:graphql_server}}/country-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: null
+        customization: null
+  response:
+    error: remote schema with name "simple2-graphql" already exists
+    path: $.args
+    code: already-exists

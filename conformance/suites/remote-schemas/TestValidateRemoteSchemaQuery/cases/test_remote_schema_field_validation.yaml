@@ -1,0 +1,96 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestValidateRemoteSchemaQuery
+  method: test_remote_schema_field_validation
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: add_remote_schema
+      args:
+        name: user
+        definition:
+          url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/user-graphql'
+    - type: add_remote_schema
+      args:
+        name: character-iface
+        definition:
+          url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/character-iface-graphql'
+    - type: add_remote_schema
+      args:
+        name: union
+        definition:
+          url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/union-graphql'
+  response:
+  - message: success
+  - message: success
+  - message: success
+- description: query the remote with a non-existing field 'non_existing_field', which should fail to validate
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        user (id: 1) {
+          id
+          username
+          non_existing_field
+        }
+      }
+  response:
+    errors:
+    - message: 'field ''non_existing_field'' not found in type: ''User'''
+      extensions:
+        path: $.selectionSet.user.selectionSet.non_existing_field
+        code: validation-failed
+- description: query the remote with a non-existing field in an interface type
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      {
+        hero(episode: 4) {
+          id
+          name
+          ... on Droid {
+            id
+            name
+            primaryFunction
+            non_existing_field
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'field ''non_existing_field'' not found in type: ''Droid'''
+      extensions:
+        path: $.selectionSet.hero.selectionSet.non_existing_field
+        code: validation-failed
+- description: query the remote with a non-existing field in an union type
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      {
+         search(episode: 2) {
+           __typename
+           ... on Droid {
+             id
+             name
+           }
+           ... on Human {
+             id
+             name
+             non_existing_field
+           }
+         }
+      }
+  response:
+    errors:
+    - message: 'field ''non_existing_field'' not found in type: ''Human'''
+      extensions:
+        path: $.selectionSet.search.selectionSet.non_existing_field
+        code: validation-failed

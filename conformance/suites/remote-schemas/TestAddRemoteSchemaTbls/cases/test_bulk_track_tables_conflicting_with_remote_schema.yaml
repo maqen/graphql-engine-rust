@@ -1,0 +1,96 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestAddRemoteSchemaTbls
+  method: test_bulk_track_tables_conflicting_with_remote_schema
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: run_sql
+      args:
+        sql: |
+          CREATE TABLE hello (
+            id SERIAL PRIMARY KEY,
+            code TEXT,
+            name TEXT
+          );
+          CREATE TABLE authors (
+            id SERIAL PRIMARY KEY,
+            name TEXT
+          );
+    - type: track_table
+      args:
+        schema: public
+        name: hello
+    - type: track_table
+      args:
+        schema: public
+        name: authors
+    - type: add_remote_schema
+      args:
+        name: simple2-graphql
+        comment: testing
+        definition:
+          url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/user-graphql'
+          forward_client_headers: false
+  response:
+  - result_type: CommandOk
+    result: null
+  - message: success
+  - message: success
+  - message: success
+- url: /v1/query
+  status: 200
+  query:
+    type: run_sql
+    args:
+      sql: CREATE TABLE "user" (id int); CREATE TABLE innocent1 (id int); CREATE TABLE innocent2 (id int);
+  response:
+    result_type: CommandOk
+    result: null
+- url: /v1/metadata
+  status: 200
+  query:
+    type: pg_track_tables
+    args:
+      tables:
+      - table:
+          schema: public
+          name: user
+      - table:
+          schema: public
+          name: innocent1
+      - table:
+          schema: public
+          name: innocent2
+      allow_warnings: true
+  response:
+    message: success
+    warnings:
+    - code: track-table-failed
+      message: node user already exists in current graphql schema
+      name: table user in source default
+      type: table
+- url: /v1/metadata
+  status: 200
+  query:
+    type: pg_untrack_table
+    args:
+      table:
+        schema: public
+        name: innocent1
+  response:
+    message: success
+- url: /v1/metadata
+  status: 200
+  query:
+    type: pg_untrack_table
+    args:
+      table:
+        schema: public
+        name: innocent2
+  response:
+    message: success
