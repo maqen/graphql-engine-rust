@@ -170,11 +170,12 @@ fn project_object(
                         .collect();
                     out.insert(alias.clone(), Value::Array(items));
                 }
-                None | Some(Value::Null) => {
+                Some(Value::Null) => {
                     out.insert(alias.clone(), Value::Null);
                 }
-                // A scalar where an object is expected: V2 omits the key (quirk Q2).
-                Some(_) => {}
+                // A missing key, or a scalar where an object is expected: V2 omits the key
+                // (quirk Q2).
+                _ => {}
             },
             ActionField::Relationship(rel) => {
                 // A null or missing join field gives null whatever the relationship kind, as in V2.

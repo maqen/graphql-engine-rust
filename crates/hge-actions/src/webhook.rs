@@ -186,9 +186,22 @@ fn internal(
 fn response_info(status: u16, headers: &reqwest::header::HeaderMap, body: Value) -> Value {
     let headers: Vec<Value> = headers
         .iter()
-        .map(|(k, v)| json!({"name": k.as_str(), "value": v.to_str().unwrap_or_default()}))
+        .map(|(k, v)| json!({"name": title_case(k.as_str()), "value": v.to_str().unwrap_or_default()}))
         .collect();
     json!({"status": status, "body": body, "headers": headers})
+}
+
+/// V2 reports response header names as the handler sent them. Our HTTP client lowercases
+/// them, so we title-case each `-`-separated word (`Content-Type`, `Set-Cookie`), which is how
+/// most servers write them.
+fn title_case(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    let mut upper = true;
+    for c in name.chars() {
+        out.push(if upper { c.to_ascii_uppercase() } else { c });
+        upper = c == '-';
+    }
+    out
 }
 
 /// The request body: V2's payload with sorted keys.
@@ -390,15 +403,18 @@ pub async fn call_detailed(
             Ok(HandlerResponse { body, set_cookies })
         }
         400..=499 => {
-            let error = client_error(&body)
-                .with_status(status)
-                .with_internal(internal(
+            let mut error = client_error(&body).with_status(status);
+            // V2 attaches the request and response only when the error body does not decode
+            // (`modifyQErr addInternalToErr`); a handler's own error goes out as it is.
+            if error.code == Code::ParseFailed {
+                error = error.with_internal(internal(
                     handler,
                     call,
                     &transformed,
                     Value::String("unexpected response".into()),
                     Some(info(&body)),
                 ));
+            }
             let code = match body.get("code") {
                 Some(Value::String(c)) if error.code != Code::ParseFailed => c.clone(),
                 _ => error.code.as_str().to_owned(),

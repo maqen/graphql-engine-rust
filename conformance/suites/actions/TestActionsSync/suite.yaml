@@ -9,4 +9,4 @@ env:
   ACTION_WEBHOOK_HANDLER: '{{helper:actions_webhook}}'
 helpers:
 - actions_webhook
-isolation: data
+isolation: database

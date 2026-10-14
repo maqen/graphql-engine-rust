@@ -260,9 +260,7 @@ impl<'a> Executor<'a> {
                     })?;
                     let result = hge_metadata_api::api::run(ctx, command).await;
                     result.map(|v| v.to_string()).map_err(|e| {
-                        let e = hge_metadata_api::api::unwrap_parse_error(e);
-                        hge_metadata_api::ops::actions::relative_to_args(&command.name, e)
-                            .under(path.as_str())
+                        hge_metadata_api::api::unwrap_parse_error(e).under(path.as_str())
                     })
                 }
                 Query::OtherBackendRunSql { source, path, .. } => {

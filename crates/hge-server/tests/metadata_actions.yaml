@@ -200,7 +200,7 @@ steps:
     status: 400
     response: {"error": "Parsing URL template failed: unclosed '{{' in template: {{BASE_URL/x", "path": "$.args.definition.handler", "code": "parse-failed"}
 
-  - description: create_action on /v1/query decodes args without the args path
+  - description: create_action on /v1/query keeps the args path
     url: /v1/query
     query:
       type: create_action
@@ -211,7 +211,7 @@ steps:
           handler: "http://localhost/x"
           headers: [{name: X-A}]
     status: 400
-    response: {"error": "expecting value or value_from_env keys", "path": "$.definition.headers[0]", "code": "parse-failed"}
+    response: {"error": "expecting value or value_from_env keys", "path": "$.args.definition.headers[0]", "code": "parse-failed"}
 
   - description: create_action with an unparsable transform template
     query:
