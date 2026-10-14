@@ -2,6 +2,3 @@
 # /v2/query select (Metadata API / Legacy query API threads), list_source_kinds (Metadata API),
 # scalar computed fields in aggregate fields (Mutations thread), action relationship
 # description (Actions thread).
-console/api-explorer
-console/table-browse
-console/view-browse
