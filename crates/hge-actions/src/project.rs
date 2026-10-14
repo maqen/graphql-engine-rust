@@ -177,12 +177,18 @@ fn project_object(
                 Some(_) => {}
             },
             ActionField::Relationship(rel) => {
-                let value = join_key(rel, obj)
-                    .and_then(|key| joined.get(&(rel_id(rel), key)).cloned())
-                    .unwrap_or_else(|| match rel.target {
-                        ActionRelTarget::Array(_) => Value::Array(vec![]),
-                        ActionRelTarget::Object(_) | ActionRelTarget::Aggregate(_) => Value::Null,
-                    });
+                // A null or missing join field gives null whatever the relationship kind, as in V2.
+                let value = match join_key(rel, obj) {
+                    None => Value::Null,
+                    Some(key) => joined.get(&(rel_id(rel), key)).cloned().unwrap_or_else(|| {
+                        match rel.target {
+                            ActionRelTarget::Array(_) => Value::Array(vec![]),
+                            ActionRelTarget::Object(_) | ActionRelTarget::Aggregate(_) => {
+                                Value::Null
+                            }
+                        }
+                    }),
+                };
                 out.insert(alias.clone(), value);
             }
         }

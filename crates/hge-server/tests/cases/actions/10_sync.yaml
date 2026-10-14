@@ -71,6 +71,13 @@ cases:
       data:
         authorInfo: { authorId: 99, author: null, articles: [] }
 
+  - description: a null join field gives null for every relationship kind
+    query:
+      query: '{ respond(status: 200, body: {label: "x"}) { authorId author { id } articles { id } articles_aggregate { aggregate { count } } } }'
+    response:
+      data:
+        respond: { authorId: null, author: null, articles: null, articles_aggregate: null }
+
   - description: array relationships have an aggregate field
     query:
       query: |
