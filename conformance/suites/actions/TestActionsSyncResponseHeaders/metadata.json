@@ -1,0 +1,1147 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "article",
+            "schema": "public"
+          }
+        },
+        {
+          "table": {
+            "name": "user",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "user",
+              "permission": {
+                "columns": [
+                  "id",
+                  "name",
+                  "email"
+                ],
+                "filter": {
+                  "id": "X-Hasura-User-Id"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ],
+  "actions": [
+    {
+      "name": "create_user",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/create-user",
+        "output_type": "UserId",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "email",
+            "type": "String!"
+          },
+          {
+            "name": "name",
+            "type": "String!"
+          }
+        ],
+        "type": "mutation",
+        "kind": "synchronous"
+      }
+    },
+    {
+      "name": "create_users",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/create-users",
+        "output_type": "[UserId]",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "users",
+            "type": "[UserInput!]!"
+          }
+        ],
+        "type": "mutation",
+        "kind": "synchronous"
+      }
+    },
+    {
+      "name": "custom_scalar_array_response",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/custom-scalar-array-response",
+        "output_type": "[myCustomScalar!]!",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "type": "mutation",
+        "kind": "synchronous"
+      }
+    },
+    {
+      "name": "custom_scalar_nested_array_response",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/custom-scalar-array-response",
+        "output_type": "[[myCustomScalar!]]!",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "type": "mutation",
+        "kind": "synchronous"
+      }
+    },
+    {
+      "name": "custom_scalar_response",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/json-response",
+        "output_type": "myCustomScalar!",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "type": "mutation",
+        "kind": "synchronous"
+      }
+    },
+    {
+      "name": "get_user_by_email",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/get-user-by-email",
+        "output_type": "UserId!",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "email",
+            "type": "String!"
+          }
+        ],
+        "type": "query"
+      },
+      "permissions": [
+        {
+          "role": "user"
+        }
+      ]
+    },
+    {
+      "name": "get_user_by_email_nested",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/get-user-by-email-nested",
+        "output_type": "NestedOutObject!",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "email",
+            "type": "String!"
+          }
+        ],
+        "type": "query"
+      }
+    },
+    {
+      "name": "get_user_by_email_nested_join",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/get-user-by-email-nested",
+        "output_type": "NestedJoinObject!",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "email",
+            "type": "String!"
+          }
+        ],
+        "type": "query"
+      }
+    },
+    {
+      "name": "get_user_by_email_nested_transformed",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/get-user-by-email-nested",
+        "output_type": "NestedOutObjectTransformed!",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "email",
+            "type": "String!"
+          }
+        ],
+        "response_transform": {
+          "body": {
+            "action": "transform",
+            "template": "{\n  \"uid\": {{ $body.user_id.id }},\n  \"city0\": {{ $body.addresses[0].city }},\n  \"country0\": {{ $body.addresses[0].country }},\n  \"other_addresses\":\n    {{ range i, x := $body.addresses }}\n      {{ if i > 0 }}\n        {\n          \"city\": {{ x.city }},\n          \"country\": {{ x.country }}\n        }\n      {{ else }}\n        null\n      {{ end }}\n    {{ end }}\n}\n"
+          },
+          "template_engine": "Kriti",
+          "version": 2
+        },
+        "type": "query"
+      }
+    },
+    {
+      "name": "get_users_by_email",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/get-users-by-email",
+        "output_type": "[UserId]!",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "email",
+            "type": "String!"
+          }
+        ],
+        "type": "query"
+      }
+    },
+    {
+      "name": "get_users_by_email_nested",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/get-users-by-email-nested",
+        "output_type": "[NestedOutObject]!",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "email",
+            "type": "String!"
+          }
+        ],
+        "type": "query"
+      }
+    },
+    {
+      "name": "intentional_error",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/intentional-error",
+        "output_type": "[UserId]!",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "blob",
+            "type": "IntentionalErrorInput!"
+          }
+        ],
+        "type": "query"
+      }
+    },
+    {
+      "name": "mirror",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/mirror-action",
+        "output_type": "OutObject",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "arg",
+            "type": "InObject!"
+          }
+        ],
+        "type": "mutation",
+        "kind": "synchronous"
+      }
+    },
+    {
+      "name": "mirror_headers",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/mirror-headers",
+        "output_type": "OutHeaders",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "type": "query"
+      }
+    },
+    {
+      "name": "mirror_transformed",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/mirror-action",
+        "output_type": "OutObject",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "arg",
+            "type": "InObject!"
+          }
+        ],
+        "request_transform": {
+          "body": {
+            "action": "transform",
+            "template": "{\n  \"input\": {\n    \"arg\": {\n      \"id\": {{ $body.input.arg.name }},\n      \"name\": {{ $body.input.arg.id }}\n    }\n  }\n}\n"
+          },
+          "template_engine": "Kriti",
+          "version": 2
+        },
+        "type": "mutation",
+        "kind": "synchronous"
+      }
+    },
+    {
+      "name": "mirror_transformed_output",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/mirror-action",
+        "output_type": "OutObjectTransformed",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "arg",
+            "type": "InObject!"
+          }
+        ],
+        "response_transform": {
+          "body": {
+            "action": "transform",
+            "template": "{\n  \"foo\": {{ $body.id }},\n  \"bar\": {{ $body.name }}\n}\n"
+          },
+          "template_engine": "Kriti",
+          "version": 2
+        },
+        "type": "mutation",
+        "kind": "synchronous"
+      }
+    },
+    {
+      "name": "null_response",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/null-response",
+        "output_type": "NullableResp",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "type": "mutation",
+        "kind": "synchronous"
+      }
+    },
+    {
+      "name": "omitted_response_field",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/omitted-response-field",
+        "output_type": "Address",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "type": "mutation",
+        "kind": "synchronous"
+      }
+    },
+    {
+      "name": "pgscalar_response",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/json-response",
+        "output_type": "json!",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "type": "mutation",
+        "kind": "synchronous"
+      }
+    },
+    {
+      "name": "recursive_output",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/recursive-output",
+        "output_type": "Recursive",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "type": "query"
+      }
+    },
+    {
+      "name": "result_list",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/get-results",
+        "output_type": "ResultIdList",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "type": "query"
+      }
+    },
+    {
+      "name": "results",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/get-results",
+        "output_type": "[Result]",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "response_transform": {
+          "body": {
+            "action": "transform",
+            "template": "{{ range i, x := $body.result_ids }}\n  {\n    \"id\": {{ x }}\n  }\n{{ end }}\n"
+          },
+          "template_engine": "Kriti",
+          "version": 2
+        },
+        "type": "query"
+      }
+    },
+    {
+      "name": "scalar_array_response",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/scalar-array-response",
+        "output_type": "[String]!",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "type": "mutation",
+        "kind": "synchronous"
+      }
+    },
+    {
+      "name": "scalar_response",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/scalar-response",
+        "output_type": "String!",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "type": "mutation",
+        "kind": "synchronous"
+      }
+    },
+    {
+      "name": "typed_nested_null",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/typed-nested-null",
+        "output_type": "TypedNestedNull!",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "type": "query"
+      }
+    },
+    {
+      "name": "typed_nested_null_wrong_field",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/typed-nested-null-wrong-field",
+        "output_type": "TypedNestedNull!",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "type": "query"
+      }
+    }
+  ],
+  "custom_types": {
+    "input_objects": [
+      {
+        "name": "UserInput",
+        "fields": [
+          {
+            "name": "name",
+            "type": "String!"
+          },
+          {
+            "name": "email",
+            "type": "String!"
+          },
+          {
+            "name": "parent",
+            "type": "UserInput"
+          }
+        ]
+      },
+      {
+        "name": "InObject",
+        "fields": [
+          {
+            "name": "id",
+            "type": "ID"
+          },
+          {
+            "name": "name",
+            "type": "String"
+          },
+          {
+            "name": "age",
+            "type": "Int"
+          }
+        ]
+      },
+      {
+        "name": "IntentionalErrorInput",
+        "fields": [
+          {
+            "name": "message",
+            "type": "String!"
+          },
+          {
+            "name": "code",
+            "type": "String"
+          },
+          {
+            "name": "extensions",
+            "type": "json"
+          }
+        ]
+      }
+    ],
+    "objects": [
+      {
+        "name": "UserId",
+        "fields": [
+          {
+            "name": "id",
+            "type": "Int!"
+          }
+        ],
+        "relationships": [
+          {
+            "field_mapping": {
+              "id": "id"
+            },
+            "name": "user",
+            "remote_table": {
+              "name": "user",
+              "schema": "public"
+            },
+            "source": "default",
+            "type": "object"
+          },
+          {
+            "field_mapping": {
+              "id": "user_id"
+            },
+            "name": "articles",
+            "remote_table": {
+              "name": "article",
+              "schema": "public"
+            },
+            "source": "default",
+            "type": "array"
+          }
+        ]
+      },
+      {
+        "name": "UserId2",
+        "fields": [
+          {
+            "name": "id",
+            "type": "Int!"
+          }
+        ]
+      },
+      {
+        "name": "OutObject",
+        "fields": [
+          {
+            "name": "id",
+            "type": "ID!"
+          },
+          {
+            "name": "name",
+            "type": "String"
+          }
+        ]
+      },
+      {
+        "name": "Headers",
+        "fields": [
+          {
+            "name": "name",
+            "type": "String!"
+          },
+          {
+            "name": "value",
+            "type": "String!"
+          }
+        ]
+      },
+      {
+        "name": "OutHeaders",
+        "fields": [
+          {
+            "name": "headers",
+            "type": "[Headers]"
+          }
+        ]
+      },
+      {
+        "name": "OutObjectTransformed",
+        "fields": [
+          {
+            "name": "foo",
+            "type": "ID!"
+          },
+          {
+            "name": "bar",
+            "type": "String"
+          }
+        ]
+      },
+      {
+        "name": "OutObjectScalarTransformed",
+        "fields": [
+          {
+            "name": "foo",
+            "type": "String!"
+          }
+        ]
+      },
+      {
+        "name": "Address",
+        "fields": [
+          {
+            "name": "city",
+            "type": "String"
+          },
+          {
+            "name": "country",
+            "type": "String"
+          }
+        ]
+      },
+      {
+        "name": "NestedOutObject",
+        "fields": [
+          {
+            "name": "id",
+            "type": "Int!"
+          },
+          {
+            "name": "user_id",
+            "type": "UserId2"
+          },
+          {
+            "name": "address",
+            "type": "Address"
+          },
+          {
+            "name": "addresses",
+            "type": "[Address]"
+          }
+        ]
+      },
+      {
+        "name": "NestedOutObjectTransformed",
+        "fields": [
+          {
+            "name": "uid",
+            "type": "ID!"
+          },
+          {
+            "name": "city0",
+            "type": "String"
+          },
+          {
+            "name": "country0",
+            "type": "String"
+          },
+          {
+            "name": "other_addresses",
+            "type": "[Address]"
+          }
+        ]
+      },
+      {
+        "name": "NestedJoinObject",
+        "fields": [
+          {
+            "name": "id",
+            "type": "Int!"
+          },
+          {
+            "name": "user_id",
+            "type": "UserId"
+          },
+          {
+            "name": "address",
+            "type": "Address"
+          },
+          {
+            "name": "addresses",
+            "type": "[Address]"
+          }
+        ]
+      },
+      {
+        "name": "DirectRecursiveType",
+        "fields": [
+          {
+            "name": "id",
+            "type": "Int!"
+          },
+          {
+            "name": "this",
+            "type": "DirectRecursiveType"
+          }
+        ]
+      },
+      {
+        "name": "ListRecursiveType",
+        "fields": [
+          {
+            "name": "id",
+            "type": "Int!"
+          },
+          {
+            "name": "these",
+            "type": "[ListRecursiveType]"
+          }
+        ]
+      },
+      {
+        "name": "MutuallyRecursiveTypeA",
+        "fields": [
+          {
+            "name": "id",
+            "type": "Int!"
+          },
+          {
+            "name": "that",
+            "type": "MutuallyRecursiveTypeB"
+          }
+        ]
+      },
+      {
+        "name": "MutuallyRecursiveTypeB",
+        "fields": [
+          {
+            "name": "id",
+            "type": "Int!"
+          },
+          {
+            "name": "other",
+            "type": "MutuallyRecursiveTypeA"
+          }
+        ]
+      },
+      {
+        "name": "Recursive",
+        "fields": [
+          {
+            "name": "direct",
+            "type": "DirectRecursiveType"
+          },
+          {
+            "name": "list",
+            "type": "ListRecursiveType"
+          },
+          {
+            "name": "mutual",
+            "type": "MutuallyRecursiveTypeA"
+          }
+        ]
+      },
+      {
+        "name": "NullableResp",
+        "fields": [
+          {
+            "name": "id",
+            "type": "Int!"
+          }
+        ]
+      },
+      {
+        "name": "ResultIdList",
+        "fields": [
+          {
+            "name": "result_ids",
+            "type": "[Int!]!"
+          }
+        ]
+      },
+      {
+        "name": "Result",
+        "fields": [
+          {
+            "name": "id",
+            "type": "Int!"
+          }
+        ]
+      },
+      {
+        "name": "TypedNestedNull",
+        "fields": [
+          {
+            "name": "id",
+            "type": "ID!"
+          },
+          {
+            "name": "child",
+            "type": "TypedNestedNull"
+          }
+        ]
+      }
+    ],
+    "scalars": [
+      {
+        "name": "myCustomScalar"
+      }
+    ]
+  }
+}

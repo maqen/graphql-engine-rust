@@ -15,5 +15,25 @@
         }
       }
     }
+  ],
+  "remote_schemas": [
+    {
+      "name": "character-iface",
+      "definition": {
+        "url": "{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/character-iface-graphql"
+      }
+    },
+    {
+      "name": "union",
+      "definition": {
+        "url": "{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/union-graphql"
+      }
+    },
+    {
+      "name": "user",
+      "definition": {
+        "url": "{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/user-graphql"
+      }
+    }
   ]
 }

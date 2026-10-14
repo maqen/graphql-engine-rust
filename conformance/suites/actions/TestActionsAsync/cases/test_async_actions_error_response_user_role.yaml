@@ -1,0 +1,44 @@
+upstream:
+  file: test_actions.py
+  class: TestActionsAsync
+  method: test_async_actions_error_response_user_role
+  by_hand: true
+steps:
+- url: /v1/graphql
+  status: 200
+  headers:
+    x-hasura-role: user
+  query:
+    query: |
+      mutation {
+        test_async_action_error_response
+      }
+    variables: {}
+  response:
+    data:
+      test_async_action_error_response: '{{any}}'
+  capture:
+    action_id: /data/test_async_action_error_response
+- url: /v1/graphql
+  status: 200
+  headers:
+    x-hasura-role: user
+  query:
+    query: |
+      query ($action_id: uuid!){
+        test_async_action_error_response(id: $action_id){
+          id
+          errors
+        }
+      }
+    variables:
+      action_id: '{{var:action_id}}'
+  response:
+    data:
+      test_async_action_error_response:
+        id: '{{var:action_id}}'
+        errors:
+          code: unexpected
+          path: $
+          error: not a valid json response from webhook
+  retry_for: 10.0

@@ -300,10 +300,7 @@ def others():
                                 "message": "Response timeout", "request": "{{any}}", "type": "http_exception"}},
                         }]})],
                 })
-    write_suite("TestValidateRemoteSchemaQuery", v1q_f(f"{DIR}/validation/setup.yaml"), {
-        "test_remote_schema_argument_validation": check_query_f(f"{DIR}/validation/argument_validation.yaml"),
-        "test_remote_schema_field_validation": check_query_f(f"{DIR}/validation/field_validation.yaml"),
-    })
+    # TestValidateRemoteSchemaQuery only calls check_query_f: port_tests_py.py ports it.
     write_suite("TestRemoteSchemaTypePrefix",
                 v1q(add_remote("simple 2", f"{GQL}/user-graphql",
                                customization={"type_names": {"prefix": "Foo", "mapping": {}}})), {

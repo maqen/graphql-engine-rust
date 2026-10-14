@@ -1,0 +1,67 @@
+upstream:
+  file: test_actions.py
+  class: TestActionsAsync
+  method: test_create_user_roles
+  by_hand: true
+steps:
+- url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      mutation {
+        create_user(email: "blake@hasura.io", name: "Blake")
+      }
+    variables: {}
+  response:
+    data:
+      create_user: '{{any}}'
+  capture:
+    action_id: /data/create_user
+- url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '2'
+  query:
+    query: |
+      query ($action_id: uuid!){
+        create_user(id: $action_id){
+          id
+          output {
+            id
+          }
+        }
+      }
+    variables:
+      action_id: '{{var:action_id}}'
+  response:
+    data:
+      create_user: null
+  retry_for: 10.0
+- url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query ($action_id: uuid!){
+        create_user(id: $action_id){
+          id
+          output {
+            id
+          }
+        }
+      }
+    variables:
+      action_id: '{{var:action_id}}'
+  response:
+    data:
+      create_user:
+        id: '{{var:action_id}}'
+        output:
+          id: 1
+  retry_for: 10.0

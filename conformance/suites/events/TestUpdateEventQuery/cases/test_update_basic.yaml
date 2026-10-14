@@ -1,0 +1,294 @@
+upstream:
+  file: test_events.py
+  class: TestUpdateEventQuery
+  method: test_update_basic
+  by_hand: true
+steps:
+- description: drop deliveries left by earlier cases
+  url: '{{helper:events_webhook}}/__reset'
+  status: 200
+  response:
+    dropped: '{{any}}'
+- url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: run_sql
+      args:
+        sql: |
+          create table hge_tests.test_t1(
+              c1 int,
+              c2 text,
+              c3 json
+          );
+    - type: track_table
+      args:
+        schema: hge_tests
+        name: test_t1
+    - type: create_event_trigger
+      args:
+        name: t1_cols
+        table:
+          schema: hge_tests
+          name: test_t1
+        insert:
+          columns: '*'
+        update:
+          columns:
+          - c2
+          - c3
+        webhook: '{{EVENT_WEBHOOK_HANDLER}}'
+  response:
+  - result_type: CommandOk
+    result: null
+  - message: success
+  - message: success
+- url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: create_event_trigger
+      args:
+        name: t1_cols
+        table:
+          schema: hge_tests
+          name: test_t1
+        update:
+          columns:
+          - c1
+          - c3
+        delete:
+          columns: '*'
+        webhook: '{{EVENT_WEBHOOK_HANDLER}}/new'
+        retry_conf:
+          num_retries: 5
+          interval_sec: 5
+        replace: true
+    - type: export_metadata
+      args: {}
+  response:
+  - message: success
+  - version: 3
+    sources:
+    - name: default
+      kind: postgres
+      tables:
+      - table:
+          name: test_t1
+          schema: hge_tests
+        event_triggers:
+        - name: t1_cols
+          definition:
+            delete:
+              columns: '*'
+            enable_manual: false
+            update:
+              columns:
+              - c1
+              - c3
+          retry_conf:
+            interval_sec: 5
+            num_retries: 5
+          webhook: '{{EVENT_WEBHOOK_HANDLER}}/new'
+      configuration:
+        connection_info:
+          database_url:
+            from_env: HASURA_GRAPHQL_DATABASE_URL
+          isolation_level: read-committed
+          use_prepared_statements: false
+- url: /v1/query
+  status: 200
+  query:
+    type: insert
+    args:
+      table:
+        schema: hge_tests
+        name: test_t1
+      objects:
+      - c1: 1
+        c2: hello
+        c3:
+          name: clarke
+      returning: []
+  response:
+    returning:
+    - {}
+    affected_rows: 1
+- description: no event
+  url: '{{helper:events_webhook}}/__next_event?timeout=0'
+  status: 404
+  response:
+    error: no event
+- url: /v1/query
+  status: 200
+  query:
+    type: update
+    args:
+      table:
+        schema: hge_tests
+        name: test_t1
+      where:
+        c1: 1
+      $set:
+        c2: world
+  response:
+    affected_rows: 1
+- description: no event
+  url: '{{helper:events_webhook}}/__next_event?timeout=0'
+  status: 404
+  response:
+    error: no event
+- url: /v1/query
+  status: 200
+  query:
+    type: update
+    args:
+      table:
+        schema: hge_tests
+        name: test_t1
+      where:
+        c1: 1
+      $set:
+        c3:
+          name: bellamy
+  response:
+    affected_rows: 1
+- description: UPDATE event of t1_cols
+  url: '{{helper:events_webhook}}/__next_event?timeout=3'
+  status: 200
+  response:
+    path: /new
+    body:
+      created_at: '{{any}}'
+      delivery_info:
+        current_retry: 0
+        max_retries: 5
+      event:
+        data:
+          new:
+            c1: 1
+            c2: world
+            c3:
+              name: bellamy
+          old:
+            c1: 1
+            c2: world
+            c3:
+              name: clarke
+        op: UPDATE
+        session_variables:
+          x-hasura-role: admin
+        trace_context: '{{any}}'
+      id: '{{any}}'
+      table:
+        name: test_t1
+        schema: hge_tests
+      trigger:
+        name: t1_cols
+    headers: {}
+- url: /v1/query
+  status: 200
+  query:
+    type: update
+    args:
+      table:
+        schema: hge_tests
+        name: test_t1
+      where:
+        c1: 1
+      $set:
+        c1: 2
+  response:
+    affected_rows: 1
+- description: UPDATE event of t1_cols
+  url: '{{helper:events_webhook}}/__next_event?timeout=3'
+  status: 200
+  response:
+    path: /new
+    body:
+      created_at: '{{any}}'
+      delivery_info:
+        current_retry: 0
+        max_retries: 5
+      event:
+        data:
+          new:
+            c1: 2
+            c2: world
+            c3:
+              name: bellamy
+          old:
+            c1: 1
+            c2: world
+            c3:
+              name: bellamy
+        op: UPDATE
+        session_variables:
+          x-hasura-role: admin
+        trace_context: '{{any}}'
+      id: '{{any}}'
+      table:
+        name: test_t1
+        schema: hge_tests
+      trigger:
+        name: t1_cols
+    headers: {}
+- url: /v1/query
+  status: 200
+  query:
+    type: delete
+    args:
+      table:
+        schema: hge_tests
+        name: test_t1
+      where:
+        c1: 2
+  response:
+    affected_rows: 1
+- description: DELETE event of t1_cols
+  url: '{{helper:events_webhook}}/__next_event?timeout=3'
+  status: 200
+  response:
+    path: /new
+    body:
+      created_at: '{{any}}'
+      delivery_info:
+        current_retry: 0
+        max_retries: 5
+      event:
+        data:
+          new: null
+          old:
+            c1: 2
+            c2: world
+            c3:
+              name: bellamy
+        op: DELETE
+        session_variables:
+          x-hasura-role: admin
+        trace_context: '{{any}}'
+      id: '{{any}}'
+      table:
+        name: test_t1
+        schema: hge_tests
+      trigger:
+        name: t1_cols
+    headers: {}
+- url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: delete_event_trigger
+      args:
+        name: t1_cols
+    - type: run_sql
+      args:
+        sql: |
+          drop table hge_tests.test_t1
+  response:
+  - message: success
+  - result_type: CommandOk
+    result: null

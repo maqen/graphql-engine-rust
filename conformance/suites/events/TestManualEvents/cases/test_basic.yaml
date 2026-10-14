@@ -1,0 +1,33 @@
+upstream:
+  file: test_events.py
+  class: TestManualEvents
+  method: test_basic
+  by_hand: true
+steps:
+- description: drop deliveries left by earlier cases
+  url: '{{helper:events_webhook}}/__reset'
+  status: 200
+  response:
+    dropped: '{{any}}'
+- url: /v1/metadata
+  status: 200
+  query:
+    type: pg_invoke_event_trigger
+    args:
+      name: t1_enabled
+      payload:
+        some_key: some_value
+  response:
+    event_id: '{{any}}'
+- url: /v1/metadata
+  status: 400
+  query:
+    type: pg_invoke_event_trigger
+    args:
+      name: t1_disabled
+      payload:
+        some_key: some_value
+  response:
+    error: manual mode is not enabled for event trigger
+    path: $.args
+    code: not-supported

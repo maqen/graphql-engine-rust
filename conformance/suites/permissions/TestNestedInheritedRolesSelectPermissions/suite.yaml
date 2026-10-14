@@ -3,7 +3,8 @@ upstream:
   file: test_roles_inheritance.py
   class: TestNestedInheritedRolesSelectPermissions
   dir: queries/graphql_query/permissions/roles_inheritance/
-admin_secret: false
+admin_secret: true
 env:
   HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_ENABLE_REMOTE_SCHEMA_PERMISSIONS: 'true'
 isolation: data

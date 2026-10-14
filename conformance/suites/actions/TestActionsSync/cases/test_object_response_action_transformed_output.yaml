@@ -1,0 +1,58 @@
+upstream:
+  file: test_actions.py
+  class: TestActionsSync
+  method: test_object_response_action_transformed_output
+  fixtures:
+  - queries/actions/sync/object_response_action_transformed_output.yaml
+steps:
+- description: Update actions webhook to transform object output into an scalar number response
+  url: /v1/query
+  status: 200
+  query:
+    type: update_action
+    args:
+      name: create_user
+      definition:
+        kind: synchronous
+        arguments:
+        - name: email
+          type: String!
+        - name: name
+          type: String!
+        output_type: Int!
+        handler: '{{ACTION_WEBHOOK_HANDLER}}/create-user'
+        response_transform:
+          template_engine: Kriti
+          body: |
+            {{ $body.id }}
+  response:
+    message: success
+- description: Run create_user sync action
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        create_user(email: "clarke@gmail.com", name: "Clarke")
+      }
+  response:
+    data:
+      create_user: 1
+- description: Revert action wehbook
+  url: /v1/query
+  status: 200
+  query:
+    type: update_action
+    args:
+      name: create_user
+      definition:
+        kind: synchronous
+        arguments:
+        - name: email
+          type: String!
+        - name: name
+          type: String!
+        output_type: UserId
+        handler: '{{ACTION_WEBHOOK_HANDLER}}/create-user'
+  response:
+    message: success

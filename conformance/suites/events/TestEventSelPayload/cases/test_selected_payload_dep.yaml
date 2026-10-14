@@ -1,0 +1,31 @@
+upstream:
+  file: test_events.py
+  class: TestEventSelPayload
+  method: test_selected_payload_dep
+  by_hand: true
+steps:
+- description: drop deliveries left by earlier cases
+  url: '{{helper:events_webhook}}/__reset'
+  status: 200
+  response:
+    dropped: '{{any}}'
+- url: /v1/query
+  status: 400
+  query:
+    type: run_sql
+    args:
+      sql: alter table hge_tests.test_t1 drop column c1
+  response:
+    error: 'cannot drop due to the following dependent objects: event-trigger hge_tests.test_t1.t1_payload in source "default"'
+    path: $.args
+    code: dependency-error
+- url: /v1/query
+  status: 400
+  query:
+    type: run_sql
+    args:
+      sql: alter table hge_tests.test_t1 drop column c2
+  response:
+    error: 'cannot drop due to the following dependent objects: event-trigger hge_tests.test_t1.t1_payload in source "default"'
+    path: $.args
+    code: dependency-error

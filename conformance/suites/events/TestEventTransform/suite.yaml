@@ -1,0 +1,12 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_events.py::TestEventTransform
+upstream:
+  file: test_events.py
+  class: TestEventTransform
+  dir: queries/event_triggers/transform
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  EVENT_WEBHOOK_HANDLER: '{{helper:events_webhook}}'
+helpers:
+- events_webhook
+isolation: none

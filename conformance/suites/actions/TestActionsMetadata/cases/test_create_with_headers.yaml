@@ -1,0 +1,28 @@
+upstream:
+  file: test_actions.py
+  class: TestActionsMetadata
+  method: test_create_with_headers
+  fixtures:
+  - queries/actions/metadata/create_with_headers.yaml
+steps:
+- description: Define an action with headers configuration
+  url: /v1/query
+  status: 400
+  query:
+    type: create_action
+    args:
+      name: create_user_1
+      definition:
+        kind: synchronous
+        arguments:
+        - name: name
+          type: String!
+        output_type: User!
+        handler: '{{ACTION_WEBHOOK_HANDLER}}/create-user'
+        headers:
+        - name: x-client-id
+          value_from_env: HASURA_GRAPHQL_CLIENT_NAME
+  response:
+    error: 'env variables starting with "HASURA_GRAPHQL_" are not allowed in value_from_env: HASURA_GRAPHQL_CLIENT_NAME'
+    path: $.args.definition.headers[0]
+    code: parse-failed

@@ -1,0 +1,42 @@
+upstream:
+  file: test_actions.py
+  class: TestActionsSync
+  method: test_results_list_transformed_output_success
+  fixtures:
+  - queries/actions/sync/results_list_transformed_output_success.yaml
+steps:
+- description: A successful query to get result list
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        result_list {
+          result_ids
+        }
+      }
+  response:
+    data:
+      result_list:
+        result_ids:
+        - 1
+        - 2
+        - 3
+        - 4
+- description: A successful query to get transformed results
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query myresults {
+        results {
+          id
+        }
+      }
+  response:
+    data:
+      results:
+      - id: 1
+      - id: 2
+      - id: 3
+      - id: 4

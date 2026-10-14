@@ -1,0 +1,69 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ],
+  "actions": [
+    {
+      "name": "create_user",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/create-user",
+        "output_type": "User!",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "name",
+            "type": "String!"
+          }
+        ],
+        "type": "mutation",
+        "kind": "synchronous"
+      }
+    }
+  ],
+  "custom_types": {
+    "objects": [
+      {
+        "name": "User",
+        "fields": [
+          {
+            "name": "user_id",
+            "type": "ID!"
+          },
+          {
+            "name": "name",
+            "type": "String!"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,74 @@
+upstream:
+  file: test_events.py
+  class: TestEventTransform
+  method: test_basic
+  by_hand: true
+steps:
+- description: drop deliveries left by earlier cases
+  url: '{{helper:events_webhook}}/__reset'
+  status: 200
+  response:
+    dropped: '{{any}}'
+- description: PG create event trigger
+  url: /v1/metadata
+  status: 200
+  query:
+    type: pg_create_event_trigger
+    args:
+      name: sample_trigger
+      table:
+        name: test_t1
+        schema: hge_tests
+      source: default
+      webhook: '{{EVENT_WEBHOOK_HANDLER}}'
+      insert:
+        columns: '*'
+        payload:
+        - id
+        - first_name
+        - last_name
+      replace: false
+      request_transform:
+        version: 2
+        template_engine: Kriti
+        body:
+          action: transform
+          template: '{{ $body.event.data.new }}'
+        query_params:
+          foo: bar
+        request_headers:
+          remove_headers:
+          - user-agent
+          add_headers:
+            foo: bar
+  response:
+    message: success
+- url: /v1/query
+  status: 200
+  query:
+    type: insert
+    args:
+      table:
+        schema: hge_tests
+        name: test_t1
+      objects:
+      - id: 0
+        first_name: Simon
+        last_name: Marlow
+      returning: []
+  response:
+    returning:
+    - {}
+    affected_rows: 1
+- description: transformed delivery
+  url: '{{helper:events_webhook}}/__next_event?timeout=3&headers=foo,user-agent'
+  status: 200
+  response:
+    path: /?foo=bar
+    headers:
+      foo: bar
+      user-agent: null
+    body:
+      id: 0
+      first_name: Simon
+      last_name: Marlow

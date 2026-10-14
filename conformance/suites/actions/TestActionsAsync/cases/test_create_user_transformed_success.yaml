@@ -1,0 +1,55 @@
+upstream:
+  file: test_actions.py
+  class: TestActionsAsync
+  method: test_create_user_transformed_success
+  by_hand: true
+steps:
+- url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        create_user_transformed(email: "clarke@hasura.io", name: "Clarke")
+      }
+    variables: {}
+  response:
+    data:
+      create_user_transformed: '{{any}}'
+  capture:
+    action_id: /data/create_user_transformed
+- url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query ($action_id: uuid!){
+        create_user_transformed(id: $action_id){
+          __typename
+          id
+          output {
+            __typename
+            id
+            user {
+              __typename
+              name
+              email
+              is_admin
+            }
+          }
+        }
+      }
+    variables:
+      action_id: '{{var:action_id}}'
+  response:
+    data:
+      create_user_transformed:
+        __typename: create_user_transformed
+        id: '{{var:action_id}}'
+        output:
+          __typename: UserId
+          id: 1
+          user:
+            __typename: user
+            name: notClarke
+            email: foo@bar.com
+            is_admin: false
+  retry_for: 10.0

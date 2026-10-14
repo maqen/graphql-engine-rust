@@ -6,4 +6,5 @@ upstream:
 admin_secret: false
 env:
   HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_ENABLE_ALLOWLIST: 'true'
 isolation: none

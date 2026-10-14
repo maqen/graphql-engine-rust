@@ -78,10 +78,11 @@ pub async fn run_suite(
 async fn run_case(slot: &Slot, case: &Case, record: bool) -> Result<(), String> {
     let mut file = case.file.clone();
     let mut conns = ws::Connections::default();
+    let mut vars = Vars::default();
     let mut outcome = Ok(());
     for (i, step) in file.steps.iter_mut().enumerate() {
         let r = match step {
-            Step::Http(step) => http_step(slot, case, step, record).await,
+            Step::Http(step) => var_step(slot, case, step, record, &mut vars).await,
             Step::Ws(step) => {
                 ws::run_step(
                     &mut conns,
@@ -115,22 +116,150 @@ async fn run_case(slot: &Slot, case: &Case, record: bool) -> Result<(), String> 
     outcome
 }
 
+/// Values captured from earlier responses of a case (`capture`), by name.
+#[derive(Default)]
+struct Vars(std::collections::BTreeMap<String, Value>);
+
+const VAR_PREFIX: &str = "{{var:";
+
+impl Vars {
+    fn placeholder(name: &str) -> String {
+        format!("{VAR_PREFIX}{name}}}}}")
+    }
+
+    /// `{{var:name}}` replaced by the captured value: a string that is just the placeholder
+    /// becomes the value itself (a number stays a number), one inside a longer string is
+    /// replaced by its text. A placeholder for nothing captured is an error.
+    fn expand(&self, v: &Value) -> Result<Value, String> {
+        Ok(match v {
+            Value::String(s) => {
+                if let Some(value) = s
+                    .strip_prefix(VAR_PREFIX)
+                    .and_then(|r| r.strip_suffix("}}"))
+                    .and_then(|name| self.0.get(name))
+                {
+                    return Ok(value.clone());
+                }
+                let mut s = s.clone();
+                for (name, value) in &self.0 {
+                    let text = match value {
+                        Value::String(t) => t.clone(),
+                        other => other.to_string(),
+                    };
+                    s = s.replace(&Self::placeholder(name), &text);
+                }
+                if let Some(i) = s.find(VAR_PREFIX) {
+                    return Err(format!("{}: nothing captured under that name", &s[i..]));
+                }
+                Value::String(s)
+            }
+            Value::Array(a) => {
+                Value::Array(a.iter().map(|v| self.expand(v)).collect::<Result<_, _>>()?)
+            }
+            Value::Object(o) => Value::Object(
+                o.iter()
+                    .map(|(k, v)| Ok((k.clone(), self.expand(v)?)))
+                    .collect::<Result<_, String>>()?,
+            ),
+            v => v.clone(),
+        })
+    }
+
+    /// Recorded values: a string equal to a captured string becomes its placeholder again.
+    /// Only whole strings, so a short value ("1") does not rewrite unrelated text; captured
+    /// numbers and booleans are not written back.
+    fn unexpand(&self, v: &Value) -> Value {
+        match v {
+            Value::String(s) => self
+                .0
+                .iter()
+                .find(|(_, value)| value.as_str() == Some(s.as_str()))
+                .map_or_else(
+                    || v.clone(),
+                    |(name, _)| Value::String(Self::placeholder(name)),
+                ),
+            Value::Array(a) => Value::Array(a.iter().map(|v| self.unexpand(v)).collect()),
+            Value::Object(o) => Value::Object(
+                o.iter()
+                    .map(|(k, v)| (k.clone(), self.unexpand(v)))
+                    .collect(),
+            ),
+            v => v.clone(),
+        }
+    }
+}
+
+/// An HTTP step with `{{var:..}}` replaced by captured values; captures what the step lists.
+async fn var_step(
+    slot: &Slot,
+    case: &Case,
+    step: &mut HttpStep,
+    record: bool,
+    vars: &mut Vars,
+) -> Result<(), String> {
+    let v = serde_json::to_value(&*step).map_err(|e| e.to_string())?;
+    let mut sent: HttpStep = serde_json::from_value(vars.expand(&v)?).map_err(|e| e.to_string())?;
+    let body = http_step(slot, case, &mut sent, record).await?;
+    if record {
+        step.status = sent.status;
+        step.response = vars.unexpand(&sent.response);
+        for (name, value) in &mut step.resp_headers {
+            *value = sent.resp_headers[name].as_ref().map(|h| {
+                match vars.unexpand(&Value::String(h.clone())) {
+                    Value::String(u) => u,
+                    _ => h.clone(),
+                }
+            });
+        }
+        // What a step captures differs between runs: it is recorded as a wildcard, and later
+        // steps compare against `{{var:..}}`.
+        for pointer in step.capture.values() {
+            if let Some(slot) = step.response.pointer_mut(pointer) {
+                *slot = Value::String(compare::ANY.to_owned());
+            }
+        }
+    }
+    for (name, pointer) in &step.capture {
+        let value = body
+            .pointer(pointer)
+            .ok_or_else(|| format!("capture {name}: no {pointer} in the response"))?;
+        vars.0.insert(name.clone(), value.clone());
+    }
+    Ok(())
+}
+
+/// Send a step and check its response; returns the response body.
 async fn http_step(
     slot: &Slot,
     case: &Case,
     step: &mut HttpStep,
     record: bool,
-) -> Result<(), String> {
-    let actual = send(slot, case, step).await?;
+) -> Result<Value, String> {
+    let deadline = match step.retry_for {
+        Some(s) => Some(
+            std::time::Instant::now()
+                + std::time::Duration::try_from_secs_f64(s)
+                    .map_err(|e| format!("retry_for: {s}: {e}"))?,
+        ),
+        None => None,
+    };
+    let mut actual = send(slot, case, step).await?;
+    while let Some(deadline) = deadline {
+        if check(step, &actual).is_ok() || std::time::Instant::now() >= deadline {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        actual = send(slot, case, step).await?;
+    }
     match check(step, &actual) {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok(actual.body),
         Err(_) if record => {
             step.status = actual.status;
-            step.response = actual.body;
+            step.response = compare::keep_any(&step.response, &actual.body);
             for (name, value) in step.resp_headers.iter_mut() {
                 *value = header_value(&actual.headers, name);
             }
-            Ok(())
+            Ok(actual.body)
         }
         Err(e) => Err(e),
     }
@@ -145,9 +274,14 @@ async fn send(slot: &Slot, case: &Case, step: &HttpStep) -> Result<Actual, Strin
         }
     });
     let method = reqwest::Method::from_bytes(method.as_bytes()).map_err(|e| e.to_string())?;
-    let mut req = slot
-        .http()
-        .request(method, format!("{}{}", slot.base_url(), step.url));
+    // A URL with a scheme (a `{{helper:..}}` one) goes to that server, not the engine.
+    let absolute = step.url.starts_with("http://") || step.url.starts_with("https://");
+    let url = if absolute {
+        step.url.clone()
+    } else {
+        format!("{}{}", slot.base_url(), step.url)
+    };
+    let mut req = slot.http().request(method, url);
     let mut has_content_type = false;
     for (k, v) in &step.headers {
         has_content_type |= k.eq_ignore_ascii_case("content-type");
@@ -165,6 +299,7 @@ async fn send(slot: &Slot, case: &Case, step: &HttpStep) -> Result<Actual, Strin
         .keys()
         .any(|k| k.eq_ignore_ascii_case("x-hasura-admin-secret"));
     if case.file.admin_secret_header
+        && !absolute
         && !sends_secret
         && let Some(secret) = slot.admin_secret()
     {
@@ -236,4 +371,42 @@ fn check(step: &HttpStep, actual: &Actual) -> Result<(), String> {
         compare::clip(&step.response.to_string(), 600),
         compare::clip(&actual.body.to_string(), 600),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn vars() -> Vars {
+        let mut v = Vars::default();
+        v.0.insert("id".into(), json!("6f0c6a2e-0000-4000-8000-000000000001"));
+        v.0.insert("n".into(), json!(1));
+        v
+    }
+
+    #[test]
+    fn expand_and_unexpand() {
+        let v = vars();
+        let step =
+            json!({"variables": {"id": "{{var:id}}", "n": "{{var:n}}", "s": "id={{var:id}}"}});
+        let sent = v.expand(&step).unwrap();
+        assert_eq!(
+            sent,
+            json!({"variables": {"id": "6f0c6a2e-0000-4000-8000-000000000001", "n": 1,
+                   "s": "id=6f0c6a2e-0000-4000-8000-000000000001"}})
+        );
+        // Whole strings only, and only captured strings.
+        let got = json!({"id": "6f0c6a2e-0000-4000-8000-000000000001", "n": 1, "x": "1", "1": "a"});
+        assert_eq!(
+            v.unexpand(&got),
+            json!({"id": "{{var:id}}", "n": 1, "x": "1", "1": "a"})
+        );
+    }
+
+    #[test]
+    fn unknown_var_is_an_error() {
+        assert!(vars().expand(&json!({"q": "{{var:nope}}"})).is_err());
+        assert!(Vars::default().expand(&json!(["x {{var:id}}"])).is_err());
+    }
 }

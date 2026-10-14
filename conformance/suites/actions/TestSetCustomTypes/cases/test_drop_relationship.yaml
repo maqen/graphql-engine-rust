@@ -1,0 +1,44 @@
+upstream:
+  file: test_actions.py
+  class: TestSetCustomTypes
+  method: test_drop_relationship
+  fixtures:
+  - queries/actions/custom-types/drop_relationship.yaml
+steps:
+- description: Set custom types with an object relationship
+  url: /v1/query
+  status: 200
+  query:
+    type: set_custom_types
+    args:
+      objects:
+      - name: User
+        fields:
+        - name: user_id
+          type: uuid!
+        - name: name
+          type: String!
+        relationships:
+        - name: Names
+          type: array
+          remote_table: user
+          field_mapping:
+            name: name
+  response:
+    message: success
+- description: drop the custom type relationship
+  url: /v1/query
+  status: 200
+  query:
+    type: set_custom_types
+    args:
+      objects:
+      - name: User
+        fields:
+        - name: user_id
+          type: uuid!
+        - name: name
+          type: String!
+        relationships: []
+  response:
+    message: success

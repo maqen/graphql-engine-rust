@@ -1,0 +1,28 @@
+upstream:
+  file: test_allowlist_queries.py
+  class: TestAllowlistQueries
+  method: test_query_non_allowlist
+  fixtures:
+  - queries/graphql_query/allowlist/query_non_allowlist.yaml
+steps:
+- description: GraphQL query which is not in allowlist
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: |
+      query {
+        user{
+          id
+          name
+          account_id
+          company
+        }
+      }
+  response:
+    errors:
+    - message: query is not allowed
+      extensions:
+        path: $
+        code: validation-failed

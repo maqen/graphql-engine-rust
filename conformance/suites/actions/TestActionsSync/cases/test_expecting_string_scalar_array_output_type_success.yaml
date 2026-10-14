@@ -1,0 +1,21 @@
+upstream:
+  file: test_actions.py
+  class: TestActionsSync
+  method: test_expecting_string_scalar_array_output_type_success
+  fixtures:
+  - queries/actions/sync/get_string_scalar_array_action_output_type_success.yaml
+steps:
+- description: Scalar array response should be allowed
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        scalar_array_response
+      }
+  response:
+    data:
+      scalar_array_response:
+      - foo
+      - bar
+      - null

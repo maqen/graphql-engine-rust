@@ -1,0 +1,52 @@
+upstream:
+  file: test_actions.py
+  class: TestActionsSync
+  method: test_mirror_action_no_field
+  fixtures:
+  - queries/actions/sync/mirror_action_no_field.yaml
+steps:
+- description: Expected field not found in response
+  url: /v1/graphql
+  status: 200
+  query:
+    variables:
+      name: Alice
+    query: |
+      mutation ($name: String) {
+        mirror(arg: {name: $name}){
+          id
+          name
+        }
+      }
+  response:
+    errors:
+    - message: field "id" expected in webhook response, but not found
+      extensions:
+        path: $
+        code: unexpected
+        internal:
+          error: unexpected response
+          request:
+            action:
+              name: mirror
+            input:
+              arg:
+                name: Alice
+            request_query: |
+              mutation ($name: String) {
+                mirror(arg: {name: $name}){
+                  id
+                  name
+                }
+              }
+            transformed_request: null
+            url: '{{ACTION_WEBHOOK_HANDLER}}/mirror-action'
+          response:
+            body:
+              name: Alice
+            headers:
+            - name: Content-Type
+              value: application/json
+            - name: Set-Cookie
+              value: abcd
+            status: 200

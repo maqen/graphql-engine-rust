@@ -1,0 +1,221 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "user",
+            "schema": "public"
+          }
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ],
+  "actions": [
+    {
+      "name": "create_user",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/create-user",
+        "output_type": "UserId",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "email",
+            "type": "String!"
+          },
+          {
+            "name": "name",
+            "type": "String!"
+          }
+        ],
+        "type": "mutation",
+        "kind": "asynchronous"
+      },
+      "permissions": [
+        {
+          "role": "user"
+        }
+      ]
+    },
+    {
+      "name": "create_user_nested",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/create-user-nested",
+        "output_type": "UserIdNested",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "email",
+            "type": "String!"
+          },
+          {
+            "name": "name",
+            "type": "String!"
+          }
+        ],
+        "type": "mutation",
+        "kind": "asynchronous"
+      }
+    },
+    {
+      "name": "create_user_transformed",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/create-user",
+        "output_type": "UserId",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "email",
+            "type": "String!"
+          },
+          {
+            "name": "name",
+            "type": "String!"
+          }
+        ],
+        "request_transform": {
+          "body": {
+            "action": "transform",
+            "template": "{\n  \"input\": {\n    \"email\": \"foo@bar.com\",\n    \"name\": \"notClarke\"\n  }\n}\n"
+          },
+          "template_engine": "Kriti",
+          "version": 2
+        },
+        "type": "mutation",
+        "kind": "asynchronous"
+      }
+    },
+    {
+      "name": "test_async_action_error_response",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/test-action-user-role-async",
+        "output_type": "UserId",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "type": "mutation",
+        "kind": "asynchronous"
+      },
+      "permissions": [
+        {
+          "role": "user"
+        }
+      ]
+    }
+  ],
+  "custom_types": {
+    "objects": [
+      {
+        "name": "UserId",
+        "fields": [
+          {
+            "name": "id",
+            "type": "Int!"
+          }
+        ],
+        "relationships": [
+          {
+            "field_mapping": {
+              "id": "id"
+            },
+            "name": "user",
+            "remote_table": {
+              "name": "user",
+              "schema": "public"
+            },
+            "source": "default",
+            "type": "object"
+          }
+        ]
+      },
+      {
+        "name": "UserIdObj",
+        "fields": [
+          {
+            "name": "id",
+            "type": "Int"
+          }
+        ]
+      },
+      {
+        "name": "UserIdNested",
+        "fields": [
+          {
+            "name": "userObj",
+            "type": "UserIdObj"
+          }
+        ]
+      }
+    ]
+  }
+}

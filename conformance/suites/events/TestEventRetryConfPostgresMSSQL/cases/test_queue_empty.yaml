@@ -1,0 +1,11 @@
+upstream:
+  file: test_events.py
+  class: TestEventRetryConfPostgresMSSQL
+  method: test_queue_empty
+  by_hand: true
+steps:
+- description: no event
+  url: '{{helper:events_webhook}}/__next_event?timeout=3'
+  status: 404
+  response:
+    error: no event

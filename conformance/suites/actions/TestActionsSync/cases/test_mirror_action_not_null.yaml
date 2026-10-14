@@ -1,0 +1,55 @@
+upstream:
+  file: test_actions.py
+  class: TestActionsSync
+  method: test_mirror_action_not_null
+  fixtures:
+  - queries/actions/sync/mirror_action_not_null.yaml
+steps:
+- description: Null value for non-null output field
+  url: /v1/graphql
+  status: 200
+  query:
+    variables:
+      id: null
+      name: Alice
+    query: |
+      mutation ($id: ID, $name: String) {
+        mirror(arg: {id: $id, name: $name}){
+          id
+          name
+        }
+      }
+  response:
+    errors:
+    - message: expecting not null value for field "id"
+      extensions:
+        path: $
+        code: unexpected
+        internal:
+          error: unexpected response
+          request:
+            action:
+              name: mirror
+            input:
+              arg:
+                id: null
+                name: Alice
+            request_query: |
+              mutation ($id: ID, $name: String) {
+                mirror(arg: {id: $id, name: $name}){
+                  id
+                  name
+                }
+              }
+            transformed_request: null
+            url: '{{ACTION_WEBHOOK_HANDLER}}/mirror-action'
+          response:
+            body:
+              id: null
+              name: Alice
+            headers:
+            - name: Content-Type
+              value: application/json
+            - name: Set-Cookie
+              value: abcd
+            status: 200

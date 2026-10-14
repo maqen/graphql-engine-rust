@@ -1,0 +1,106 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "test_t1",
+            "schema": "hge_tests"
+          },
+          "event_triggers": [
+            {
+              "name": "t1_retry",
+              "definition": {
+                "delete": {
+                  "columns": "*"
+                },
+                "enable_manual": false,
+                "insert": {
+                  "columns": "*"
+                },
+                "update": {
+                  "columns": "*"
+                }
+              },
+              "retry_conf": {
+                "interval_sec": 1,
+                "num_retries": 4
+              },
+              "webhook": "{{EVENT_WEBHOOK_HANDLER}}/fail"
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "test_t2",
+            "schema": "hge_tests"
+          },
+          "event_triggers": [
+            {
+              "name": "t2_timeout_short",
+              "definition": {
+                "delete": {
+                  "columns": "*"
+                },
+                "enable_manual": false,
+                "insert": {
+                  "columns": "*"
+                },
+                "update": {
+                  "columns": "*"
+                }
+              },
+              "retry_conf": {
+                "interval_sec": 1,
+                "num_retries": 2,
+                "timeout_sec": 1
+              },
+              "webhook": "{{EVENT_WEBHOOK_HANDLER}}/sleep_2s"
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "test_t3",
+            "schema": "hge_tests"
+          },
+          "event_triggers": [
+            {
+              "name": "t3_timeout_long",
+              "definition": {
+                "delete": {
+                  "columns": "*"
+                },
+                "enable_manual": false,
+                "insert": {
+                  "columns": "*"
+                },
+                "update": {
+                  "columns": "*"
+                }
+              },
+              "retry_conf": {
+                "interval_sec": 2,
+                "num_retries": 0,
+                "timeout_sec": 10
+              },
+              "webhook": "{{EVENT_WEBHOOK_HANDLER}}/sleep_2s"
+            }
+          ]
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

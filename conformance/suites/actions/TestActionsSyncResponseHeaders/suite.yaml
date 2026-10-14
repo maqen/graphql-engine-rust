@@ -1,0 +1,12 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_actions.py::TestActionsSyncResponseHeaders
+upstream:
+  file: test_actions.py
+  class: TestActionsSyncResponseHeaders
+  dir: queries/actions/sync
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  ACTION_WEBHOOK_HANDLER: '{{helper:actions_webhook}}'
+helpers:
+- actions_webhook
+isolation: data

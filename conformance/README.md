@@ -86,6 +86,24 @@ An expected value of `'{{any}}'` matches anything, for the parts of a response t
 does not produce deterministically and upstream does not check (such as the order of
 inconsistencies under `internal`).
 
+Two step options serve asynchronous results (async actions):
+
+```yaml
+- url: /v1/graphql
+  query: {query: 'mutation { create_user(email: "a@b.c", name: "A") }'}
+  response: {data: {create_user: '{{any}}'}}
+  capture: {action_id: /data/create_user}      # JSON pointer into the response
+- url: /v1/graphql
+  query: {query: 'query ($id: uuid!) { create_user(id: $id) { id } }', variables: {id: '{{var:action_id}}'}}
+  response: {data: {create_user: {id: '{{var:action_id}}'}}}
+  retry_for: 10                                # resend until it matches, for up to 10 s
+```
+
+`{{var:<name>}}` is replaced by the captured value in the later HTTP steps of the case (a
+string that is only the placeholder becomes the value itself, number or string; an unknown
+name is an error). Recording writes the captured step's value as `'{{any}}'`, and the
+placeholder back wherever a later response body or listed header equals a captured string.
+
 ### Helper servers
 
 Upstream's tests-py runs webhooks and GraphQL services next to the engine (auth webhooks,
@@ -110,6 +128,16 @@ Each slot starts a helper the first time one of its suites needs it and keeps it
 finishes, so engines are still reused across suites. A helper that died is started again on a
 new port, which restarts the engine too. Helper output is appended to
 `$TMPDIR/hge-conformance-<slot>-<name>.log`, which is kept after the run.
+
+A step whose `url` is absolute (`{{helper:events_webhook}}/__next_event`) goes to that server
+instead of the engine: that is how cases read what a helper received. The event webhook
+answers `GET /__next_event?timeout=<s>&headers=<a,b>` with the next delivery as
+`{path, body, headers}` (only the headers named) or 404 when none arrives in time, and
+`GET /__reset` empties its queue.
+
+Helpers that call back into the engine (the action handler does) find it through
+`$HGE_CONFORMANCE_ENGINE`: the path of a JSON file, `{"url": ..., "admin_secret": ...}`, that the
+runner writes for the slot's current engine before a suite's cases run.
 
 ### JWTs
 
@@ -179,23 +207,23 @@ git clone --depth 1 --branch v2.51.0 https://github.com/hasura/graphql-engine /t
 python3 conformance/tools/port_tests_py.py --upstream /tmp/hge/server/tests-py --pg-url "$CONFORMANCE_PG_URL"
 ```
 
-For each upstream test class that only needs Postgres (no webhook, JWT, remote schema or
-action servers) and whose tests only call `check_query_f`, the tool runs the upstream setup
+For each upstream test class that only needs Postgres, or also one of upstream's servers the
+tool can run as a helper (`HELPER_FIXTURES`: the action handler, the event webhook, the remote
+GraphQL server), and whose tests only call `check_query_f`, the tool runs the upstream setup
 on Hasura, snapshots it (`pg_dump`, `export_metadata`), re-applies the snapshot the way the
 runner does, and records every request's response. Upstream's YAML is used to confirm each
 response (same status, and the same body or both errors, since tests-py does not compare
 error messages); cases that disagree with it, or that answer differently on a second run,
 are left out. HTTP transport only: tests-py's websocket replay of the same fixtures is not
-ported. Classes and tests left out are listed in `upstream-coverage.yaml` with the reason;
-most need helper servers (actions, events, remote schemas, auth webhooks, JWT) that a later
-version of the runner can provide.
+ported. Classes and tests left out are listed in `upstream-coverage.yaml` with the reason.
 
 Tests that are custom Python (the websocket protocol and subscription tests in
 `test_subscriptions.py`) are translated into case files by hand, marked
 `upstream: {..., by_hand: true}`, and recorded from Hasura after checking the result against
-upstream's assertions. The tool keeps them when it regenerates a suite (list the class in
-`HAND_PORTED` so its setup is snapshotted); `subscriptions/protocol*` hold the classes that
-need no database. Use `--only <regex>` to regenerate some classes; their entries in
+upstream's assertions. Larger sets are written by scripts in `tools/hand/` (JWT expiry,
+remote schemas, event triggers, async actions), each with its own instructions. The tool
+keeps them when it regenerates a suite (list the class in `HAND_PORTED` so its setup is
+snapshotted); `subscriptions/protocol*` hold the classes that need no database. Use `--only <regex>` to regenerate some classes; their entries in
 `upstream-coverage.yaml` are updated and the others kept.
 
 The fixtures come from [hasura/graphql-engine](https://github.com/hasura/graphql-engine)

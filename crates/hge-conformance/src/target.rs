@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 use tokio_postgres::Client;
 
 use crate::db;
-use crate::helpers::Helpers;
+use crate::helpers::{self, Helpers};
 use crate::suite::{Isolation, Suite};
 
 pub const ADMIN_SECRET: &str = "conformance-admin-secret";
@@ -197,7 +197,7 @@ impl Slot {
                     )
                     .await?;
                 drop(catalog);
-                self.start_rust(&bin, suite, &md_url).await
+                self.start_rust(&bin, suite, &md_url).await?;
             }
             Target::Hasura { image } => {
                 let key = suite.engine_key();
@@ -211,9 +211,15 @@ impl Slot {
                 .await?;
                 self.create_source(suite).await?;
                 self.metadata_api(json!({"type": "replace_metadata", "args": suite.metadata}))
-                    .await
+                    .await?;
             }
         }
+        if !suite.config.helpers.is_empty() {
+            // Helpers that call the engine back (the actions handler) read where it is.
+            let info = json!({"url": self.base_url(), "admin_secret": self.admin_secret});
+            std::fs::write(helpers::engine_file(&self.name()), info.to_string())?;
+        }
+        Ok(())
     }
 
     async fn create_source(&self, suite: &Suite) -> Result<()> {
@@ -423,6 +429,7 @@ impl Slot {
     pub async fn finish(&mut self) {
         self.stop().await;
         self.helpers.stop_all().await;
+        let _ = std::fs::remove_file(helpers::engine_file(&self.name()));
         for db in [self.src_db(), self.md_db()] {
             let _ = self
                 .admin

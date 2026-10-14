@@ -1,0 +1,51 @@
+upstream:
+  file: test_actions.py
+  class: TestCreateActionNestedTypeWithRelation
+  method: test_create_sync_action_with_nested_output_and_nested_relation
+  fixtures:
+  - queries/actions/nested-relation/create_sync_action_with_nested_output_and_nested_relation.yaml
+steps:
+- description: Create an action with PG scalars in input arguments
+  url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: set_custom_types
+      args:
+        objects:
+        - name: UserId
+          fields:
+          - name: id
+            type: Int!
+          relationships:
+          - name: user
+            type: object
+            remote_table: user
+            field_mapping:
+              id: id
+        - name: UserIdObj
+          fields:
+          - name: user_id
+            type: UserId
+    - type: create_action
+      args:
+        name: action_create
+        definition:
+          kind: synchronous
+          arguments:
+          - name: someInput
+            type: String!
+          output_type: UserIdObj
+          handler: http://some.random/endpoint
+    - type: drop_action
+      args:
+        name: action_create
+        clear_data: true
+    - type: set_custom_types
+      args: {}
+  response:
+  - message: success
+  - message: success
+  - message: success
+  - message: success

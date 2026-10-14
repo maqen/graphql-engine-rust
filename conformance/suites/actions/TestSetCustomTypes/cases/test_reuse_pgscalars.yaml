@@ -1,0 +1,35 @@
+upstream:
+  file: test_actions.py
+  class: TestSetCustomTypes
+  method: test_reuse_pgscalars
+  fixtures:
+  - queries/actions/custom-types/reuse_pgscalars.yaml
+steps:
+- description: Set custom types with Postgres scalars
+  url: /v1/query
+  status: 200
+  query:
+    type: set_custom_types
+    args:
+      objects:
+      - name: User
+        fields:
+        - name: user_id
+          type: uuid!
+        - name: location
+          type: geography
+        relationships:
+        - name: user
+          type: object
+          remote_table: user
+          field_mapping:
+            user_id: id
+      input_objects:
+      - name: UserInput
+        fields:
+        - name: name
+          type: String!
+        - name: id
+          type: uuid!
+  response:
+    message: success

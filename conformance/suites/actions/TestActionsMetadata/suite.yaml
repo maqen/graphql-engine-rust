@@ -1,0 +1,12 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_actions.py::TestActionsMetadata
+upstream:
+  file: test_actions.py
+  class: TestActionsMetadata
+  dir: queries/actions/metadata
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  ACTION_WEBHOOK_HANDLER: '{{helper:actions_webhook}}'
+helpers:
+- actions_webhook
+isolation: none

@@ -1,0 +1,28 @@
+upstream:
+  file: test_actions.py
+  class: TestQueryActions
+  method: test_query_action_extensions_code_toplevel_empty_extensions_fail
+  fixtures:
+  - queries/actions/sync/extensions_code_toplevel_empty_extensions.yaml
+steps:
+- description: Run get_user_by_email query action with invalid email
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query {
+        intentional_error(
+          blob: {
+            message: "intentionally generated error"
+            code: "toplevel-error"
+            extensions: { foo: "bar" }
+          }
+        ) {
+          id
+        }
+      }
+  response:
+    errors:
+    - message: intentionally generated error
+      extensions:
+        foo: bar
