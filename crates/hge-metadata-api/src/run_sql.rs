@@ -373,6 +373,9 @@ pub async fn run_checked<R: Runtime>(ctx: &mut Ctx<'_, R>, args: &RunSql) -> Api
         return Err(e);
     }
     tx.commit().await.map_err(|e| sql_error(e, "COMMIT"))?;
+    if let Some(prepared) = &ctx.prepared {
+        ctx.rt.after_commit(prepared).await;
+    }
     Ok(result)
 }
 

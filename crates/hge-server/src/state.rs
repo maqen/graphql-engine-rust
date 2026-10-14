@@ -330,6 +330,12 @@ impl Runtime for Engine {
         }
     }
 
+    async fn after_commit(&self, prepared: &Prepared) {
+        for sync in prepared.trigger_sync.iter() {
+            sync.run_deferred().await;
+        }
+    }
+
     async fn post_drop_source(&self, source: &hge_metadata::Source, pg: Arc<PgSource>) {
         let triggers: Vec<String> = source
             .tables

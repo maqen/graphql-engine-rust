@@ -199,6 +199,14 @@ pub trait Runtime: Send + Sync {
     /// Atomically swap in a prepared state. In-flight requests finish on the old one.
     fn install(&self, prepared: Self::Prepared, metadata: Metadata, resource_version: i64);
 
+    /// After the `run_sql` transaction whose catalog `prepared` was built from has
+    /// committed: apply what had to wait for it (the event triggers' SQL, which needs locks
+    /// that transaction held). Failures are only logged.
+    fn after_commit(&self, prepared: &Self::Prepared) -> impl Future<Output = ()> + Send {
+        let _ = prepared;
+        async {}
+    }
+
     /// After `pg_drop_source`: remove the event trigger SQL and catalog the engine created in
     /// the source's database (V2's `postDropSourceHook`). Failures are only logged. Like V2,
     /// it runs after the consistency check but before the new metadata is persisted.

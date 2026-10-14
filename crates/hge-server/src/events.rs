@@ -62,9 +62,11 @@ pub async fn prepare(
     metadata: &Metadata,
     tables: &Tables,
     sources: &HashMap<String, Arc<PgSource>>,
+    deferred: &HashSet<String>,
     config: &ServerConfig,
-) -> (EventTriggers, Vec<InconsistentObject>) {
+) -> (EventTriggers, Vec<PendingSync>, Vec<InconsistentObject>) {
     let mut inconsistencies = vec![];
+    let mut pending = vec![];
     let mut out = EventTriggers::default();
     for source in &metadata.sources {
         let Some(pg) = sources.get(&source.name) else {
@@ -161,61 +163,41 @@ pub async fn prepare(
                 }
             }
         }
-        if !config.events.disable_eventing && !triggers.is_empty() {
+        if !config.events.disable_eventing {
             let schema = source
                 .configuration
                 .extra
                 .get("extensions_schema")
                 .and_then(|v| v.as_str())
-                .unwrap_or("public");
-            if let Err(e) = catalog::init_source_catalog(pg.pool(), schema).await {
-                inconsistencies.push(source_issue(
-                    source,
-                    format!("could not prepare the event trigger catalog: {e}"),
-                ));
-                continue;
-            }
-        }
-        if !config.events.disable_eventing {
-            match catalog::sync_triggers(pg.pool(), &ddl, &keep).await {
-                Ok(report) => {
-                    for (name, e) in &report.errors {
-                        triggers.remove(name);
-                        inconsistencies.push(source_issue(
-                            source,
-                            format!("in event trigger \"{name}\": {e}"),
-                        ));
+                .unwrap_or("public")
+                .to_owned();
+            let sync = PendingSync {
+                source: source.name.clone(),
+                pool: pg.pool().clone(),
+                extensions_schema: schema,
+                init_catalog: !triggers.is_empty(),
+                ddl,
+                keep,
+            };
+            if deferred.contains(&source.name) {
+                // Read inside a `run_sql` transaction that may still hold locks on the
+                // tables these triggers are on: sync once it has committed.
+                pending.push(sync);
+            } else {
+                match sync.run().await {
+                    Ok(errors) => {
+                        for (name, e) in errors {
+                            triggers.remove(&name);
+                            inconsistencies.push(source_issue(
+                                source,
+                                format!("in event trigger \"{name}\": {e}"),
+                            ));
+                        }
                     }
-                    if !report.removed.is_empty() {
-                        info!(
-                            target: "startup",
-                            source = %source.name,
-                            removed = ?report.removed,
-                            "dropped event triggers no longer in metadata and archived their events"
-                        );
+                    Err(e) => {
+                        inconsistencies.push(source_issue(source, e));
+                        continue;
                     }
-                    if report.functions_written
-                        + report.triggers_created
-                        + report.functions_dropped
-                        + report.triggers_dropped
-                        > 0
-                    {
-                        info!(
-                            target: "startup",
-                            source = %source.name,
-                            functions_written = report.functions_written,
-                            triggers_created = report.triggers_created,
-                            functions_dropped = report.functions_dropped,
-                            "event triggers installed"
-                        );
-                    }
-                }
-                Err(e) => {
-                    inconsistencies.push(source_issue(
-                        source,
-                        format!("could not create event triggers: {e}"),
-                    ));
-                    continue;
                 }
             }
         }
@@ -225,7 +207,71 @@ pub async fn prepare(
             triggers,
         }));
     }
-    (out, inconsistencies)
+    (out, pending, inconsistencies)
+}
+
+/// Making a source's installed SQL triggers match its metadata: the event catalog (when it
+/// has triggers) and `sync_triggers`.
+#[derive(Clone)]
+pub struct PendingSync {
+    source: String,
+    pool: deadpool_postgres::Pool,
+    extensions_schema: String,
+    init_catalog: bool,
+    ddl: Vec<catalog::TriggerDdl>,
+    keep: HashSet<String>,
+}
+
+impl PendingSync {
+    /// Returns the triggers whose DDL failed, or the source's error.
+    async fn run(&self) -> Result<Vec<(String, catalog::DdlError)>, String> {
+        if self.init_catalog {
+            catalog::init_source_catalog(&self.pool, &self.extensions_schema)
+                .await
+                .map_err(|e| format!("could not prepare the event trigger catalog: {e}"))?;
+        }
+        let report = catalog::sync_triggers(&self.pool, &self.ddl, &self.keep)
+            .await
+            .map_err(|e| format!("could not create event triggers: {e}"))?;
+        if !report.removed.is_empty() {
+            info!(
+                target: "startup",
+                source = %self.source,
+                removed = ?report.removed,
+                "dropped event triggers no longer in metadata and archived their events"
+            );
+        }
+        if report.functions_written
+            + report.triggers_created
+            + report.functions_dropped
+            + report.triggers_dropped
+            > 0
+        {
+            info!(
+                target: "startup",
+                source = %self.source,
+                functions_written = report.functions_written,
+                triggers_created = report.triggers_created,
+                functions_dropped = report.functions_dropped,
+                "event triggers installed"
+            );
+        }
+        Ok(report.errors)
+    }
+
+    /// Run a deferred sync; failures are only logged (the metadata change is committed).
+    pub async fn run_deferred(&self) {
+        match self.run().await {
+            Ok(errors) => {
+                for (name, e) in errors {
+                    warn!(target: "startup", source = %self.source, trigger = %name, error = %e, "could not install event trigger");
+                }
+            }
+            Err(e) => {
+                warn!(target: "startup", source = %self.source, error = %e, "could not install event triggers")
+            }
+        }
+    }
 }
 
 /// Columns a trigger listens to or sends in its payload; each must exist.
