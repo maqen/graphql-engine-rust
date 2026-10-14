@@ -222,18 +222,27 @@ const INSTALLED_TRIGGERS_SQL: &str = "SELECT t.tgname::text, tn.nspname::text, c
      AND t.tgname LIKE 'notify\\_hasura\\_%'";
 
 /// Identifies the database a pool connects to, so sources that share one can share the set
-/// of triggers [`sync_triggers`] keeps: (server address, port, database name).
-const DATABASE_ID_SQL: &str = "SELECT coalesce(host(inet_server_addr()), '') || ':' || \
+/// of triggers [`sync_triggers`] keeps: the cluster's system identifier and the database oid,
+/// which do not depend on how the source connects (socket or TCP, host name or address).
+const DATABASE_ID_SQL: &str = "SELECT (SELECT system_identifier FROM pg_control_system())::text \
+     || '/' || (SELECT oid FROM pg_database WHERE datname = current_database())::text";
+
+/// For roles that may not call `pg_control_system()`: the server address and database name.
+/// The same database reached over different addresses does not match.
+const DATABASE_ADDR_SQL: &str = "SELECT coalesce(host(inet_server_addr()), '') || ':' || \
      coalesce(inet_server_port()::text, '') || '/' || current_database()::text";
 
 /// The database `pool` connects to, as a comparable key. Two sources with the same key manage
 /// SQL triggers in the same `hdb_catalog`.
 pub async fn database_id(pool: &Pool) -> Result<String, DdlError> {
     let client = pool.get().await.map_err(|e| e.to_string())?;
-    let row = client
-        .query_one(DATABASE_ID_SQL, &[])
-        .await
-        .map_err(pg_err)?;
+    let row = match client.query_one(DATABASE_ID_SQL, &[]).await {
+        Ok(row) => row,
+        Err(_) => client
+            .query_one(DATABASE_ADDR_SQL, &[])
+            .await
+            .map_err(pg_err)?,
+    };
     Ok(row.get(0))
 }
 

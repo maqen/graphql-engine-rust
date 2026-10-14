@@ -311,39 +311,59 @@ fn metadata_trigger_names(source: &hge_metadata::Source) -> impl Iterator<Item =
         .map(|raw| raw.get("name").and_then(|v| v.as_str()).unwrap_or(""))
 }
 
-/// For each source, the event trigger names of the other sources connected to the same
+/// For each source, the event trigger names of the other sources that may share its
 /// database. Each source prunes the trigger functions it does not know, so without these two
-/// sources on one database would drop each other's functions on every load. A source whose
-/// database cannot be identified shares with nobody.
+/// sources on one database would drop each other's functions (and archive their pending
+/// events) on every load. A source whose database cannot be identified, or that did not
+/// connect, may share any database, so then every source keeps every other's triggers.
 async fn neighbour_triggers<'a>(
     metadata: &'a Metadata,
     sources: &HashMap<String, Arc<PgSource>>,
 ) -> HashMap<&'a str, HashSet<String>> {
+    let mut out = HashMap::new();
+    if metadata.sources.len() < 2 {
+        return out;
+    }
     let mut by_database: HashMap<String, Vec<&hge_metadata::Source>> = HashMap::new();
+    let mut unknown = vec![];
     for source in &metadata.sources {
         let Some(pg) = sources.get(&source.name) else {
+            // It does not sync; only its triggers matter to the others.
+            if metadata_trigger_names(source).next().is_some() {
+                unknown.push(source);
+            }
             continue;
         };
         match catalog::database_id(pg.pool()).await {
             Ok(id) => by_database.entry(id).or_default().push(source),
-            Err(e) => warn!(
-                target: "startup",
-                source = %source.name,
-                error = %e,
-                "could not identify the source's database"
-            ),
+            Err(e) => {
+                warn!(
+                    target: "startup",
+                    source = %source.name,
+                    error = %e,
+                    "could not identify the source's database"
+                );
+                unknown.push(source);
+            }
         }
     }
-    let mut out = HashMap::new();
-    for group in by_database.values().filter(|g| g.len() > 1) {
+    let groups: Vec<Vec<&hge_metadata::Source>> = if unknown.is_empty() {
+        by_database.into_values().collect()
+    } else {
+        // Any source may share a database with one we could not identify.
+        vec![metadata.sources.iter().collect()]
+    };
+    for group in &groups {
         for source in group {
-            let names = group
+            let names: HashSet<String> = group
                 .iter()
                 .filter(|other| other.name != source.name)
                 .flat_map(|other| metadata_trigger_names(other))
                 .map(str::to_owned)
                 .collect();
-            out.insert(source.name.as_str(), names);
+            if !names.is_empty() {
+                out.insert(source.name.as_str(), names);
+            }
         }
     }
     out

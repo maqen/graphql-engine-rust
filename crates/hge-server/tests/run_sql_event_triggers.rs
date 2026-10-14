@@ -124,3 +124,73 @@ async fn dropping_trigger_objects_does_not_hang() {
     assert_eq!(status, 200, "{r}");
     assert_eq!(functions(&router).await, ["notify_hasura_t_all_UPDATE"]);
 }
+
+/// Two sources on one database each prune the `notify_hasura_*` functions they don't know;
+/// neither may drop the other's.
+#[tokio::test(flavor = "multi_thread")]
+async fn sources_on_one_database_keep_each_others_triggers() {
+    let Some(db) = hge_testdb::TestDb::create("shared_db_event_triggers").await else {
+        eprintln!("HASURA_GRAPHQL_DATABASE_URL not set; skipping");
+        return;
+    };
+    let config = ServerConfig {
+        database_url: Some(db.url().to_owned()),
+        ..ServerConfig::default()
+    };
+    let engine = hge_server::build_engine(config).await.unwrap();
+    let router = hge_server::routes::router(engine);
+
+    let (status, r) = run_sql(
+        &router,
+        "CREATE TABLE a (id int PRIMARY KEY); CREATE TABLE b (id int PRIMARY KEY);",
+        false,
+    )
+    .await;
+    assert_eq!(status, 200, "{r}");
+    let source = |name: &str, table: &str, trigger: &str| {
+        json!({"name": name, "kind": "postgres",
+               "configuration": {"connection_info": {"database_url": db.url()}},
+               "tables": [{"table": {"schema": "public", "name": table},
+                           "event_triggers": [{"name": trigger, "webhook": "http://127.0.0.1:1",
+                               "retry_conf": {"num_retries": 0, "interval_sec": 10, "timeout_sec": 60},
+                               "definition": {"insert": {"columns": "*"}}}]}]})
+    };
+    let metadata = json!({"version": 3, "sources": [
+        source("default", "a", "a_ins"),
+        source("other", "b", "b_ins"),
+    ]});
+    let (status, r) = send(
+        &router,
+        "/v1/metadata",
+        json!({"type": "replace_metadata", "args": metadata}),
+    )
+    .await;
+    assert_eq!(status, 200, "{r}");
+    let expected = ["notify_hasura_a_ins_INSERT", "notify_hasura_b_ins_INSERT"];
+    assert_eq!(functions(&router).await, expected);
+
+    // A reload syncs each source again.
+    let (status, r) = send(
+        &router,
+        "/v1/metadata",
+        json!({"type": "reload_metadata", "args": {}}),
+    )
+    .await;
+    assert_eq!(status, 200, "{r}");
+    assert_eq!(functions(&router).await, expected);
+
+    // A neighbour that cannot connect may still be on this database: keep its triggers.
+    let mut broken = source("other", "b", "b_ins");
+    broken["configuration"]["connection_info"]["database_url"] =
+        json!(format!("postgres://nobody:wrong@127.0.0.1:1/{}", db.name()));
+    let metadata = json!({"version": 3, "sources": [source("default", "a", "a_ins"), broken]});
+    let (status, r) = send(
+        &router,
+        "/v1/metadata",
+        json!({"type": "replace_metadata",
+               "args": {"metadata": metadata, "allow_inconsistent_metadata": true}}),
+    )
+    .await;
+    assert_eq!(status, 200, "{r}");
+    assert_eq!(functions(&router).await, expected);
+}
