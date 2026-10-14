@@ -154,6 +154,9 @@ def run_console_scenario(engine: run.Engine, args, work: Path) -> dict[str, dict
     results: dict[str, dict] = {}
     try:
         deploy(ctx)
+        # The Browse pages read `pg_class.reltuples`, which is -1 until the table is analysed
+        # and otherwise depends on when autovacuum got to it.
+        run.psql(db_url, "ANALYZE")
         with sync_playwright() as p:
             browser = p.chromium.launch(executable_path=args.chromium or None)
             context = browser.new_context(viewport={"width": 1400, "height": 900})
@@ -172,6 +175,8 @@ def run_console_scenario(engine: run.Engine, args, work: Path) -> dict[str, dict
                 page.locator(LOGIN).wait_for(state="detached", timeout=30000)
             except Exception as e:
                 raise RuntimeError("the console did not accept the admin secret") from e
+            page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(2000)  # late requests of the login page stay out of step one
             page.wait_for_load_state("networkidle")
             recorder.take()
             for step_id, path in PAGES:
