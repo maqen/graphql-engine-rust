@@ -229,6 +229,11 @@ pub enum FieldKind {
     },
     ObjectRelationship(Arc<RelationshipInfo>),
     ArrayRelationship(Arc<RelationshipInfo>),
+    /// A relationship onto a native query (of a table or another native query).
+    NativeQueryRelationship {
+        rel: Arc<RelationshipInfo>,
+        native_query: Arc<crate::native::NativeQueryInfo>,
+    },
     /// A computed field (scalar or table-returning).
     ComputedField(Arc<ComputedFieldInfo>),
     /// A tracked function's root field (query or mutation).

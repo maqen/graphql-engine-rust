@@ -291,7 +291,7 @@ impl Lowerer<'_> {
                         };
                         err400(code, message, &rel_path.key("name"))
                     })?;
-                    let target = self.rel_target(rel)?;
+                    let target = self.rel_target(rel, "convSelCol")?;
                     self.relationship_permission(rel, target, &rel_path)?;
                     out.push(ExtCol::Relationship {
                         name: name.clone(),
@@ -349,7 +349,7 @@ impl Lowerer<'_> {
             .iter()
             .chain(table.array_relationships.iter())
         {
-            let target = self.rel_target(rel)?;
+            let target = self.rel_target(rel, "convWildcard")?;
             let Some(target_perm) = hge_schema::permissions::table_permissions(target, self.role)
                 .and_then(|p| p.select.as_ref())
             else {
@@ -431,7 +431,7 @@ impl Lowerer<'_> {
                     let rel = table
                         .relationship_by_name(&name)
                         .expect("checked in resolve_star");
-                    let target = self.rel_target(rel)?;
+                    let target = self.rel_target(rel, "convSelCol")?;
                     let target_perm = self.relationship_permission(rel, target, &col_path)?;
                     let nested_columns =
                         self.resolve_star(target, target_perm, &body, &col_path)?;
@@ -554,7 +554,7 @@ impl Lowerer<'_> {
                 path,
             ));
         }
-        let target = self.rel_target(rel)?;
+        let target = self.rel_target(rel, "convOrderByElem")?;
         let target_perm = self.relationship_permission(rel, target, path)?;
         let inner = self.order_by_target(target, target_perm, rest, path)?;
         Ok(OrderByTarget::ObjectRelationship {

@@ -881,8 +881,9 @@ fn check_required_fields(
     for (fname, fdef) in &obj.fields {
         if fdef.ty.is_non_null() && fdef.default_value.is_none() && !given.contains_key(fname) {
             return Err(
+                // V2 points at the missing field.
                 Error::validation(format!("missing required field '{fname}'"))
-                    .with_path(path.to_owned()),
+                    .with_path(format!("{path}.{fname}")),
             );
         }
     }

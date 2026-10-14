@@ -510,18 +510,18 @@ pub(crate) fn relationship_target(
             }
             ObjectRelUsing::Manual {
                 manual_configuration,
-            } => Some(manual_configuration.remote_table.clone()),
+            } => manual_configuration.remote_table.clone(),
         };
     }
     let r = entry.array_relationships.iter().find(|r| r.name == name)?;
-    Some(match &r.using {
+    match &r.using {
         ArrayRelUsing::ForeignKey {
             foreign_key_constraint_on,
-        } => foreign_key_constraint_on.table.clone(),
+        } => Some(foreign_key_constraint_on.table.clone()),
         ArrayRelUsing::Manual {
             manual_configuration,
         } => manual_configuration.remote_table.clone(),
-    })
+    }
 }
 
 /// What the boolean expressions of a permission use.

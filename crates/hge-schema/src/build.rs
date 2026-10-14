@@ -16,7 +16,7 @@ use crate::model::*;
 use crate::native::NativeQueryInfo;
 use crate::permissions::{SelectAccess, select_access};
 use crate::scalars::{self, BUILTIN_SCALARS};
-use crate::tables::{RelationshipInfo, TableInfo, Tables};
+use crate::tables::{RelKind, RelationshipInfo, TableInfo, Tables};
 
 /// Engine options that change the schema or the lowering.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -183,6 +183,8 @@ fn build_schema(
         tables,
         access,
         scalars: BTreeSet::new(),
+        unused_model_objects: HashSet::new(),
+        native_query_types: HashSet::new(),
     };
     for name in BUILTIN_SCALARS {
         b.scalars.insert((*name).to_owned());
@@ -284,6 +286,12 @@ pub(crate) struct Builder<'a> {
     pub(crate) tables: &'a Tables,
     pub(crate) access: &'a HashMap<(Arc<str>, QualifiedTable), SelectAccess>,
     pub(crate) scalars: BTreeSet<String>,
+    /// Logical model object types built only for their bool_exp, order_by and enum types
+    /// (native queries with relationships have their own object type): dropped at the end
+    /// unless something else uses them.
+    pub(crate) unused_model_objects: HashSet<String>,
+    /// Object types of native queries with relationships, built or being built.
+    native_query_types: HashSet<String>,
 }
 
 impl Builder<'_> {
@@ -480,6 +488,23 @@ impl Builder<'_> {
         }
         self.ensure_order_by_enum();
 
+        for rel in table
+            .object_relationships
+            .iter()
+            .chain(&table.array_relationships)
+        {
+            if rel.native_query.is_none() {
+                continue;
+            }
+            // V2 offers no ordering (nor aggregates) by a relationship onto a native query.
+            if let Some((field, bool_exp_ty)) = self.native_query_relationship_field(rel) {
+                obj.fields.insert(rel.name.clone(), field);
+                bool_exp.fields.insert(
+                    rel.name.clone(),
+                    InputValueDef::new(rel.name.clone(), TypeRef::named(bool_exp_ty)),
+                );
+            }
+        }
         for rel in table.object_relationships.clone() {
             let Some(target) = self.target(&rel) else {
                 continue;
@@ -680,45 +705,167 @@ impl Builder<'_> {
         if self.access(&model).is_none() {
             return;
         }
-        self.ensure_table_types(&model);
-        let mut field = FieldDef::new(
+        let ty = self.ensure_native_query_type(nq, &model);
+        let field = FieldDef::new(
             nq.root_field.clone(),
-            TypeRef::nn_list_nn(model.type_name()),
+            TypeRef::nn_list_nn(ty),
             FieldKind::NativeQuery(nq.clone()),
         )
         .describe_opt(nq.description.clone());
-        if !nq.arguments.is_empty() {
-            let name = nq.arguments_type_name();
-            if !self.schema.types.contains_key(&name) {
-                let mut fields = IndexMap::new();
-                for (arg_name, arg) in &nq.arguments {
-                    self.note_scalar(&arg.ty);
-                    let description = arg
-                        .description
-                        .clone()
-                        .unwrap_or_else(|| format!("Native Query argument {arg_name}"));
-                    fields.insert(
-                        arg_name.clone(),
-                        InputValueDef::new(
-                            arg_name.clone(),
-                            scalars::column_type_ref(&arg.ty, arg.nullable),
-                        )
-                        .describe(description)
-                        .for_column(),
-                    );
-                }
-                self.schema.add(TypeDef::InputObject(InputObjectDef {
-                    name: name.clone(),
-                    description: Some(nq.arguments_description()),
-                    fields,
-                }));
-            }
-            field = field.arg(
-                InputValueDef::new("args", TypeRef::nn(name)).describe(nq.arguments_description()),
-            );
-        }
+        let field = self.with_native_query_args(field, nq, &nq.root_field);
         let field = self.with_select_args(field, &model);
         root.fields.insert(field.name.clone(), field);
+    }
+
+    /// The `args` argument of a field selecting from a native query with arguments, of type
+    /// `<field>_arguments`.
+    fn with_native_query_args(
+        &mut self,
+        field: FieldDef,
+        nq: &NativeQueryInfo,
+        field_name: &str,
+    ) -> FieldDef {
+        if nq.arguments.is_empty() {
+            return field;
+        }
+        let name = crate::native::arguments_type_name(field_name);
+        let description = crate::native::arguments_description(field_name);
+        if !self.schema.types.contains_key(&name) {
+            let mut fields = IndexMap::new();
+            for (arg_name, arg) in &nq.arguments {
+                self.note_scalar(&arg.ty);
+                let description = arg
+                    .description
+                    .clone()
+                    .unwrap_or_else(|| format!("Native Query argument {arg_name}"));
+                fields.insert(
+                    arg_name.clone(),
+                    InputValueDef::new(
+                        arg_name.clone(),
+                        scalars::column_type_ref(&arg.ty, arg.nullable),
+                    )
+                    .describe(description)
+                    .for_column(),
+                );
+            }
+            self.schema.add(TypeDef::InputObject(InputObjectDef {
+                name: name.clone(),
+                description: Some(description.clone()),
+                fields,
+            }));
+        }
+        field.arg(InputValueDef::new("args", TypeRef::nn(name)).describe(description))
+    }
+
+    /// The object type of a native query's rows (see [`NativeQueryInfo::object_type_name`]),
+    /// with the logical model's types.
+    fn ensure_native_query_type(
+        &mut self,
+        nq: &Arc<NativeQueryInfo>,
+        model: &Arc<TableInfo>,
+    ) -> String {
+        let model_type_existed = self.schema.types.contains_key(model.type_name());
+        self.ensure_table_types(model);
+        let name = nq.object_type_name(model).to_owned();
+        if !nq.has_relationships() {
+            self.unused_model_objects.remove(model.type_name());
+            return name;
+        }
+        // An inline model's object type has the native query's name, so it is replaced here.
+        let shares_model_type = name == model.type_name();
+        if !model_type_existed && !shares_model_type {
+            self.unused_model_objects
+                .insert(model.type_name().to_owned());
+        }
+        if !self.native_query_types.insert(name.clone())
+            || (!shares_model_type && self.schema.types.contains_key(&name))
+        {
+            return name;
+        }
+        let fields = match self.schema.types.get(model.type_name()) {
+            Some(TypeDef::Object(obj)) => obj.fields.clone(),
+            _ => IndexMap::new(),
+        };
+        // Reserve the name first so recursive relationships terminate.
+        self.schema.add(TypeDef::Object(ObjectDef::new(
+            &name,
+            model.description.clone(),
+        )));
+        let mut obj = ObjectDef::new(&name, model.description.clone());
+        obj.fields = fields;
+        let rels = nq.object_relationships.iter();
+        for rel in rels.chain(nq.array_relationships.iter()) {
+            let field = if rel.native_query.is_some() {
+                self.native_query_relationship_field(rel).map(|(f, _)| f)
+            } else {
+                self.table_relationship_field(rel)
+            };
+            if let Some(field) = field {
+                obj.fields.insert(field.name.clone(), field);
+            }
+        }
+        self.schema.types.insert(name.clone(), TypeDef::Object(obj));
+        name
+    }
+
+    /// A native query's relationship onto a table: unlike a table's own relationships, with
+    /// a nullable object and without aggregates.
+    fn table_relationship_field(&mut self, rel: &Arc<RelationshipInfo>) -> Option<FieldDef> {
+        let target = self.target(rel)?;
+        self.ensure_table_types(&target);
+        Some(match rel.kind {
+            RelKind::Object => FieldDef::new(
+                rel.name.clone(),
+                TypeRef::named(target.type_name()),
+                FieldKind::ObjectRelationship(rel.clone()),
+            )
+            .describe("An object relationship"),
+            RelKind::Array => {
+                let field = FieldDef::new(
+                    rel.name.clone(),
+                    TypeRef::nn_list_nn(target.type_name()),
+                    FieldKind::ArrayRelationship(rel.clone()),
+                )
+                .describe("An array relationship");
+                self.with_select_args(field, &target)
+            }
+        })
+    }
+
+    /// A relationship onto a native query, if the role may select from its logical model,
+    /// and the model's bool_exp type (for filtering on the relationship).
+    fn native_query_relationship_field(
+        &mut self,
+        rel: &Arc<RelationshipInfo>,
+    ) -> Option<(FieldDef, String)> {
+        let target = rel.native_query.as_deref()?;
+        let nq = self
+            .tables
+            .native_queries
+            .iter()
+            .find(|q| q.source == rel.source && q.root_field == target)?
+            .clone();
+        let model = self.tables.logical_model(&nq.source, &nq.returns)?.clone();
+        self.access(&model)?;
+        let ty = self.ensure_native_query_type(&nq, &model);
+        let (ty, default_description) = match rel.kind {
+            RelKind::Object => (TypeRef::named(ty), "An object relationship"),
+            RelKind::Array => (TypeRef::nn(ty).list(), "An array relationship"),
+        };
+        let kind = FieldKind::NativeQueryRelationship {
+            rel: rel.clone(),
+            native_query: nq.clone(),
+        };
+        let field = FieldDef::new(rel.name.clone(), ty, kind).describe(
+            rel.description
+                .clone()
+                .unwrap_or_else(|| default_description.to_owned()),
+        );
+        let mut field = self.with_native_query_args(field, &nq, &rel.name);
+        if rel.kind == RelKind::Array {
+            field = self.with_select_args(field, &model);
+        }
+        Some((field, model.bool_exp_name()))
     }
 
     /// The `args` argument of a function root field (when the function has input arguments).
@@ -1000,11 +1147,14 @@ impl Builder<'_> {
             }));
         }
         // V2 lists only the types reachable from the roots: drop scalars nothing refers to
-        // (an unused `ID`, `Float`, …).
+        // (an unused `ID`, `Float`, …) and logical model objects only native query types
+        // were built from.
         let used = self.referenced_types();
-        self.schema
-            .types
-            .retain(|name, ty| !matches!(ty, TypeDef::Scalar(_)) || used.contains(name.as_str()));
+        let unused_objects = std::mem::take(&mut self.unused_model_objects);
+        self.schema.types.retain(|name, ty| {
+            let prunable = matches!(ty, TypeDef::Scalar(_)) || unused_objects.contains(name);
+            !prunable || used.contains(name.as_str())
+        });
         // V2 lists types, fields, arguments, input fields (and enum values) sorted by name.
         self.schema.types.sort_keys();
         for ty in self.schema.types.values_mut() {
