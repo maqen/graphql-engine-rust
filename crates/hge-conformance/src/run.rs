@@ -128,11 +128,7 @@ async fn http_step(
             step.status = actual.status;
             step.response = actual.body;
             for (name, value) in step.resp_headers.iter_mut() {
-                *value = actual
-                    .headers
-                    .get(name.as_str())
-                    .and_then(|v| v.to_str().ok())
-                    .map(str::to_owned);
+                *value = header_value(&actual.headers, name);
             }
             Ok(())
         }
@@ -202,6 +198,17 @@ async fn send(slot: &Slot, case: &Case, step: &HttpStep) -> Result<Actual, Strin
     })
 }
 
+/// A response header's values joined with ", " (as Python's requests reports a repeated
+/// header such as Set-Cookie); `None` when absent.
+fn header_value(headers: &reqwest::header::HeaderMap, name: &str) -> Option<String> {
+    let values: Vec<&str> = headers
+        .get_all(name)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .collect();
+    (!values.is_empty()).then(|| values.join(", "))
+}
+
 fn check(step: &HttpStep, actual: &Actual) -> Result<(), String> {
     let mut problems = vec![];
     if actual.status != step.status {
@@ -215,11 +222,8 @@ fn check(step: &HttpStep, actual: &Actual) -> Result<(), String> {
         problems.push(format!("body differs at {d}"));
     }
     for (name, want) in &step.resp_headers {
-        let got = actual
-            .headers
-            .get(name.as_str())
-            .and_then(|v| v.to_str().ok());
-        if got != want.as_deref() {
+        let got = header_value(&actual.headers, name);
+        if got.as_deref() != want.as_deref() {
             problems.push(format!("header {name}: {want:?} != {got:?}"));
         }
     }

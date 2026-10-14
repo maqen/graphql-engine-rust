@@ -1,0 +1,33 @@
+upstream:
+  by_hand: true
+  file: test_auth_webhook_cookie.py
+  class: TestWebhookHeaderCookie
+  method: test_duplicate_set_cookie_header_in_response
+admin_secret_header: false
+steps:
+- url: /v1/graphql
+  status: 200
+  headers:
+    cookie: Test
+    response-set-cookie-1: __Host-id=1; Secure; Path=/; Domain=example1.com
+    response-set-cookie-2: __Host-id=2; Secure; Path=/; Domain=example2.com
+  query:
+    query: |
+      query allUsers {
+        author {
+          id
+          name
+        }
+      }
+    operationName: allUsers
+  response:
+    data:
+      author:
+      - id: 1
+        name: Author 1
+      - id: 2
+        name: Author 2
+      - id: 3
+        name: Author 3
+  resp_headers:
+    set-cookie: __Host-id=2; Secure; Path=/; Domain=example2.com, __Host-id=1; Secure; Path=/; Domain=example1.com

@@ -207,7 +207,8 @@ async fn post(engine: &Engine, headers: &HeaderMap, body: Bytes, endpoint: Endpo
     let resp = match parsed {
         Ok(body) => run(engine, &auth.session, headers, body, endpoint, rid, log).await,
         Err(e) => {
-            let err = Error::new(Code::InvalidJson, format!("Error in $: {e}"));
+            let err = non_object_body(&body)
+                .unwrap_or_else(|| Error::new(Code::InvalidJson, format!("Error in $: {e}")));
             let mut resp = json_response(
                 endpoint.error_status(&err),
                 graphql::error_body(&err, false),
@@ -218,6 +219,23 @@ async fn post(engine: &Engine, headers: &HeaderMap, body: Bytes, endpoint: Endpo
         }
     };
     with_cookies(resp, auth.set_cookies)
+}
+
+/// V2's error for a body that is JSON but neither a request object nor a batch array.
+fn non_object_body(body: &[u8]) -> Option<Error> {
+    let kind = match serde_json::from_slice::<serde_json::Value>(body).ok()? {
+        serde_json::Value::String(_) => "String",
+        serde_json::Value::Number(_) => "Number",
+        serde_json::Value::Bool(_) => "Boolean",
+        serde_json::Value::Null => "Null",
+        serde_json::Value::Object(_) | serde_json::Value::Array(_) => return None,
+    };
+    Some(Error::new(
+        Code::ParseFailed,
+        format!(
+            "parsing Hasura.GraphQL.Transport.HTTP.Protocol.GQLReq(GQLReq) failed, expected Object, but encountered {kind}"
+        ),
+    ))
 }
 
 #[derive(Deserialize)]

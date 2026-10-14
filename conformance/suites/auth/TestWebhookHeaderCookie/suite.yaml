@@ -1,0 +1,8 @@
+description: Ported by hand from hasura/graphql-engine server/tests-py/test_auth_webhook_cookie.py::TestWebhookHeaderCookie
+admin_secret: true
+helpers:
+- cookie_auth
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_AUTH_HOOK: '{{helper:cookie_auth}}/auth'
+isolation: none

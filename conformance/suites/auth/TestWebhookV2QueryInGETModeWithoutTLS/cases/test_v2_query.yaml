@@ -1,0 +1,24 @@
+upstream:
+  by_hand: true
+  file: test_webhook.py
+  class: TestWebhookV2QueryInGETModeWithoutTLS
+  method: test_v2_query
+admin_secret_header: false
+steps:
+- description: admin through the webhook
+  url: /v2/query
+  status: 200
+  headers:
+    Authorization: Bearer eyJYLUhhc3VyYS1Sb2xlIjogImFkbWluIiwgIlgtSGFzdXJhLUF1dGgtTW9kZSI6ICJ3ZWJob29rIn0=
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - id
+      - name
+  response:
+  - id: 1
+    name: Author 1
+  - id: 2
+    name: Author 2

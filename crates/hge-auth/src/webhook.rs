@@ -195,10 +195,13 @@ impl Webhook {
         };
         let resp = request.send().await.map_err(failed)?;
         let status = resp.status();
+        // V2 returns the webhook's Set-Cookie headers last first (checked against
+        // v2.51.0-ce with a webhook sending a fixed order; see TestWebhookHeaderCookie).
         let set_cookies: Vec<HeaderValue> = resp
             .headers()
             .get_all(header::SET_COOKIE)
             .iter()
+            .rev()
             .cloned()
             .collect();
         let body = resp.bytes().await.map_err(failed)?;

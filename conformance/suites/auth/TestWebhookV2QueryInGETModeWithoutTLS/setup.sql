@@ -1,0 +1,1 @@
+../../v2-query/TestV2SelectBasic/setup.sql

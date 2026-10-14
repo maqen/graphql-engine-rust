@@ -206,7 +206,8 @@ async fn webhook_get() {
     // The webhook decides the role; the requested one is ignored.
     assert_eq!(ok.session.role.as_str(), "user");
     assert_eq!(ok.session.variables.get("x-hasura-user-id"), Some("42"));
-    assert_eq!(ok.set_cookies.len(), 2);
+    // Last first, as V2 returns them.
+    assert_eq!(ok.set_cookies, ["b=2", "a=1"]);
     assert!(ok.expires_at.is_some());
     let (seen, _) = state.seen.lock().unwrap().pop().unwrap();
     assert_eq!(seen["authorization"], "Bearer abc");
