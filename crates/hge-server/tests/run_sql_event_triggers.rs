@@ -106,8 +106,20 @@ async fn dropping_trigger_objects_does_not_hang() {
         ]
     );
 
+    let (status, r) = run_sql(&router, "INSERT INTO t VALUES (1, 'a', 'b')", false).await;
+    assert_eq!(status, 200, "{r}");
     let (status, r) = run_sql(&router, "ALTER TABLE t DROP COLUMN c1", true).await;
     assert_eq!(status, 200, "{r}");
+    // The remaining trigger's function no longer reads `c1`.
+    let (status, r) = run_sql(&router, "UPDATE t SET c2 = 'x'", false).await;
+    assert_eq!(status, 200, "{r}");
+    let (_, r) = run_sql(
+        &router,
+        "SELECT trigger_name FROM hdb_catalog.event_log ORDER BY 1",
+        false,
+    )
+    .await;
+    assert_eq!(r["result"], json!([["trigger_name"], ["t_all"]]));
     let (status, r) = run_sql(&router, "DROP TABLE u", false).await;
     assert_eq!(status, 200, "{r}");
     assert_eq!(functions(&router).await, ["notify_hasura_t_all_UPDATE"]);

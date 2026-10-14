@@ -330,10 +330,25 @@ impl Runtime for Engine {
         }
     }
 
-    async fn after_commit(&self, prepared: &Prepared) {
-        for sync in prepared.trigger_sync.iter() {
-            sync.run_deferred().await;
+    async fn after_commit(&self, prepared: &mut Prepared) {
+        let syncs = std::mem::take(&mut prepared.trigger_sync);
+        if syncs.is_empty() {
+            return;
         }
+        let mut sources = vec![];
+        for st in &prepared.event_triggers.sources {
+            let mut triggers = st.triggers.clone();
+            if let Some(sync) = syncs.iter().find(|s| s.source() == st.source) {
+                let issues = sync.run_deferred(&mut triggers).await;
+                prepared.inconsistencies.extend(issues);
+            }
+            sources.push(Arc::new(hge_events::SourceTriggers {
+                source: st.source.clone(),
+                pool: st.pool.clone(),
+                triggers,
+            }));
+        }
+        prepared.event_triggers = Arc::new(hge_events::EventTriggers { sources });
     }
 
     async fn post_drop_source(&self, source: &hge_metadata::Source, pg: Arc<PgSource>) {

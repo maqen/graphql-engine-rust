@@ -208,7 +208,7 @@ pub struct Prepared {
     /// Deliverable event triggers.
     pub event_triggers: Arc<hge_events::EventTriggers>,
     /// SQL trigger changes left for after the transaction the catalog was read in.
-    pub trigger_sync: Arc<Vec<crate::events::PendingSync>>,
+    pub trigger_sync: Vec<crate::events::PendingSync>,
     /// Resolved cron triggers.
     pub scheduled_triggers: Arc<hge_events::scheduled::ScheduledTriggers>,
     pub actions: Arc<ResolvedActions>,
@@ -404,7 +404,7 @@ pub async fn prepare(
         sources,
         tables,
         event_triggers: Arc::new(event_triggers),
-        trigger_sync: Arc::new(trigger_sync),
+        trigger_sync,
         scheduled_triggers: Arc::new(scheduled_triggers),
         actions: Arc::new(actions),
         action_registry: Arc::new(registry),

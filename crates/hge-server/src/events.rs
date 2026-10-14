@@ -173,6 +173,7 @@ pub async fn prepare(
                 .to_owned();
             let sync = PendingSync {
                 source: source.name.clone(),
+                definition: serde_json::to_value(source).unwrap_or_default(),
                 pool: pg.pool().clone(),
                 extensions_schema: schema,
                 init_catalog: !triggers.is_empty(),
@@ -215,6 +216,8 @@ pub async fn prepare(
 #[derive(Clone)]
 pub struct PendingSync {
     source: String,
+    /// The source's metadata, for an inconsistency.
+    definition: serde_json::Value,
     pool: deadpool_postgres::Pool,
     extensions_schema: String,
     init_catalog: bool,
@@ -235,7 +238,7 @@ impl PendingSync {
             .map_err(|e| format!("could not create event triggers: {e}"))?;
         if !report.removed.is_empty() {
             info!(
-                target: "startup",
+                target: "metadata",
                 source = %self.source,
                 removed = ?report.removed,
                 "dropped event triggers no longer in metadata and archived their events"
@@ -248,7 +251,7 @@ impl PendingSync {
             > 0
         {
             info!(
-                target: "startup",
+                target: "metadata",
                 source = %self.source,
                 functions_written = report.functions_written,
                 triggers_created = report.triggers_created,
@@ -259,18 +262,34 @@ impl PendingSync {
         Ok(report.errors)
     }
 
-    /// Run a deferred sync; failures are only logged (the metadata change is committed).
-    pub async fn run_deferred(&self) {
+    /// Run a deferred sync. The change it follows is committed, so a failure cannot undo
+    /// it: like the inline sync, it leaves the triggers concerned out of `triggers` and
+    /// returns their inconsistencies.
+    pub async fn run_deferred(
+        &self,
+        triggers: &mut HashMap<String, Arc<EventTriggerInfo>>,
+    ) -> Vec<InconsistentObject> {
+        let issue =
+            |msg: String| InconsistentObject::source(&self.source, msg, self.definition.clone());
         match self.run().await {
-            Ok(errors) => {
-                for (name, e) in errors {
-                    warn!(target: "startup", source = %self.source, trigger = %name, error = %e, "could not install event trigger");
-                }
-            }
+            Ok(errors) => errors
+                .into_iter()
+                .map(|(name, e)| {
+                    warn!(target: "metadata", source = %self.source, trigger = %name, error = %e, "could not install event trigger");
+                    triggers.remove(&name);
+                    issue(format!("in event trigger \"{name}\": {e}"))
+                })
+                .collect(),
             Err(e) => {
-                warn!(target: "startup", source = %self.source, error = %e, "could not install event triggers")
+                warn!(target: "metadata", source = %self.source, error = %e, "could not install event triggers");
+                triggers.clear();
+                vec![issue(e)]
             }
         }
+    }
+
+    pub fn source(&self) -> &str {
+        &self.source
     }
 }
 

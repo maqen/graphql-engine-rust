@@ -201,8 +201,8 @@ pub trait Runtime: Send + Sync {
 
     /// After the `run_sql` transaction whose catalog `prepared` was built from has
     /// committed: apply what had to wait for it (the event triggers' SQL, which needs locks
-    /// that transaction held). Failures are only logged.
-    fn after_commit(&self, prepared: &Self::Prepared) -> impl Future<Output = ()> + Send {
+    /// that transaction held). What fails is recorded in `prepared` as inconsistent.
+    fn after_commit(&self, prepared: &mut Self::Prepared) -> impl Future<Output = ()> + Send {
         let _ = prepared;
         async {}
     }
