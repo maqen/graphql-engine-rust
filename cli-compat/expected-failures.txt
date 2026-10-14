@@ -3,10 +3,5 @@
 # scalar computed fields in aggregate fields (Mutations thread), action relationship
 # description (Actions thread).
 console/api-explorer
-console/data-schema
 console/table-browse
-console/table-modify
-console/table-relationships
-console/table-permissions
 console/view-browse
-console/sql
