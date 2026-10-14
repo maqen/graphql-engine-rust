@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 pub use action::{ActionCall, ActionRootField};
 pub use aggregate::*;
-pub use backend::{BoxFuture, MultiplexedQuery, MultiplexedRow, SourceExecutor};
+pub use backend::{BoxFuture, GeneratedSql, MultiplexedQuery, MultiplexedRow, SourceExecutor};
 pub use count::Count;
 pub use mutation::*;
 pub use permissions::*;

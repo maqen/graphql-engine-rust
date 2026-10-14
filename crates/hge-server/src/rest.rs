@@ -15,6 +15,7 @@ use hge_rest::{RequestMethod, parse_query_string};
 use crate::graphql;
 use crate::routes::{json_response, request_id};
 use crate::state::Engine;
+use crate::telemetry::query_log;
 
 pub async fn handler(
     State(engine): State<Arc<Engine>>,
@@ -31,7 +32,7 @@ pub async fn handler(
     };
     let session = auth.session;
     let include_internal = graphql::include_internal(&engine, &session);
-    let mut resp = match run(&engine, &session, &headers, &method, &uri, &body).await {
+    let mut resp = match run(&engine, &session, &headers, &method, &uri, &body, &rid).await {
         Ok((data, cookies)) => {
             let mut resp = json_response(StatusCode::OK, data, Some(rid));
             for cookie in cookies {
@@ -103,6 +104,7 @@ async fn run(
     method: &Method,
     uri: &Uri,
     body: &[u8],
+    request_id: &str,
 ) -> Result<(String, Vec<String>), Error> {
     let state = engine.state.load_full();
     // The raw path keeps percent-escapes, so an encoded `/` stays inside its segment.
@@ -124,6 +126,11 @@ async fn run(
     crate::policies::check_allowlist(&state, session, &endpoint.document, &endpoint.query)?;
     let rs = state.role_schema(&session.role, session.backend_only);
     let op = hge_schema::plan(&rs, &endpoint.document, None, &variables)?;
+    if query_log::enabled() {
+        let variables = serde_json::Value::Object(variables);
+        let request = query_log::request(&endpoint.query, None, Some(&variables));
+        query_log::log(&state, session, request_id, &request, &op);
+    }
     match graphql::execute(engine, &state, session, headers, Some(&endpoint.query), &op).await {
         Ok((body, cookies)) => Ok((strip_data_envelope(body), cookies)),
         Err(graphql::Failure::Error(e)) => Err(e),

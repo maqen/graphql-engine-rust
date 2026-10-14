@@ -36,7 +36,7 @@ use uuid::Uuid;
 
 use crate::graphql::{self, GraphQLRequest};
 use crate::state::{AppState, Engine};
-use crate::telemetry::Level;
+use crate::telemetry::{self, Level, LogType, query_log};
 
 /// WebSocket and subscription settings.
 #[derive(Debug, Clone)]
@@ -542,17 +542,13 @@ impl Connection {
         log::log(self.ws_id, self.user(), None, level, event);
     }
 
-    fn op_log(
-        &self,
-        id: &str,
-        with_request_id: bool,
-        payload: &StartPayload,
-    ) -> Option<Box<log::OpLog>> {
+    /// An operation's `websocket-log` identity, for events that carry no request id.
+    fn op_log(&self, id: &str, payload: &StartPayload) -> Option<Box<log::OpLog>> {
         log::OpLog::new(
             self.ws_id,
             self.user(),
             id,
-            with_request_id.then_some(self.request_id.as_deref()),
+            None,
             payload.operation_name.as_deref(),
             Some(&payload.query),
         )
@@ -701,8 +697,32 @@ impl Connection {
                 return self.start_error(&id, msg, &payload);
             }
         };
-        let op_log = self.op_log(&id, true, &payload);
+        // One request id for the operation's `websocket-log` and `query-log` lines.
+        let request_id = (telemetry::type_enabled(LogType::WebsocketLog) || query_log::enabled())
+            .then(|| {
+                self.request_id
+                    .clone()
+                    .unwrap_or_else(|| Uuid::new_v4().to_string())
+            });
+        let op_log = log::OpLog::new(
+            self.ws_id,
+            self.user(),
+            &id,
+            Some(request_id.as_deref()),
+            payload.operation_name.as_deref(),
+            Some(&payload.query),
+        );
         let state = self.engine.state.load_full();
+        let logged = request_id
+            .filter(|_| query_log::enabled())
+            .map(|request_id| {
+                let request = query_log::request(
+                    &payload.query,
+                    payload.operation_name.as_deref(),
+                    payload.variables.as_ref(),
+                );
+                (request, request_id)
+            });
         let query = payload.query;
         let req = GraphQLRequest {
             query: Some(query.clone()),
@@ -714,6 +734,9 @@ impl Connection {
             Ok(op) => op,
             Err(e) => return self.request_error(&id, &e, op_log),
         };
+        if let Some((request, request_id)) = &logged {
+            query_log::log(&state, &session, request_id, request, &op);
+        }
         let is_mutation = op.kind == OperationKind::Mutation;
         // Action handlers raise errors with the same codes as planning (an unparsable
         // response body, a missing header template), so only database operations qualify.
@@ -904,7 +927,7 @@ impl Connection {
 
     /// A request that could not start (spec 09 §4.4, `start-failed`).
     fn start_error(&mut self, id: &str, message: String, payload: &StartPayload) {
-        if let Some(op_log) = self.op_log(id, false, payload) {
+        if let Some(op_log) = self.op_log(id, payload) {
             op_log.log(log::OpEvent::ProtoErr(&message));
             op_log.log(log::OpEvent::Completed);
         }

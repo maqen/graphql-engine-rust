@@ -38,7 +38,16 @@ pub fn translate_field_inline(field: &QueryRoot, session: &Session) -> Result<St
 
 /// Translate the root fields of an operation into one SQL statement.
 pub fn translate_query(fields: &[&QueryRoot], session: &Session) -> Result<SqlBuilder, Error> {
-    let mut t = Translator::new(session);
+    translate_query_with(fields, session, SqlBuilder::new())
+}
+
+/// [`translate_query`] into `b` (e.g. one [`SqlBuilder::logging_arguments`]).
+pub fn translate_query_with(
+    fields: &[&QueryRoot],
+    session: &Session,
+    b: SqlBuilder,
+) -> Result<SqlBuilder, Error> {
+    let mut t = Translator::with_builder(session, b);
     t.b.push("SELECT ");
     for (i, field) in fields.iter().enumerate() {
         if i > 0 {
