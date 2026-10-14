@@ -485,7 +485,15 @@ impl Lowerer<'_> {
             }
         }
         args.limit = non_negative(field.arg("limit"), &field.arg_path("limit"))?;
-        args.offset = non_negative(field.arg("offset"), &field.arg_path("offset"))?;
+        args.offset = match field.arg("offset").and_then(Json::as_i64) {
+            // Postgres rejects a negative OFFSET when V2 runs the query.
+            Some(i) if i < 0 => {
+                return Err(
+                    Error::new(Code::DataException, "OFFSET must not be negative").with_path("$"),
+                );
+            }
+            _ => non_negative(field.arg("offset"), &field.arg_path("offset"))?,
+        };
         if let Some(Json::Array(cols)) = field.arg("distinct_on") {
             for c in cols {
                 let name = c.as_str().unwrap_or_default();
@@ -496,17 +504,28 @@ impl Lowerer<'_> {
                 args.distinct_on.push(self.column_target(table, &col.name));
             }
             if !args.distinct_on.is_empty() && !args.order_by.is_empty() {
-                let prefix_ok = args.order_by.len() >= args.distinct_on.len()
+                // V2: the first n order_by items are columns, and every distinct_on column is
+                // among them (in any order).
+                let n = args.distinct_on.len();
+                let leading = &args.order_by[..n.min(args.order_by.len())];
+                let prefix_ok = leading.len() == n
+                    && leading.iter().all(|o| {
+                        matches!(
+                            o.target,
+                            OrderByTarget::Column(_) | OrderByTarget::RedactedColumn { .. }
+                        )
+                    })
                     && args
                         .distinct_on
                         .iter()
-                        .zip(&args.order_by)
-                        .all(|(d, o)| *d == o.target);
+                        .all(|d| leading.iter().any(|o| *d == o.target));
                 if !prefix_ok {
+                    let path = field.arg_path("distinct_on");
+                    let args_path = path.strip_suffix(".distinct_on").unwrap_or(&path);
                     return Err(Error::validation(
                         "\"distinct_on\" columns must match initial \"order_by\" columns",
                     )
-                    .with_path(field.arg_path("distinct_on")));
+                    .with_path(args_path.to_owned()));
                 }
             }
         }

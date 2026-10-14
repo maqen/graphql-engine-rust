@@ -372,11 +372,13 @@ impl Builder<'_> {
         field
             .arg(
                 InputValueDef::new("limit", TypeRef::named("Int"))
-                    .describe("limit the number of rows returned"),
+                    .describe("limit the number of rows returned")
+                    .with_parser(ValueParser::NonNegativeInt),
             )
             .arg(
                 InputValueDef::new("offset", TypeRef::named("Int"))
-                    .describe("skip the first n rows. Use only with order_by"),
+                    .describe("skip the first n rows. Use only with order_by")
+                    .with_parser(ValueParser::BigInt),
             )
             .arg(
                 InputValueDef::new("order_by", TypeRef::nn(table.order_by_name()).list())

@@ -24,6 +24,9 @@ pub struct GraphQLRequest {
     pub variables: Option<Json>,
     #[serde(default)]
     pub operation_name: Option<String>,
+    /// Only checked for an Apollo persisted query, which V2 CE refuses.
+    #[serde(default)]
+    pub extensions: Option<Json>,
     /// Received over `GET`: mutations are refused (they would be open to CSRF).
     #[serde(skip)]
     pub read_only: bool,
@@ -130,16 +133,26 @@ async fn execute_one(
 ) -> (String, Vec<String>, Option<Error>) {
     let started = std::time::Instant::now();
     let mut op_type = metrics::OperationType::Unknown;
-    let result = run(
-        engine,
-        state,
-        session,
-        headers,
-        request_id,
-        req,
-        &mut op_type,
-    )
-    .await;
+    let result = if req
+        .extensions
+        .as_ref()
+        .is_some_and(|e| e.get("persistedQuery").is_some())
+    {
+        Err(Failure::Error(
+            Error::new(Code::NotSupported, "PersistedQueryNotSupported").with_path("$"),
+        ))
+    } else {
+        run(
+            engine,
+            state,
+            session,
+            headers,
+            request_id,
+            req,
+            &mut op_type,
+        )
+        .await
+    };
     metrics::graphql_request(op_type, result.is_ok(), started.elapsed());
     match result {
         Ok((body, cookies)) => (body, cookies, None),

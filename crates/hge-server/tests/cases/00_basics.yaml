@@ -123,7 +123,7 @@ cases:
       query: "{ article(distinct_on: [author_id], order_by: {id: asc}) { id } }"
     response:
       errors:
-        - extensions: { path: "$.selectionSet.article.args.distinct_on", code: validation-failed }
+        - extensions: { path: "$.selectionSet.article.args", code: validation-failed }
           message: '"distinct_on" columns must match initial "order_by" columns'
 
   - description: distinct_on
@@ -133,13 +133,13 @@ cases:
       data:
         article: [{ id: 2 }, { id: 4 }]
 
-  - description: a float literal for Int is a type mismatch
+  - description: a float literal for limit is a type mismatch (V2's nonNegativeInt)
     query:
       query: "{ author(limit: 1.5) { id } }"
     response:
       errors:
         - extensions: { path: "$.selectionSet.author.args.limit", code: validation-failed }
-          message: "expected a 32-bit integer for type 'Int', but found a float"
+          message: "expected a non-negative 32-bit integer for type 'Int', but found a float"
 
   # Article 2 is the unpublished one, so only 4 matches.
   - description: a column value may be a string, which Postgres parses (V2's column parser)
@@ -155,7 +155,7 @@ cases:
     response:
       errors:
         - extensions: { path: "$.selectionSet.author.args.limit", code: validation-failed }
-          message: "expected a 32-bit integer for type 'Int', but found a string"
+          message: "expected a non-negative 32-bit integer for type 'Int', but found a string"
 
   - description: a float for an Int column is V2's parse failure, not a type mismatch
     query:
@@ -236,7 +236,7 @@ cases:
       query: '{ author(order_by: {id: "asc"}) { id } }'
     response:
       errors:
-        - extensions: { path: "$.selectionSet.author.args.order_by.id", code: validation-failed }
+        - extensions: { path: "$.selectionSet.author.args.order_by[0].id", code: validation-failed }
           message: "expected an enum value for type 'order_by', but found a string"
 
   - description: an unused variable may be declared with an output type, as in V2
@@ -293,3 +293,87 @@ cases:
     response:
       data:
         author: [{ id: 3 }, { id: 2 }, { id: 1 }]
+
+  - description: fragment cycles are found while inlining, with V2's path
+    query:
+      query: |
+        { author { ...a } }
+        fragment a on author { articles { ...b } }
+        fragment b on article { author { ...a } }
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.selectionSet.a.selectionSet.articles.selectionSet.b.selectionSet.author.selectionSet", code: validation-failed }
+          message: "the fragment definition(s) a and b form a cycle"
+
+  - description: an undefined fragment
+    query:
+      query: "{ author { ...nope } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.selectionSet", code: validation-failed }
+          message: 'reference to undefined fragment "nope"'
+
+  - description: a variable used but not declared
+    query:
+      query: "{ author(limit: $l) { id } }"
+    response:
+      errors:
+        - extensions: { path: "$", code: validation-failed }
+          message: 'unbound variable "l"'
+
+  - description: null for a non-null variable is rejected up front, even with a default
+    query:
+      query: "query ($l: Int! = 1) { author(limit: $l) { id } }"
+      variables: { l: null }
+    response:
+      errors:
+        - extensions: { path: "$", code: validation-failed }
+          message: 'null value found for non-nullable type: "Int!"'
+
+  - description: null for a non-null input object is the object parser's type mismatch
+    query:
+      query: "mutation { update_article(where: null, _set: {title: \"x\"}) { affected_rows } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.update_article.args.where", code: validation-failed }
+          message: "expected an object for type 'article_bool_exp', but found null"
+
+  - description: offset accepts an integer string (V2's bigInt)
+    query:
+      query: '{ article(order_by: {id: asc}, offset: "3") { id } }'
+    response:
+      data:
+        article: [{ id: 4 }]
+
+  - description: a negative offset fails in Postgres, as in V2
+    query:
+      query: "{ article(offset: -1) { id } }"
+    response:
+      errors:
+        - extensions: { path: "$", code: data-exception }
+          message: "OFFSET must not be negative"
+
+  - description: variables inside a jsonb literal take their values
+    query:
+      query: "query ($v: jsonb) { author(where: {info: {_contains: {city: $v}}}) { id } }"
+      variables: { v: Lima }
+    response:
+      data:
+        author: [{ id: 2 }]
+
+  - description: an Apollo persisted query is not supported
+    query:
+      query: "{ __typename }"
+      extensions: { persistedQuery: { version: 1, sha256Hash: abc } }
+    response:
+      errors:
+        - extensions: { path: "$", code: not-supported }
+          message: PersistedQueryNotSupported
+
+  - description: a null default doesn't let a nullable variable fill a non-null position
+    query:
+      query: 'mutation ($w: article_bool_exp = null) { update_article(where: $w, _set: {title: "x"}) { affected_rows } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.update_article.args.where", code: validation-failed }
+          message: "variable 'w' is declared as 'article_bool_exp', but used where 'article_bool_exp!' is expected"

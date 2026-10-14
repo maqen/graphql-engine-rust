@@ -282,6 +282,23 @@ pub struct InputObjectDef {
     pub fields: IndexMap<String, InputValueDef>,
 }
 
+/// V2 parses `Int`, `Float` and `Boolean` inputs with different parsers depending on where
+/// they appear; the schema type is the same.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ValueParser {
+    /// The built-in scalar parser.
+    #[default]
+    Strict,
+    /// A column-typed value (a column, comparison operand or SQL function argument): V2's
+    /// column parser also accepts strings for numbers and booleans, handing them to Postgres
+    /// as text, and accepts null.
+    Column,
+    /// `limit`: a non-negative 32-bit integer.
+    NonNegativeInt,
+    /// `offset`: a 64-bit integer, also as a string.
+    BigInt,
+}
+
 #[derive(Debug, Clone)]
 pub struct InputValueDef {
     pub name: String,
@@ -289,10 +306,8 @@ pub struct InputValueDef {
     pub ty: TypeRef,
     /// Default value as GraphQL source text (as introspection returns it).
     pub default_value: Option<String>,
-    /// A column-typed value (a column, comparison operand or SQL function argument). V2 parses
-    /// these with its column parser, which also accepts strings for numbers and booleans and
-    /// hands them to Postgres as text; other `Int`, `Float` and `Boolean` inputs are strict.
-    pub column: bool,
+    /// How a value of a built-in scalar type is parsed here (see [`ValueParser`]).
+    pub parser: ValueParser,
 }
 
 impl InputValueDef {
@@ -302,13 +317,18 @@ impl InputValueDef {
             description: None,
             ty,
             default_value: None,
-            column: false,
+            parser: ValueParser::Strict,
         }
     }
 
-    /// Mark this as a column-typed value (see [`InputValueDef::column`]).
+    /// Mark this as a column-typed value ([`ValueParser::Column`]).
     pub fn for_column(mut self) -> Self {
-        self.column = true;
+        self.parser = ValueParser::Column;
+        self
+    }
+
+    pub fn with_parser(mut self, parser: ValueParser) -> Self {
+        self.parser = parser;
         self
     }
 

@@ -211,7 +211,7 @@ cases:
       query: "{ author(order_by: {articles_aggregate: {max: {min_words: asc}}}) { name } }"
     response:
       errors:
-        - extensions: { path: "$.selectionSet.author.args.order_by.articles_aggregate.max.min_words", code: validation-failed }
+        - extensions: { path: "$.selectionSet.author.args.order_by[0].articles_aggregate.max.min_words", code: validation-failed }
           message: "field 'min_words' not found in type: 'article_max_order_by'"
 
   - description: a hidden column cannot be an aggregation predicate's argument

@@ -313,6 +313,7 @@ async fn graphql_get(
         query: params.query,
         variables,
         operation_name: params.operation_name,
+        extensions: None,
         read_only: true,
     };
     let resp = run(

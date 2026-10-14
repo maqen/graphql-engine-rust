@@ -93,8 +93,7 @@ pub fn normalize<'s>(
         },
     };
     let multiple_top_level_fields = operation_directives(op)?;
-    let vars = coerce_variables(op, variables)?;
-    check_unexpected_variables(doc, op, variables)?;
+    let vars = check_operation(doc, op, variables)?;
     let cx = Context {
         schema,
         fragments: &doc.fragments,
@@ -162,7 +161,7 @@ fn select_operation<'d>(
 }
 
 /// Variable values as given (`None`: not provided and no default), and whether the variable
-/// has a default value. Like V2, values are coerced where they are used, so errors carry the
+/// has a non-null default value. Like V2, values are coerced where they are used, so errors carry the
 /// path of the use.
 pub type Variables = HashMap<String, (TypeRef, Option<Json>, bool)>;
 
@@ -178,7 +177,20 @@ fn coerce_variables(
         let path = format!("$.variableValues.{name}");
         // V2 only type-checks a variable where it is used (against the expected type), so an
         // unused variable may name an output type or a type the schema doesn't have.
+        if out.contains_key(&name) {
+            return Err(Error::new(
+                Code::ParseFailed,
+                format!("multiple definitions for variable \"{name}\""),
+            )
+            .with_path("$"));
+        }
         let value = match provided.get(&name) {
+            Some(Json::Null) if ty.is_non_null() => {
+                return Err(Error::validation(format!(
+                    "null value found for non-nullable type: \"{ty}\""
+                ))
+                .with_path("$"));
+            }
             Some(v) => Some(v.clone()),
             None => match &def.default_value {
                 Some(d) => Some(
@@ -196,98 +208,169 @@ fn coerce_variables(
                 None => None,
             },
         };
-        out.insert(name, (ty, value, def.default_value.is_some()));
+        // Only a non-null default lets a nullable variable fill a non-null position.
+        let has_default = def
+            .default_value
+            .as_ref()
+            .is_some_and(|d| !matches!(d.node, async_graphql_value::ConstValue::Null));
+        out.insert(name, (ty, value, has_default));
     }
     Ok(out)
 }
 
-/// V2 rejects provided variables the operation doesn't use (syntactically, in its directives
-/// and the fragments it reaches), declared or not, before it parses any field.
-fn check_unexpected_variables(
+/// V2's checks before it parses any field, in its order: inlining fragments (undefined
+/// fragments and cycles), the provided variable values, then variables used but not declared
+/// and provided values the operation doesn't use.
+fn check_operation(
     doc: &ExecutableDocument,
     op: &OperationDefinition,
     provided: &Map<String, Json>,
-) -> Result<(), Error> {
-    if provided.is_empty() {
-        return Ok(());
-    }
-    let mut used = HashSet::new();
-    let mut fragments = HashSet::new();
+) -> Result<Variables, Error> {
+    let mut inline = Inline {
+        doc,
+        used: vec![],
+        inlined: HashSet::new(),
+        stack: vec![],
+        truncated: false,
+    };
     for d in &op.directives {
-        directive_variables(&d.node, &mut used);
+        directive_variables(&d.node, &mut inline.used);
     }
-    selection_variables(doc, &op.selection_set.node, &mut used, &mut fragments);
+    inline.selection_set(&op.selection_set.node, "$", 0)?;
+    let variables = coerce_variables(op, provided)?;
+    if inline.truncated {
+        // Too deep: normalisation reports that, with the path where it happens.
+        return Ok(variables);
+    }
+    if let Some(name) = inline.used.iter().find(|v| !variables.contains_key(**v)) {
+        return Err(Error::validation(format!("unbound variable \"{name}\"")).with_path("$"));
+    }
+    let used: HashSet<&str> = inline.used.iter().copied().collect();
     let mut unexpected: Vec<&str> = provided
         .keys()
         .map(String::as_str)
         .filter(|k| !used.contains(k))
         .collect();
-    if unexpected.is_empty() {
-        return Ok(());
+    if !unexpected.is_empty() {
+        // V2 lists them from a `HashSet`.
+        hge_core::sort_v2_hash_order(&mut unexpected);
+        return Err(Error::validation(format!(
+            "unexpected variables in variableValues: {}",
+            unexpected.join(", ")
+        ))
+        .with_path("$"));
     }
-    // V2 lists them from a `HashSet`.
-    hge_core::sort_v2_hash_order(&mut unexpected);
-    Err(Error::validation(format!(
-        "unexpected variables in variableValues: {}",
-        unexpected.join(", ")
-    ))
-    .with_path("$"))
+    Ok(variables)
 }
 
-fn selection_variables<'d>(
+/// A walk over the operation as V2 inlines its fragments (`Hasura.GraphQL.Execute.Inline`),
+/// collecting the variables it uses.
+struct Inline<'d> {
     doc: &'d ExecutableDocument,
-    set: &'d SelectionSet,
-    used: &mut HashSet<&'d str>,
-    fragments: &mut HashSet<&'d str>,
-) {
-    for item in &set.items {
-        match &item.node {
-            Selection::Field(f) => {
-                let f = &f.node;
-                for (_, v) in &f.arguments {
-                    value_variables(&v.node, used);
-                }
-                for d in &f.directives {
-                    directive_variables(&d.node, used);
-                }
-                selection_variables(doc, &f.selection_set.node, used, fragments);
-            }
-            Selection::FragmentSpread(spread) => {
-                let spread = &spread.node;
-                for d in &spread.directives {
-                    directive_variables(&d.node, used);
-                }
-                let name = spread.fragment_name.node.as_str();
-                if fragments.insert(name)
-                    && let Some(fragment) = doc.fragments.get(&spread.fragment_name.node)
-                {
-                    for d in &fragment.node.directives {
-                        directive_variables(&d.node, used);
+    /// Variables used, in order of first use.
+    used: Vec<&'d str>,
+    /// Fragments already inlined (V2 caches them, so they are walked once).
+    inlined: HashSet<&'d str>,
+    /// Fragments being inlined, outermost first.
+    stack: Vec<&'d str>,
+    /// The walk stopped at [`MAX_DEPTH`], so `used` is incomplete.
+    truncated: bool,
+}
+
+impl<'d> Inline<'d> {
+    /// V2's error paths name each field (not its alias) and fragment under `selectionSet`.
+    fn selection_set(
+        &mut self,
+        set: &'d SelectionSet,
+        path: &str,
+        depth: usize,
+    ) -> Result<(), Error> {
+        if depth > MAX_DEPTH {
+            self.truncated = true;
+            return Ok(());
+        }
+        for item in &set.items {
+            match &item.node {
+                Selection::Field(f) => {
+                    let f = &f.node;
+                    for (_, v) in &f.arguments {
+                        value_variables(&v.node, &mut self.used);
                     }
-                    selection_variables(doc, &fragment.node.selection_set.node, used, fragments);
+                    for d in &f.directives {
+                        directive_variables(&d.node, &mut self.used);
+                    }
+                    let path = format!("{path}.selectionSet.{}", f.name.node);
+                    self.selection_set(&f.selection_set.node, &path, depth + 1)?;
                 }
-            }
-            Selection::InlineFragment(inline) => {
-                let inline = &inline.node;
-                for d in &inline.directives {
-                    directive_variables(&d.node, used);
+                Selection::FragmentSpread(spread) => {
+                    let spread = &spread.node;
+                    let name = spread.fragment_name.node.as_str();
+                    let path = format!("{path}.selectionSet");
+                    if !self.inlined.contains(name) {
+                        if let Some(at) = self.stack.iter().position(|f| *f == name) {
+                            let cycle: Vec<&str> = self.stack[at..].to_vec();
+                            return Err(Error::validation(format!(
+                                "the fragment definition(s) {} form a cycle",
+                                english_list(&cycle)
+                            ))
+                            .with_path(path));
+                        }
+                        let Some(fragment) = self.doc.fragments.get(&spread.fragment_name.node)
+                        else {
+                            return Err(Error::validation(format!(
+                                "reference to undefined fragment \"{name}\""
+                            ))
+                            .with_path(path));
+                        };
+                        // V2 drops the definition's own directives.
+                        self.stack.push(name);
+                        self.selection_set(
+                            &fragment.node.selection_set.node,
+                            &format!("{path}.{name}"),
+                            depth + 1,
+                        )?;
+                        self.stack.pop();
+                        self.inlined.insert(name);
+                    }
+                    for d in &spread.directives {
+                        directive_variables(&d.node, &mut self.used);
+                    }
                 }
-                selection_variables(doc, &inline.selection_set.node, used, fragments);
+                Selection::InlineFragment(inline) => {
+                    let inline = &inline.node;
+                    for d in &inline.directives {
+                        directive_variables(&d.node, &mut self.used);
+                    }
+                    self.selection_set(&inline.selection_set.node, path, depth + 1)?;
+                }
             }
         }
+        Ok(())
     }
 }
 
-fn directive_variables<'d>(d: &'d Directive, used: &mut HashSet<&'d str>) {
+/// `a`, `a and b`, `a, b, and c` (Hasura's `englishList "and"`).
+fn english_list(items: &[&str]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => (*one).to_owned(),
+        [one, two] => format!("{one} and {two}"),
+        [init @ .., last] => format!("{}, and {last}", init.join(", ")),
+    }
+}
+
+fn directive_variables<'d>(d: &'d Directive, used: &mut Vec<&'d str>) {
     for (_, v) in &d.arguments {
         value_variables(&v.node, used);
     }
 }
 
-fn value_variables<'d>(v: &'d GqlValue, used: &mut HashSet<&'d str>) {
+fn value_variables<'d>(v: &'d GqlValue, used: &mut Vec<&'d str>) {
     match v {
         GqlValue::Variable(name) => {
-            used.insert(name.as_str());
+            if !used.contains(&name.as_str()) {
+                used.push(name.as_str());
+            }
         }
         GqlValue::List(items) => items.iter().for_each(|i| value_variables(i, used)),
         GqlValue::Object(fields) => fields.values().for_each(|i| value_variables(i, used)),
@@ -633,7 +716,12 @@ impl<'s, 'd> Context<'s, 'd> {
                 ))
                 .with_path(path.to_owned())
             })?;
-            let value = self.resolve(&arg.node, &TypeRef::nn("Boolean"), false, path)?;
+            let value = self.resolve(
+                &arg.node,
+                &TypeRef::nn("Boolean"),
+                ValueParser::Strict,
+                path,
+            )?;
             let cond = value.and_then(|v| v.as_bool()).unwrap_or(false);
             if cond == skip {
                 return Ok(false);
@@ -667,7 +755,7 @@ impl<'s, 'd> Context<'s, 'd> {
                 .find(|(n, _)| n.node.as_str() == arg_name)
                 .map(|(_, v)| &v.node);
             let value = match given {
-                Some(v) => self.resolve(v, &arg_def.ty, arg_def.column, &arg_path)?,
+                Some(v) => self.resolve(v, &arg_def.ty, arg_def.parser, &arg_path)?,
                 None => None,
             };
             match value {
@@ -686,21 +774,20 @@ impl<'s, 'd> Context<'s, 'd> {
         Ok(out)
     }
 
-    /// Coerce a literal (possibly containing variables) to `ty`. `None` = absent (an
-    /// unprovided variable). `column`: the position is column-typed ([`InputValueDef::column`]).
+    /// Coerce a literal (possibly containing variables) to `ty`, parsing built-in scalars with
+    /// `parser`. `None` = absent (an unprovided variable).
     fn resolve(
         &self,
         value: &GqlValue,
         ty: &TypeRef,
-        column: bool,
+        parser: ValueParser,
         path: &str,
     ) -> Result<Option<Json>, Error> {
         match value {
             GqlValue::Variable(name) => {
                 let (var_ty, var_value, has_default) =
                     self.variables.get(name.as_str()).ok_or_else(|| {
-                        Error::validation(format!("unbound variable '{name}'"))
-                            .with_path(path.to_owned())
+                        Error::validation(format!("unbound variable \"{name}\"")).with_path("$")
                     })?;
                 // A nullable variable with a default may be used in a non-null position
                 // (GraphQL spec 5.8.5).
@@ -714,47 +801,42 @@ impl<'s, 'd> Context<'s, 'd> {
                     ))
                     .with_path(path.to_owned()));
                 }
-                if ty.is_non_null() && matches!(var_value, Some(Json::Null)) {
-                    return Err(null_error(ty, path));
-                }
+                // V2 hands the variable's JSON value to the parser of the position it is used in.
                 var_value
                     .as_ref()
-                    .map(|v| coerce_json(self.schema, v, var_ty, column, path))
+                    .map(|v| coerce_json(self.schema, v, ty, parser, path))
                     .transpose()
             }
-            GqlValue::Null => {
-                if ty.is_non_null() {
-                    Err(null_error(ty, path))
-                } else {
-                    Ok(Some(Json::Null))
-                }
-            }
+            GqlValue::Null => null_value(self.schema, ty, parser, "null", path).map(Some),
             GqlValue::List(items) => match ty.nullable() {
                 TypeRef::List(inner) => {
                     let mut out = Vec::with_capacity(items.len());
                     for (i, item) in items.iter().enumerate() {
                         let item_path = format!("{path}[{i}]");
-                        match self.resolve(item, inner, column, &item_path)? {
+                        match self.resolve(item, inner, parser, &item_path)? {
                             Some(v) => out.push(v),
-                            None if inner.is_non_null() => {
-                                return Err(null_error(inner, &item_path));
-                            }
-                            None => out.push(Json::Null),
+                            None => out.push(null_value(
+                                self.schema,
+                                inner,
+                                parser,
+                                "null",
+                                &item_path,
+                            )?),
                         }
                     }
                     Ok(Some(Json::Array(out)))
                 }
-                TypeRef::Named(_) => self.resolve_named(value, ty, column, path).map(Some),
+                TypeRef::Named(_) => self.resolve_named(value, ty, parser, path).map(Some),
                 TypeRef::NonNull(_) => unreachable!("nullable() strips NonNull"),
             },
             _ => match ty.nullable() {
                 TypeRef::List(inner) => {
-                    // Input coercion: a single value is a list of one.
+                    // Input coercion: a single value is a list of one (V2's path says so).
                     Ok(self
-                        .resolve(value, inner, column, path)?
+                        .resolve(value, inner, parser, &format!("{path}[0]"))?
                         .map(|v| Json::Array(vec![v])))
                 }
-                _ => self.resolve_named(value, ty, column, path).map(Some),
+                _ => self.resolve_named(value, ty, parser, path).map(Some),
             },
         }
     }
@@ -763,7 +845,7 @@ impl<'s, 'd> Context<'s, 'd> {
         &self,
         value: &GqlValue,
         ty: &TypeRef,
-        column: bool,
+        parser: ValueParser,
         path: &str,
     ) -> Result<Json, Error> {
         let name = ty.base();
@@ -785,17 +867,13 @@ impl<'s, 'd> Context<'s, 'd> {
                     })?;
                     // An unprovided variable inside an input object is null (as in V2):
                     // dropping the field would turn `{id: {_eq: $x}}` into "every row".
-                    match self.resolve(v, &fdef.ty, fdef.column, &field_path)? {
-                        Some(v) => {
-                            out.insert(k.to_string(), v);
-                        }
-                        None if fdef.ty.is_non_null() => {
-                            return Err(null_error(&fdef.ty, &field_path));
-                        }
+                    let v = match self.resolve(v, &fdef.ty, fdef.parser, &field_path)? {
+                        Some(v) => v,
                         None => {
-                            out.insert(k.to_string(), Json::Null);
+                            null_value(self.schema, &fdef.ty, fdef.parser, "null", &field_path)?
                         }
-                    }
+                    };
+                    out.insert(k.to_string(), v);
                 }
                 check_required_fields(obj, &out, path)?;
                 Ok(Json::Object(out))
@@ -815,31 +893,42 @@ impl<'s, 'd> Context<'s, 'd> {
                 ))
                 .with_path(path.to_owned())),
             },
-            // A float literal is a type mismatch for Int in V2; out-of-range integer literals
-            // and variables, and floats for Int columns, get the parse error from
-            // `coerce_scalar`.
-            Some(TypeDef::Scalar(_))
-                if !column
-                    && matches!(value, GqlValue::Number(n) if n.is_f64())
-                    && scalars::builtin_kind(name) == Some(BuiltinScalar::Int) =>
-            {
-                Err(Error::validation(format!(
-                    "expected a 32-bit integer for type '{name}', but found a float"
-                ))
-                .with_path(path.to_owned()))
-            }
             Some(TypeDef::Scalar(_)) => {
-                let json = value
-                    .clone()
-                    .into_const()
-                    .and_then(|c| c.into_json().ok())
-                    .ok_or_else(|| {
-                        Error::validation(format!("unexpected value for type '{name}'"))
-                            .with_path(path.to_owned())
-                    })?;
-                coerce_scalar(name, json, column, path)
+                // Variables inside a literal (`{body: [{header: $h}]}` for a jsonb column) are
+                // replaced by their values, as V2's `valueToJSON` does.
+                let json = self.literal_json(value);
+                let literal = Literal {
+                    found: describe_gql(value),
+                    float: matches!(value, GqlValue::Number(n) if n.is_f64()),
+                };
+                coerce_scalar(name, json, parser, Some(literal), path)
             }
             _ => Err(Error::unexpected(format!("'{name}' is not an input type"))),
+        }
+    }
+
+    /// A literal as JSON, with variables replaced by their values (null when not given).
+    fn literal_json(&self, value: &GqlValue) -> Json {
+        match value {
+            GqlValue::Variable(name) => self
+                .variables
+                .get(name.as_str())
+                .and_then(|(_, v, _)| v.clone())
+                .unwrap_or(Json::Null),
+            GqlValue::List(items) => {
+                Json::Array(items.iter().map(|i| self.literal_json(i)).collect())
+            }
+            GqlValue::Object(fields) => Json::Object(
+                fields
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), self.literal_json(v)))
+                    .collect(),
+            ),
+            other => other
+                .clone()
+                .into_const()
+                .and_then(|c| c.into_json().ok())
+                .unwrap_or(Json::Null),
         }
     }
 }
@@ -865,12 +954,59 @@ fn variable_usage_allowed(var_ty: &TypeRef, expected: &TypeRef) -> bool {
     }
 }
 
-fn null_error(ty: &TypeRef, path: &str) -> Error {
-    Error::validation(format!(
-        "unexpected null value for type '{}'",
-        ty.nullable()
-    ))
-    .with_path(path.to_owned())
+/// A null (`found`: how V2 describes it) where `ty` is expected. V2's parsers for non-null
+/// types reject it with their own type mismatch (the column parser with "unexpected null
+/// value"); other database scalars accept it.
+fn null_value(
+    schema: &Schema,
+    ty: &TypeRef,
+    parser: ValueParser,
+    found: &str,
+    path: &str,
+) -> Result<Json, Error> {
+    let TypeRef::NonNull(inner) = ty else {
+        return Ok(Json::Null);
+    };
+    let mismatch = |expected: &str, name: &str| {
+        Err(Error::validation(format!(
+            "expected {expected} for type '{name}', but found {found}"
+        ))
+        .with_path(path.to_owned()))
+    };
+    match &**inner {
+        TypeRef::List(_) => Err(
+            Error::validation(format!("expected a list, but found {found}"))
+                .with_path(path.to_owned()),
+        ),
+        TypeRef::NonNull(_) => null_value(schema, inner, parser, found, path),
+        TypeRef::Named(name) => match schema.get(name) {
+            Some(TypeDef::InputObject(_)) => mismatch("an object", name),
+            Some(TypeDef::Enum(_)) => mismatch("an enum value", name),
+            _ if parser == ValueParser::Column => Err(Error::validation(format!(
+                "unexpected null value for type '{name}'"
+            ))
+            .with_path(path.to_owned())),
+            _ => match scalars::builtin_kind(name) {
+                Some(kind) => mismatch(expected_scalar(kind, parser), name),
+                None => Ok(Json::Null),
+            },
+        },
+    }
+}
+
+/// What V2's parser for a built-in scalar says it expected.
+fn expected_scalar(kind: BuiltinScalar, parser: ValueParser) -> &'static str {
+    match (kind, parser) {
+        (BuiltinScalar::Int, ValueParser::NonNegativeInt) => "a non-negative 32-bit integer",
+        (BuiltinScalar::Int, ValueParser::BigInt) => {
+            "a 32-bit integer, or a 64-bit integer represented as a string"
+        }
+        (BuiltinScalar::Int, _) => "a 32-bit integer",
+        (BuiltinScalar::Float, _) => "a float",
+        (BuiltinScalar::String, _) => "a string",
+        (BuiltinScalar::Boolean, _) => "a boolean",
+        (BuiltinScalar::Id, _) => "a String or a 32-bit integer",
+    }
 }
 
 fn check_required_fields(
@@ -931,24 +1067,27 @@ pub(crate) fn coerce_json(
     schema: &Schema,
     value: &Json,
     ty: &TypeRef,
-    column: bool,
+    parser: ValueParser,
     path: &str,
 ) -> Result<Json, Error> {
     match (value, ty) {
-        (Json::Null, TypeRef::NonNull(_)) => Err(null_error(ty, path)),
-        (Json::Null, _) => Ok(Json::Null),
-        (_, TypeRef::NonNull(inner)) => coerce_json(schema, value, inner, column, path),
+        (Json::Null, _) => null_value(schema, ty, parser, "null", path),
+        (_, TypeRef::NonNull(inner)) => coerce_json(schema, value, inner, parser, path),
         (Json::Array(items), TypeRef::List(inner)) => items
             .iter()
             .enumerate()
-            .map(|(i, v)| coerce_json(schema, v, inner, column, &format!("{path}[{i}]")))
+            .map(|(i, v)| coerce_json(schema, v, inner, parser, &format!("{path}[{i}]")))
             .collect::<Result<Vec<_>, _>>()
             .map(Json::Array),
         (_, TypeRef::List(inner)) => Ok(Json::Array(vec![coerce_json(
-            schema, value, inner, column, path,
+            schema,
+            value,
+            inner,
+            parser,
+            &format!("{path}[0]"),
         )?])),
         (_, TypeRef::Named(name)) => match schema.get(name) {
-            Some(TypeDef::Scalar(_)) => coerce_scalar(name, value.clone(), column, path),
+            Some(TypeDef::Scalar(_)) => coerce_scalar(name, value.clone(), parser, None, path),
             Some(TypeDef::Enum(e)) => match value {
                 Json::String(s) if e.values.contains_key(s) => Ok(value.clone()),
                 Json::String(v) if crate::tables::is_valid_name(v) => {
@@ -981,7 +1120,7 @@ pub(crate) fn coerce_json(
                     })?;
                     out.insert(
                         k.clone(),
-                        coerce_json(schema, v, &fdef.ty, fdef.column, &field_path)?,
+                        coerce_json(schema, v, &fdef.ty, fdef.parser, &field_path)?,
                     );
                 }
                 check_required_fields(obj, &out, path)?;
@@ -993,66 +1132,109 @@ pub(crate) fn coerce_json(
     }
 }
 
-/// `column`: a column-typed position, where V2 (`parsePGValue`) also accepts a string for a
-/// number or boolean and passes it to Postgres as text.
-fn coerce_scalar(name: &str, value: Json, column: bool, path: &str) -> Result<Json, Error> {
-    let err = |expected: &str| {
-        Error::validation(format!(
-            "expected {expected} for type '{name}', but found {}",
-            describe_json(&value)
-        ))
-        .with_path(path.to_owned())
+/// A scalar given as a GraphQL literal rather than as JSON: how V2 describes it, and whether
+/// it was a float literal (a type mismatch for `Int`, where a JSON `2.0` is fine).
+struct Literal {
+    found: &'static str,
+    float: bool,
+}
+
+/// Parse a non-null scalar value as V2's parser for this position does (see [`ValueParser`]).
+fn coerce_scalar(
+    name: &str,
+    value: Json,
+    parser: ValueParser,
+    literal: Option<Literal>,
+    path: &str,
+) -> Result<Json, Error> {
+    let Some(kind) = scalars::builtin_kind(name) else {
+        // Custom scalars (database types) are validated by the database.
+        return Ok(value);
     };
-    let kind = scalars::builtin_kind(name);
+    let found = literal
+        .as_ref()
+        .map_or_else(|| describe_json(&value), |l| l.found);
+    let mismatch = || {
+        Err(Error::validation(format!(
+            "expected {} for type '{name}', but found {found}",
+            expected_scalar(kind, parser)
+        ))
+        .with_path(path.to_owned()))
+    };
+    let column = parser == ValueParser::Column;
+    // V2's column parser (`parsePGValue`) passes a string it cannot parse to Postgres as text.
     if column
         && value.is_string()
         && matches!(
             kind,
-            Some(BuiltinScalar::Int | BuiltinScalar::Float | BuiltinScalar::Boolean)
+            BuiltinScalar::Int | BuiltinScalar::Float | BuiltinScalar::Boolean
         )
     {
         return Ok(value);
     }
     match kind {
-        Some(BuiltinScalar::Int) => match &value {
-            Json::Number(n) if n.as_i64().is_some_and(|i| i32::try_from(i).is_ok()) => Ok(value),
-            Json::Number(n)
-                if n.as_f64()
-                    .is_some_and(|f| f.fract() == 0.0 && f.abs() <= i32::MAX as f64) =>
-            {
-                Ok(Json::from(n.as_f64().unwrap_or_default() as i64))
+        BuiltinScalar::Int => match &value {
+            // The column parser goes through JSON, so a float literal is a range error there.
+            Json::Number(_) if literal.as_ref().is_some_and(|l| l.float) && !column => mismatch(),
+            Json::Number(n) if parser == ValueParser::NonNegativeInt && n.as_f64() < Some(0.0) => {
+                mismatch()
             }
-            // V2 parses the number first, then rejects it with this message (and code).
-            Json::Number(n) => Err(Error::new(
-                Code::ParseFailed,
-                format!(
-                    "The value {} lies outside the bounds or is not an integer. Maybe it is a \
-                     float, or is there integer overflow?",
-                    haskell_scientific(n)
-                ),
-            )
-            .with_path(path.to_owned())),
-            _ => Err(err("a 32-bit integer")),
+            Json::Number(n) => {
+                let fits = |f: f64| {
+                    if parser == ValueParser::BigInt {
+                        // i64::MAX as f64 rounds up to 2^63.
+                        (-(2f64.powi(63))..2f64.powi(63)).contains(&f)
+                    } else {
+                        f.abs() <= i32::MAX as f64 && f >= i32::MIN as f64
+                    }
+                };
+                match (n.as_i64(), n.as_f64()) {
+                    (Some(i), _) if parser == ValueParser::BigInt || i32::try_from(i).is_ok() => {
+                        Ok(value)
+                    }
+                    (None, Some(f)) if f.fract() == 0.0 && fits(f) => Ok(Json::from(f as i64)),
+                    // V2 parses the number first, then rejects it with this message (and code).
+                    _ => Err(Error::new(
+                        Code::ParseFailed,
+                        format!(
+                            "The value {} lies outside the bounds or is not an integer. Maybe it \
+                             is a float, or is there integer overflow?",
+                            haskell_scientific(n)
+                        ),
+                    )
+                    .with_path(path.to_owned())),
+                }
+            }
+            // `Data.Text.Read.decimal`: unsigned digits only.
+            Json::String(s)
+                if parser == ValueParser::BigInt
+                    && !s.is_empty()
+                    && s.bytes().all(|b| b.is_ascii_digit()) =>
+            {
+                match s.parse::<i64>() {
+                    Ok(i) => Ok(Json::from(i)),
+                    Err(_) => mismatch(),
+                }
+            }
+            _ => mismatch(),
         },
-        Some(BuiltinScalar::Float) => match &value {
+        BuiltinScalar::Float => match &value {
             Json::Number(_) => Ok(value),
-            _ => Err(err("a float")),
+            _ => mismatch(),
         },
-        Some(BuiltinScalar::String) => match &value {
+        BuiltinScalar::String => match &value {
             Json::String(_) => Ok(value),
-            _ => Err(err("a string")),
+            _ => mismatch(),
         },
-        Some(BuiltinScalar::Boolean) => match &value {
+        BuiltinScalar::Boolean => match &value {
             Json::Bool(_) => Ok(value),
-            _ => Err(err("a boolean")),
+            _ => mismatch(),
         },
-        Some(BuiltinScalar::Id) => match &value {
+        BuiltinScalar::Id => match &value {
             Json::String(_) => Ok(value),
             Json::Number(n) if n.is_i64() || n.is_u64() => Ok(Json::String(n.to_string())),
-            _ => Err(err("a String or a 32-bit integer")),
+            _ => mismatch(),
         },
-        // Custom scalars (database types) are validated by the database.
-        None => Ok(value),
     }
 }
 
