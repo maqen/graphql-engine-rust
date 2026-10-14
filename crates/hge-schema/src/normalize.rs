@@ -16,7 +16,7 @@ use async_graphql_parser::types::{
 use async_graphql_value::{Name, Value as GqlValue};
 use hge_core::{Code, Error};
 use hge_ir::OperationKind;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use serde_json::{Map, Value as Json};
 
 use crate::introspection;
@@ -170,6 +170,8 @@ fn coerce_variables(
     provided: &Map<String, Json>,
 ) -> Result<Variables, Error> {
     let mut out = HashMap::new();
+    // V2 checks every definition's value first, then for duplicates.
+    let mut duplicate = None;
     for def in &op.variable_definitions {
         let def = &def.node;
         let name = def.name.node.to_string();
@@ -178,11 +180,7 @@ fn coerce_variables(
         // V2 only type-checks a variable where it is used (against the expected type), so an
         // unused variable may name an output type or a type the schema doesn't have.
         if out.contains_key(&name) {
-            return Err(Error::new(
-                Code::ParseFailed,
-                format!("multiple definitions for variable \"{name}\""),
-            )
-            .with_path("$"));
+            duplicate.get_or_insert_with(|| name.clone());
         }
         let value = match provided.get(&name) {
             Some(Json::Null) if ty.is_non_null() => {
@@ -215,6 +213,13 @@ fn coerce_variables(
             .is_some_and(|d| !matches!(d.node, async_graphql_value::ConstValue::Null));
         out.insert(name, (ty, value, has_default));
     }
+    if let Some(name) = duplicate {
+        return Err(Error::new(
+            Code::ParseFailed,
+            format!("multiple definitions for variable \"{name}\""),
+        )
+        .with_path("$"));
+    }
     Ok(out)
 }
 
@@ -228,20 +233,15 @@ fn check_operation(
 ) -> Result<Variables, Error> {
     let mut inline = Inline {
         doc,
-        used: vec![],
+        used: IndexSet::new(),
         inlined: HashSet::new(),
         stack: vec![],
-        truncated: false,
     };
     for d in &op.directives {
         directive_variables(&d.node, &mut inline.used);
     }
-    inline.selection_set(&op.selection_set.node, "$", 0)?;
+    inline.walk(&op.selection_set.node)?;
     let variables = coerce_variables(op, provided)?;
-    if inline.truncated {
-        // Too deep: normalisation reports that, with the path where it happens.
-        return Ok(variables);
-    }
     if let Some(name) = inline.used.iter().find(|v| !variables.contains_key(**v)) {
         return Err(Error::validation(format!("unbound variable \"{name}\"")).with_path("$"));
     }
@@ -268,29 +268,41 @@ fn check_operation(
 struct Inline<'d> {
     doc: &'d ExecutableDocument,
     /// Variables used, in order of first use.
-    used: Vec<&'d str>,
+    used: IndexSet<&'d str>,
     /// Fragments already inlined (V2 caches them, so they are walked once).
     inlined: HashSet<&'d str>,
     /// Fragments being inlined, outermost first.
     stack: Vec<&'d str>,
-    /// The walk stopped at [`MAX_DEPTH`], so `used` is incomplete.
-    truncated: bool,
 }
 
 impl<'d> Inline<'d> {
+    /// Walk `root` depth first (with an explicit stack: fragment chains can nest deeply).
     /// V2's error paths name each field (not its alias) and fragment under `selectionSet`.
-    fn selection_set(
-        &mut self,
-        set: &'d SelectionSet,
-        path: &str,
-        depth: usize,
-    ) -> Result<(), Error> {
-        if depth > MAX_DEPTH {
-            self.truncated = true;
-            return Ok(());
+    fn walk(&mut self, root: &'d SelectionSet) -> Result<(), Error> {
+        struct Frame<'d> {
+            set: &'d SelectionSet,
+            next: usize,
+            path: String,
+            /// The fragment whose body this is.
+            fragment: Option<&'d str>,
         }
-        for item in &set.items {
-            match &item.node {
+        let mut frames = vec![Frame {
+            set: root,
+            next: 0,
+            path: "$".to_owned(),
+            fragment: None,
+        }];
+        while let Some(frame) = frames.last_mut() {
+            let Some(item) = frame.set.items.get(frame.next) else {
+                if let Some(name) = frames.pop().and_then(|f| f.fragment) {
+                    self.stack.pop();
+                    self.inlined.insert(name);
+                }
+                continue;
+            };
+            frame.next += 1;
+            let path = &frame.path;
+            let child = match &item.node {
                 Selection::Field(f) => {
                     let f = &f.node;
                     for (_, v) in &f.arguments {
@@ -299,41 +311,43 @@ impl<'d> Inline<'d> {
                     for d in &f.directives {
                         directive_variables(&d.node, &mut self.used);
                     }
-                    let path = format!("{path}.selectionSet.{}", f.name.node);
-                    self.selection_set(&f.selection_set.node, &path, depth + 1)?;
+                    Frame {
+                        set: &f.selection_set.node,
+                        next: 0,
+                        path: format!("{path}.selectionSet.{}", f.name.node),
+                        fragment: None,
+                    }
                 }
                 Selection::FragmentSpread(spread) => {
                     let spread = &spread.node;
                     let name = spread.fragment_name.node.as_str();
                     let path = format!("{path}.selectionSet");
-                    if !self.inlined.contains(name) {
-                        if let Some(at) = self.stack.iter().position(|f| *f == name) {
-                            let cycle: Vec<&str> = self.stack[at..].to_vec();
-                            return Err(Error::validation(format!(
-                                "the fragment definition(s) {} form a cycle",
-                                english_list(&cycle)
-                            ))
-                            .with_path(path));
-                        }
-                        let Some(fragment) = self.doc.fragments.get(&spread.fragment_name.node)
-                        else {
-                            return Err(Error::validation(format!(
-                                "reference to undefined fragment \"{name}\""
-                            ))
-                            .with_path(path));
-                        };
-                        // V2 drops the definition's own directives.
-                        self.stack.push(name);
-                        self.selection_set(
-                            &fragment.node.selection_set.node,
-                            &format!("{path}.{name}"),
-                            depth + 1,
-                        )?;
-                        self.stack.pop();
-                        self.inlined.insert(name);
-                    }
                     for d in &spread.directives {
                         directive_variables(&d.node, &mut self.used);
+                    }
+                    if self.inlined.contains(name) {
+                        continue;
+                    }
+                    if let Some(at) = self.stack.iter().position(|f| *f == name) {
+                        return Err(Error::validation(format!(
+                            "the fragment definition(s) {} form a cycle",
+                            english_list(&self.stack[at..])
+                        ))
+                        .with_path(path));
+                    }
+                    let Some(fragment) = self.doc.fragments.get(&spread.fragment_name.node) else {
+                        return Err(Error::validation(format!(
+                            "reference to undefined fragment \"{name}\""
+                        ))
+                        .with_path(path));
+                    };
+                    // V2 drops the definition's own directives.
+                    self.stack.push(name);
+                    Frame {
+                        set: &fragment.node.selection_set.node,
+                        next: 0,
+                        path: format!("{path}.{name}"),
+                        fragment: Some(name),
                     }
                 }
                 Selection::InlineFragment(inline) => {
@@ -341,9 +355,15 @@ impl<'d> Inline<'d> {
                     for d in &inline.directives {
                         directive_variables(&d.node, &mut self.used);
                     }
-                    self.selection_set(&inline.selection_set.node, path, depth + 1)?;
+                    Frame {
+                        set: &inline.selection_set.node,
+                        next: 0,
+                        path: path.clone(),
+                        fragment: None,
+                    }
                 }
-            }
+            };
+            frames.push(child);
         }
         Ok(())
     }
@@ -359,18 +379,16 @@ fn english_list(items: &[&str]) -> String {
     }
 }
 
-fn directive_variables<'d>(d: &'d Directive, used: &mut Vec<&'d str>) {
+fn directive_variables<'d>(d: &'d Directive, used: &mut IndexSet<&'d str>) {
     for (_, v) in &d.arguments {
         value_variables(&v.node, used);
     }
 }
 
-fn value_variables<'d>(v: &'d GqlValue, used: &mut Vec<&'d str>) {
+fn value_variables<'d>(v: &'d GqlValue, used: &mut IndexSet<&'d str>) {
     match v {
         GqlValue::Variable(name) => {
-            if !used.contains(&name.as_str()) {
-                used.push(name.as_str());
-            }
+            used.insert(name.as_str());
         }
         GqlValue::List(items) => items.iter().for_each(|i| value_variables(i, used)),
         GqlValue::Object(fields) => fields.values().for_each(|i| value_variables(i, used)),

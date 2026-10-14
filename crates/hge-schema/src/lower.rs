@@ -24,7 +24,7 @@ use crate::tables::{RelKind, RelationshipInfo, TableInfo};
 const NO_QUERIES_MESSAGE: &str = "There are no queries available to the current role. Either there are no sources or remote schemas configured, or the current role doesn't have the required permissions.";
 
 pub fn lower(rs: &RoleSchema, op: &NormalizedOperation<'_>) -> Result<Operation, Error> {
-    let lw = Lowerer { rs };
+    let lw = Lowerer::new(rs);
     let mut root_fields = Vec::with_capacity(op.fields.len());
     for field in &op.fields {
         let rf = match field.kind {
@@ -76,6 +76,7 @@ pub fn lower(rs: &RoleSchema, op: &NormalizedOperation<'_>) -> Result<Operation,
         };
         root_fields.push((field.alias.clone(), rf));
     }
+    lw.deferred_error()?;
     Ok(Operation {
         kind: op.kind,
         root_fields,
@@ -91,11 +92,50 @@ pub(crate) fn table_select(
     field: &SelectedField<'_>,
     with_args: bool,
 ) -> Result<Select, Error> {
-    Lowerer { rs }.select(table, field, with_args)
+    let lw = Lowerer::new(rs);
+    let select = lw.select(table, field, with_args)?;
+    lw.deferred_error()?;
+    Ok(select)
+}
+
+/// `T_aggregate(…) { … }` over rows of `table`, outside a root field (an action
+/// relationship's aggregate).
+pub(crate) fn aggregate_select(
+    rs: &RoleSchema,
+    table: &TableInfo,
+    field: &SelectedField<'_>,
+) -> Result<hge_ir::AggregateSelect, Error> {
+    let lw = Lowerer::new(rs);
+    let select = lw.aggregate_select(table, field)?;
+    lw.deferred_error()?;
+    Ok(select)
 }
 
 pub(crate) struct Lowerer<'a> {
     pub(crate) rs: &'a RoleSchema,
+    /// An error V2 only meets when Postgres runs the query (a negative offset), so it comes
+    /// after every validation error.
+    deferred: std::cell::RefCell<Option<Error>>,
+}
+
+impl<'a> Lowerer<'a> {
+    pub(crate) fn new(rs: &'a RoleSchema) -> Self {
+        Lowerer {
+            rs,
+            deferred: Default::default(),
+        }
+    }
+
+    fn defer(&self, e: Error) {
+        self.deferred.borrow_mut().get_or_insert(e);
+    }
+
+    fn deferred_error(&self) -> Result<(), Error> {
+        match self.deferred.borrow_mut().take() {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
 }
 
 impl Lowerer<'_> {
@@ -488,9 +528,10 @@ impl Lowerer<'_> {
         args.offset = match field.arg("offset").and_then(Json::as_i64) {
             // Postgres rejects a negative OFFSET when V2 runs the query.
             Some(i) if i < 0 => {
-                return Err(
+                self.defer(
                     Error::new(Code::DataException, "OFFSET must not be negative").with_path("$"),
                 );
+                None
             }
             _ => non_negative(field.arg("offset"), &field.arg_path("offset"))?,
         };

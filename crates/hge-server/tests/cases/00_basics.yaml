@@ -377,3 +377,11 @@ cases:
       errors:
         - extensions: { path: "$.selectionSet.update_article.args.where", code: validation-failed }
           message: "variable 'w' is declared as 'article_bool_exp', but used where 'article_bool_exp!' is expected"
+
+  - description: a negative offset only fails after the query is validated, as in V2
+    query:
+      query: "{ article(offset: -1, distinct_on: [author_id], order_by: {id: asc}) { id } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.article.args", code: validation-failed }
+          message: '"distinct_on" columns must match initial "order_by" columns'

@@ -136,7 +136,7 @@ async fn execute_one(
     let result = if req
         .extensions
         .as_ref()
-        .is_some_and(|e| e.get("persistedQuery").is_some())
+        .is_some_and(|e| e.get("persistedQuery").is_some_and(|q| !q.is_null()))
     {
         Err(Failure::Error(
             Error::new(Code::NotSupported, "PersistedQueryNotSupported").with_path("$"),
