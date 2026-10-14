@@ -192,20 +192,29 @@ fn ensure_object(b: &mut Builder<'_>, actions: &ResolvedActions, obj: &Arc<Objec
             continue;
         }
         b.ensure_table_types(&target);
+        // V2 builds these as remote source relationships, without descriptions.
         let kind = FieldKind::ActionRelationship(rel.clone());
         let field = if rel.array {
             let f = FieldDef::new(
                 rel.name.clone(),
                 TypeRef::nn_list_nn(target.type_name()),
                 kind,
-            )
-            .describe("An array relationship");
+            );
             b.with_select_args(f, &target)
         } else {
             FieldDef::new(rel.name.clone(), TypeRef::named(target.type_name()), kind)
-                .describe("An object relationship")
         };
         def.fields.insert(field.name.clone(), field);
+        if rel.array && b.may_aggregate(&target) {
+            let ty = b.ensure_aggregate_types(&target);
+            let f = FieldDef::new(
+                crate::aggregate::relationship_aggregate_name(&rel.name),
+                TypeRef::nn(ty),
+                FieldKind::ActionRelationshipAggregate(rel.clone()),
+            );
+            let f = b.with_select_args(f, &target);
+            def.fields.insert(f.name.clone(), f);
+        }
     }
     b.schema
         .types

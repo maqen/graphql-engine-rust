@@ -7,7 +7,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use hge_ir::action::{ActionField, ActionOutput, ActionRelationship, ActionSelection, OutputBase};
+use hge_ir::action::{
+    ActionField, ActionOutput, ActionRelTarget, ActionRelationship, ActionSelection, OutputBase,
+};
 use serde_json::{Map, Value};
 
 /// Identity of a relationship field within one operation.
@@ -177,12 +179,9 @@ fn project_object(
             ActionField::Relationship(rel) => {
                 let value = join_key(rel, obj)
                     .and_then(|key| joined.get(&(rel_id(rel), key)).cloned())
-                    .unwrap_or_else(|| {
-                        if rel.array {
-                            Value::Array(vec![])
-                        } else {
-                            Value::Null
-                        }
+                    .unwrap_or_else(|| match rel.target {
+                        ActionRelTarget::Array(_) => Value::Array(vec![]),
+                        ActionRelTarget::Object(_) | ActionRelTarget::Aggregate(_) => Value::Null,
                     });
                 out.insert(alias.clone(), value);
             }

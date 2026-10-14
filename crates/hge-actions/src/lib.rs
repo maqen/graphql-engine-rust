@@ -15,7 +15,7 @@ pub mod webhook;
 use std::collections::HashMap;
 
 use hge_core::{Error, Session};
-use hge_ir::action::{ActionCall, ActionRelationship};
+use hge_ir::action::{ActionCall, ActionRelTarget, ActionRelationship};
 use hge_ir::{ActionRootField, BoolExp, CompareOp, QueryRoot, SourceExecutor, Value as IrValue};
 use serde_json::Value;
 
@@ -166,7 +166,6 @@ fn key_text(v: &Value) -> String {
 
 /// The relationship's table selection restricted to one key.
 fn keyed_select(rel: &ActionRelationship, key: &[Value]) -> QueryRoot {
-    let mut select = rel.select.clone();
     let mut conds: Vec<BoolExp> = rel
         .mapping
         .iter()
@@ -177,14 +176,28 @@ fn keyed_select(rel: &ActionRelationship, key: &[Value]) -> QueryRoot {
             op: CompareOp::Eq(IrValue::literal(key_text(v), ty.clone())),
         })
         .collect();
-    if let Some(w) = select.args.where_.take() {
-        conds.push(w);
-    }
-    select.args.where_ = Some(BoolExp::And(conds));
-    if rel.array {
-        QueryRoot::Select(select)
-    } else {
-        QueryRoot::SelectOne(select)
+    let mut restrict = |where_: &mut Option<BoolExp>| {
+        if let Some(w) = where_.take() {
+            conds.push(w);
+        }
+        *where_ = Some(BoolExp::And(std::mem::take(&mut conds)));
+    };
+    match &rel.target {
+        ActionRelTarget::Object(select) => {
+            let mut select = select.clone();
+            restrict(&mut select.args.where_);
+            QueryRoot::SelectOne(select)
+        }
+        ActionRelTarget::Array(select) => {
+            let mut select = select.clone();
+            restrict(&mut select.args.where_);
+            QueryRoot::Select(select)
+        }
+        ActionRelTarget::Aggregate(select) => {
+            let mut select = select.clone();
+            restrict(&mut select.args.where_);
+            QueryRoot::Aggregate(select)
+        }
     }
 }
 

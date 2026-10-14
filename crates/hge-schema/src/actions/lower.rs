@@ -1,7 +1,9 @@
 //! Lowering action root fields to IR.
 
 use hge_core::{Code, Error};
-use hge_ir::action::{ActionCall, ActionField, ActionRelationship, ActionSelection, AsyncField};
+use hge_ir::action::{
+    ActionCall, ActionField, ActionRelTarget, ActionRelationship, ActionSelection, AsyncField,
+};
 use hge_ir::{ActionRootField, RootField};
 use serde_json::{Map, Value as Json};
 
@@ -138,7 +140,8 @@ fn object_fields(
                         }
                     }
                 }
-                FieldKind::ActionRelationship(rel) => {
+                FieldKind::ActionRelationship(rel)
+                | FieldKind::ActionRelationshipAggregate(rel) => {
                     let table = rs
                         .tables
                         .get(&rel.source, &rel.table)
@@ -151,11 +154,19 @@ fn object_fields(
                             .ok_or_else(|| Error::unexpected(format!("unknown column {column}")))?;
                         mapping.push((field.clone(), column.clone(), col.ty.clone()));
                     }
+                    let target = if matches!(def.kind, FieldKind::ActionRelationshipAggregate(_)) {
+                        ActionRelTarget::Aggregate(
+                            crate::lower::Lowerer { rs }.aggregate_select(table, sel)?,
+                        )
+                    } else if rel.array {
+                        ActionRelTarget::Array(crate::lower::table_select(rs, table, sel, true)?)
+                    } else {
+                        ActionRelTarget::Object(crate::lower::table_select(rs, table, sel, false)?)
+                    };
                     ActionField::Relationship(Box::new(ActionRelationship {
                         source: rel.source.clone(),
-                        array: rel.array,
                         mapping,
-                        select: crate::lower::table_select(rs, table, sel, rel.array)?,
+                        target,
                     }))
                 }
                 other => return Err(unexpected_kind(other)),
