@@ -9,6 +9,7 @@ pub mod graphql;
 pub mod input_validation;
 pub mod load;
 pub mod migrations;
+mod parse_cache;
 pub mod policies;
 pub mod remote;
 mod response_cache;
