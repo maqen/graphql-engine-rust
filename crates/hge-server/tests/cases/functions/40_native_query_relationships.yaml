@@ -1,0 +1,912 @@
+# Recorded on hasura/graphql-engine:v2.51.0-ce.
+config:
+  fixture: functions
+cases:
+- description: native queries with relationships onto native queries and tables, an inline logical model,
+    and table relationships onto native queries
+  url: /v1/metadata
+  query:
+    type: replace_metadata
+    args:
+      version: 3
+      sources:
+      - name: default
+        kind: postgres
+        configuration:
+          connection_info:
+            database_url:
+              from_env: HASURA_GRAPHQL_DATABASE_URL
+        tables:
+        - table:
+            schema: public
+            name: author
+          object_relationships:
+          - name: nq_self
+            using:
+              manual_configuration:
+                remote_native_query: authors_nq
+                column_mapping:
+                  id: id
+          array_relationships:
+          - name: nq_articles
+            using:
+              manual_configuration:
+                remote_native_query: articles_nq
+                column_mapping:
+                  id: author_id
+          select_permissions:
+          - role: user
+            permission:
+              columns:
+              - id
+              - first_name
+              filter: {}
+        - table:
+            schema: public
+            name: article
+          select_permissions:
+          - role: user
+            permission:
+              columns:
+              - id
+              - title
+              filter:
+                is_published:
+                  _eq: true
+        logical_models:
+        - name: author_lm
+          fields:
+          - name: id
+            type:
+              scalar: integer
+              nullable: false
+          - name: first_name
+            type:
+              scalar: text
+              nullable: false
+          - name: articles
+            type:
+              array:
+                logical_model: article_lm
+          select_permissions:
+          - role: user
+            permission:
+              columns:
+              - id
+              - first_name
+              filter: {}
+        - name: article_lm
+          description: An article
+          fields:
+          - name: id
+            type:
+              scalar: integer
+              nullable: false
+          - name: author_id
+            type:
+              scalar: integer
+              nullable: false
+          - name: title
+            type:
+              scalar: text
+              nullable: false
+          select_permissions:
+          - role: user
+            permission:
+              columns: '*'
+              filter:
+                id:
+                  _gt: 1
+        native_queries:
+        - root_field_name: authors_nq
+          code: SELECT id, first_name FROM author WHERE first_name LIKE {{pattern}}
+          arguments:
+            pattern:
+              type: text
+              nullable: false
+          returns: author_lm
+          array_relationships:
+          - name: articles
+            using:
+              column_mapping:
+                id: author_id
+              remote_native_query: articles_nq
+          - name: table_articles
+            using:
+              column_mapping:
+                id: author_id
+              remote_table:
+                schema: public
+                name: article
+          object_relationships:
+          - name: self_author
+            using:
+              column_mapping:
+                id: id
+              remote_table: author
+        - root_field_name: articles_nq
+          code: SELECT id, author_id, title FROM article
+          returns: article_lm
+          object_relationships:
+          - name: author
+            using:
+              column_mapping:
+                author_id: id
+              remote_native_query: authors_nq
+        - root_field_name: inline_nq
+          code: SELECT 1 AS x
+          description: An inline model
+          returns:
+            fields:
+            - name: x
+              type:
+                scalar: integer
+                nullable: false
+            select_permissions:
+            - role: user
+              permission:
+                columns:
+                - x
+                filter: {}
+          array_relationships:
+          - name: arts
+            using:
+              column_mapping:
+                x: id
+              remote_table:
+                schema: public
+                name: article
+  response:
+    message: success
+- description: relationships between native queries and onto tables, with arguments and select arguments
+  query:
+    query: "{ authors_nq(args: {pattern: \"%\"}, order_by: {id: asc}) {\n    id first_name __typename\n\
+      \    articles(order_by: {id: asc}) { id title __typename author(args: {pattern: \"A%\"}) { first_name\
+      \ } }\n    self_author { last_name }\n    table_articles(order_by: {id: desc}, limit: 1) { title\
+      \ }\n  } }\n"
+  response:
+    data:
+      authors_nq:
+      - id: 1
+        first_name: Alice
+        __typename: authors_nq
+        articles:
+        - id: 1
+          title: Rust tips
+          __typename: articles_nq
+          author:
+            first_name: Alice
+        - id: 2
+          title: Draft
+          __typename: articles_nq
+          author:
+            first_name: Alice
+        self_author:
+          last_name: Smith
+        table_articles:
+        - title: Draft
+      - id: 2
+        first_name: Bob
+        __typename: authors_nq
+        articles:
+        - id: 3
+          title: Go tips
+          __typename: articles_nq
+          author: null
+        self_author:
+          last_name: null
+        table_articles:
+        - title: Go tips
+      - id: 3
+        first_name: Carol
+        __typename: authors_nq
+        articles:
+        - id: 4
+          title: Rust again
+          __typename: articles_nq
+          author: null
+        self_author:
+          last_name: Jones
+        table_articles:
+        - title: Rust again
+- description: relationships use the target's select permissions
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: "{ authors_nq(args: {pattern: \"%\"}, order_by: {id: asc}) {\n    id\n    articles(order_by:\
+      \ {id: asc}) { id author(args: {pattern: \"%\"}) { first_name } }\n    table_articles(order_by:\
+      \ {id: asc}) { title }\n  } }\n"
+  response:
+    data:
+      authors_nq:
+      - id: 1
+        articles:
+        - id: 2
+          author:
+            first_name: Alice
+        table_articles:
+        - title: Rust tips
+      - id: 2
+        articles:
+        - id: 3
+          author:
+            first_name: Bob
+        table_articles:
+        - title: Go tips
+      - id: 3
+        articles:
+        - id: 4
+          author:
+            first_name: Carol
+        table_articles:
+        - title: Rust again
+- description: table relationships onto native queries
+  query:
+    query: "{ author(order_by: {id: asc}) {\n    id\n    nq_articles(where: {title: {_like: \"%tips\"\
+      }}) { title }\n    nq_self(args: {pattern: \"%o%\"}) { first_name articles { id } }\n  } }\n"
+  response:
+    data:
+      author:
+      - id: 1
+        nq_articles:
+        - title: Rust tips
+        nq_self: null
+      - id: 2
+        nq_articles:
+        - title: Go tips
+        nq_self:
+          first_name: Bob
+          articles:
+          - id: 3
+      - id: 3
+        nq_articles: []
+        nq_self:
+          first_name: Carol
+          articles:
+          - id: 4
+- description: an object relationship onto a native query without its arguments
+  query:
+    query: '{ articles_nq(limit: 1) { author { id } } }'
+  response:
+    errors:
+    - message: missing required field 'args'
+      extensions:
+        path: $.selectionSet.articles_nq.selectionSet.author.args.args
+        code: validation-failed
+- description: filtering a table by its relationship onto a native query fails as in V2
+  query:
+    query: '{ author(where: {nq_articles: {title: {_eq: "Go tips"}}}) { id } }'
+  response:
+    errors:
+    - message: Internal Server Error
+      extensions:
+        path: $
+        code: unexpected
+        internal:
+          error: translateBoolExp RelTargetNativeQuery
+- description: there is no aggregate of an array relationship onto a native query
+  query:
+    query: '{ authors_nq(args: {pattern: "%"}) { articles_aggregate { aggregate { count } } } }'
+  response:
+    errors:
+    - message: 'field ''articles_aggregate'' not found in type: ''authors_nq'''
+      extensions:
+        path: $.selectionSet.authors_nq.selectionSet.articles_aggregate
+        code: validation-failed
+- description: a missing argument of the root field points at the argument
+  query:
+    query: '{ authors_nq(args: {}) { id } }'
+  response:
+    errors:
+    - message: missing required field 'pattern'
+      extensions:
+        path: $.selectionSet.authors_nq.args.args.pattern
+        code: validation-failed
+- description: the inline logical model and its relationship
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: '{ inline_nq { x __typename arts { id title } } }'
+  response:
+    data:
+      inline_nq:
+      - x: 1
+        __typename: inline_nq
+        arts:
+        - id: 1
+          title: Rust tips
+- description: v1 selects fail on relationships onto native queries as in V2
+  url: /v1/query
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - '*.*'
+  response:
+    error: Internal Server Error
+    path: $
+    code: unexpected
+    internal:
+      error: convWildcard RelTargetNativeQuery
+  status: 500
+- description: the types of native queries with relationships and of inline logical models
+  query:
+    query: "{ authors_nq: __type(name: \"authors_nq\") { description fields { name args { name type {\
+      \ ...T } } type { ...T } } }\n  articles_nq: __type(name: \"articles_nq\") { description fields\
+      \ { name args { name type { ...T } } type { ...T } } }\n  author_arguments: __type(name: \"author_arguments\"\
+      ) { description inputFields { name description type { ...T } } }\n  author: __type(name: \"author\"\
+      ) { fields { name args { name } type { ...T } } }\n  author_bool_exp: __type(name: \"author_bool_exp\"\
+      ) { inputFields { name type { ...T } } }\n  author_order_by: __type(name: \"author_order_by\") {\
+      \ inputFields { name } }\n  author_lm: __type(name: \"author_lm\") { name }\n  article_lm: __type(name:\
+      \ \"article_lm\") { name }\n  inline_nq: __type(name: \"inline_nq\") { description fields { name\
+      \ type { ...T } } }\n  inline_bool_exp: __type(name: \"inline_nq_bool_exp_bool_exp\") { description\
+      \ inputFields { name } } }\nfragment T on __Type { kind name ofType { kind name ofType { kind name\
+      \ ofType { kind name } } } }\n"
+  response:
+    data:
+      authors_nq:
+        description: null
+        fields:
+        - name: articles
+          args:
+          - name: distinct_on
+            type:
+              kind: LIST
+              name: null
+              ofType:
+                kind: NON_NULL
+                name: null
+                ofType:
+                  kind: ENUM
+                  name: article_lm_enum_name
+                  ofType: null
+          - name: limit
+            type:
+              kind: SCALAR
+              name: Int
+              ofType: null
+          - name: offset
+            type:
+              kind: SCALAR
+              name: Int
+              ofType: null
+          - name: order_by
+            type:
+              kind: LIST
+              name: null
+              ofType:
+                kind: NON_NULL
+                name: null
+                ofType:
+                  kind: INPUT_OBJECT
+                  name: article_lm_order_by
+                  ofType: null
+          - name: where
+            type:
+              kind: INPUT_OBJECT
+              name: article_lm_bool_exp_bool_exp
+              ofType: null
+          type:
+            kind: LIST
+            name: null
+            ofType:
+              kind: NON_NULL
+              name: null
+              ofType:
+                kind: OBJECT
+                name: articles_nq
+                ofType: null
+        - name: first_name
+          args: []
+          type:
+            kind: NON_NULL
+            name: null
+            ofType:
+              kind: SCALAR
+              name: String
+              ofType: null
+        - name: id
+          args: []
+          type:
+            kind: NON_NULL
+            name: null
+            ofType:
+              kind: SCALAR
+              name: Int
+              ofType: null
+        - name: self_author
+          args: []
+          type:
+            kind: OBJECT
+            name: author
+            ofType: null
+        - name: table_articles
+          args:
+          - name: distinct_on
+            type:
+              kind: LIST
+              name: null
+              ofType:
+                kind: NON_NULL
+                name: null
+                ofType:
+                  kind: ENUM
+                  name: article_select_column
+                  ofType: null
+          - name: limit
+            type:
+              kind: SCALAR
+              name: Int
+              ofType: null
+          - name: offset
+            type:
+              kind: SCALAR
+              name: Int
+              ofType: null
+          - name: order_by
+            type:
+              kind: LIST
+              name: null
+              ofType:
+                kind: NON_NULL
+                name: null
+                ofType:
+                  kind: INPUT_OBJECT
+                  name: article_order_by
+                  ofType: null
+          - name: where
+            type:
+              kind: INPUT_OBJECT
+              name: article_bool_exp
+              ofType: null
+          type:
+            kind: NON_NULL
+            name: null
+            ofType:
+              kind: LIST
+              name: null
+              ofType:
+                kind: NON_NULL
+                name: null
+                ofType:
+                  kind: OBJECT
+                  name: article
+      articles_nq:
+        description: An article
+        fields:
+        - name: author
+          args:
+          - name: args
+            type:
+              kind: NON_NULL
+              name: null
+              ofType:
+                kind: INPUT_OBJECT
+                name: author_arguments
+                ofType: null
+          type:
+            kind: OBJECT
+            name: authors_nq
+            ofType: null
+        - name: author_id
+          args: []
+          type:
+            kind: NON_NULL
+            name: null
+            ofType:
+              kind: SCALAR
+              name: Int
+              ofType: null
+        - name: id
+          args: []
+          type:
+            kind: NON_NULL
+            name: null
+            ofType:
+              kind: SCALAR
+              name: Int
+              ofType: null
+        - name: title
+          args: []
+          type:
+            kind: NON_NULL
+            name: null
+            ofType:
+              kind: SCALAR
+              name: String
+              ofType: null
+      author_arguments:
+        description: authorNative Query Arguments
+        inputFields:
+        - name: pattern
+          description: Native Query argument pattern
+          type:
+            kind: NON_NULL
+            name: null
+            ofType:
+              kind: SCALAR
+              name: String
+              ofType: null
+      author:
+        fields:
+        - name: first_name
+          args: []
+          type:
+            kind: NON_NULL
+            name: null
+            ofType:
+              kind: SCALAR
+              name: String
+              ofType: null
+        - name: id
+          args: []
+          type:
+            kind: NON_NULL
+            name: null
+            ofType:
+              kind: SCALAR
+              name: Int
+              ofType: null
+        - name: info
+          args:
+          - name: path
+          type:
+            kind: SCALAR
+            name: jsonb
+            ofType: null
+        - name: last_name
+          args: []
+          type:
+            kind: SCALAR
+            name: String
+            ofType: null
+        - name: nq_articles
+          args:
+          - name: distinct_on
+          - name: limit
+          - name: offset
+          - name: order_by
+          - name: where
+          type:
+            kind: LIST
+            name: null
+            ofType:
+              kind: NON_NULL
+              name: null
+              ofType:
+                kind: OBJECT
+                name: articles_nq
+                ofType: null
+        - name: nq_self
+          args:
+          - name: args
+          type:
+            kind: OBJECT
+            name: authors_nq
+            ofType: null
+      author_bool_exp:
+        inputFields:
+        - name: _and
+          type:
+            kind: LIST
+            name: null
+            ofType:
+              kind: NON_NULL
+              name: null
+              ofType:
+                kind: INPUT_OBJECT
+                name: author_bool_exp
+                ofType: null
+        - name: _not
+          type:
+            kind: INPUT_OBJECT
+            name: author_bool_exp
+            ofType: null
+        - name: _or
+          type:
+            kind: LIST
+            name: null
+            ofType:
+              kind: NON_NULL
+              name: null
+              ofType:
+                kind: INPUT_OBJECT
+                name: author_bool_exp
+                ofType: null
+        - name: first_name
+          type:
+            kind: INPUT_OBJECT
+            name: String_comparison_exp
+            ofType: null
+        - name: id
+          type:
+            kind: INPUT_OBJECT
+            name: Int_comparison_exp
+            ofType: null
+        - name: info
+          type:
+            kind: INPUT_OBJECT
+            name: jsonb_comparison_exp
+            ofType: null
+        - name: last_name
+          type:
+            kind: INPUT_OBJECT
+            name: String_comparison_exp
+            ofType: null
+        - name: nq_articles
+          type:
+            kind: INPUT_OBJECT
+            name: article_lm_bool_exp_bool_exp
+            ofType: null
+        - name: nq_self
+          type:
+            kind: INPUT_OBJECT
+            name: author_lm_bool_exp_bool_exp
+            ofType: null
+      author_order_by:
+        inputFields:
+        - name: first_name
+        - name: id
+        - name: info
+        - name: last_name
+      author_lm: null
+      article_lm: null
+      inline_nq:
+        description: An inline model
+        fields:
+        - name: arts
+          type:
+            kind: NON_NULL
+            name: null
+            ofType:
+              kind: LIST
+              name: null
+              ofType:
+                kind: NON_NULL
+                name: null
+                ofType:
+                  kind: OBJECT
+                  name: article
+        - name: x
+          type:
+            kind: NON_NULL
+            name: null
+            ofType:
+              kind: SCALAR
+              name: Int
+              ofType: null
+      inline_bool_exp:
+        description: Boolean expression to filter rows from the logical model for "inline_nq". All fields
+          are combined with a logical 'AND'.
+        inputFields:
+        - name: _and
+        - name: _not
+        - name: _or
+        - name: x
+# The objects V2 lists, recorded on v2.51.0-ce; V2 lists them in another order.
+- description: relationships onto missing native queries and fields are inconsistent, and so is what depends
+    on them
+  url: /v1/metadata
+  query:
+    type: replace_metadata
+    args:
+      allow_inconsistent_metadata: true
+      metadata:
+        version: 3
+        sources:
+        - name: default
+          kind: postgres
+          configuration:
+            connection_info:
+              database_url:
+                from_env: HASURA_GRAPHQL_DATABASE_URL
+          tables:
+          - table:
+              schema: public
+              name: author
+            array_relationships:
+            - name: nq_articles
+              using:
+                manual_configuration:
+                  remote_native_query: articles_nq
+                  column_mapping:
+                    id: author_id
+            - name: nq_missing
+              using:
+                manual_configuration:
+                  remote_native_query: nope
+                  column_mapping:
+                    id: author_id
+            - name: nq_bad_column
+              using:
+                manual_configuration:
+                  remote_native_query: ok_nq
+                  column_mapping:
+                    first_name: zzz
+          logical_models:
+          - name: article_lm
+            fields:
+            - name: id
+              type:
+                scalar: integer
+                nullable: false
+            - name: author_id
+              type:
+                scalar: integer
+                nullable: false
+          native_queries:
+          - root_field_name: articles_nq
+            code: SELECT id, author_id FROM article
+            returns: article_lm
+            object_relationships:
+            - name: other
+              using:
+                column_mapping:
+                  author_id: id
+                remote_native_query: broken_nq
+          - root_field_name: broken_nq
+            code: SELECT id, author_id FROM article
+            returns: article_lm
+            array_relationships:
+            - name: dup
+              using:
+                column_mapping:
+                  id: id
+                remote_table: article
+            object_relationships:
+            - name: dup
+              using:
+                column_mapping:
+                  id: id
+                remote_table: article
+          - root_field_name: ok_nq
+            code: SELECT id, author_id FROM article
+            returns: article_lm
+            object_relationships:
+            - name: bad_table
+              using:
+                column_mapping:
+                  id: id
+                remote_table: nope
+  response:
+    inconsistent_objects:
+    - definition:
+        arguments: {}
+        array_relationships:
+        - name: dup
+          using:
+            column_mapping:
+              id: id
+            insertion_order: null
+            remote_table:
+              name: article
+              schema: public
+        code: SELECT id, author_id FROM article
+        object_relationships:
+        - name: dup
+          using:
+            column_mapping:
+              id: id
+            insertion_order: null
+            remote_table:
+              name: article
+              schema: public
+        returns: article_lm
+        root_field_name: broken_nq
+      name: native_query broken_nq in source default
+      reason: 'Inconsistent object: The native query ''broken_nq'' has duplicate relationships: dup'
+      type: native_query
+    - definition:
+        arguments: {}
+        code: SELECT id, author_id FROM article
+        object_relationships:
+        - name: other
+          using:
+            column_mapping:
+              author_id: id
+            insertion_order: null
+            remote_native_query: broken_nq
+        returns: article_lm
+        root_field_name: articles_nq
+      name: native_query articles_nq in source default
+      reason: 'Inconsistent object: native query "broken_nq" is not tracked'
+      type: native_query
+    - definition:
+        arguments: {}
+        code: SELECT id, author_id FROM article
+        object_relationships:
+        - name: bad_table
+          using:
+            column_mapping:
+              id: id
+            insertion_order: null
+            remote_table:
+              name: nope
+              schema: public
+        returns: article_lm
+        root_field_name: ok_nq
+      name: native_query ok_nq in source default
+      reason: 'Inconsistent object: table "nope" is not tracked'
+      type: native_query
+    - definition:
+        comment: null
+        name: nq_missing
+        source: default
+        table:
+          name: author
+          schema: public
+        using:
+          manual_configuration:
+            column_mapping:
+              id: author_id
+            insertion_order: null
+            remote_native_query: nope
+      name: array_relation nq_missing in table author in source default
+      reason: 'Inconsistent object: native query "nope" is not tracked'
+      type: array_relation
+    - definition:
+        comment: null
+        name: nq_bad_column
+        source: default
+        table:
+          name: author
+          schema: public
+        using:
+          manual_configuration:
+            column_mapping:
+              first_name: zzz
+            insertion_order: null
+            remote_native_query: ok_nq
+      name: array_relation nq_bad_column in table author in source default
+      reason: 'Inconsistent object: native query "ok_nq" has no field named "zzz"'
+      type: array_relation
+    - definition:
+        arguments: {}
+        code: SELECT id, author_id FROM article
+        object_relationships:
+        - name: other
+          using:
+            column_mapping:
+              author_id: id
+            insertion_order: null
+            remote_native_query: broken_nq
+        returns: article_lm
+        root_field_name: articles_nq
+      name: native_query articles_nq in source default
+      reason: 'Inconsistent object: native query "articles_nq" is not tracked'
+      type: native_query
+    - definition:
+        arguments: {}
+        code: SELECT id, author_id FROM article
+        object_relationships:
+        - name: bad_table
+          using:
+            column_mapping:
+              id: id
+            insertion_order: null
+            remote_table:
+              name: nope
+              schema: public
+        returns: article_lm
+        root_field_name: ok_nq
+      name: native_query ok_nq in source default
+      reason: 'Inconsistent object: native query "ok_nq" is not tracked'
+      type: native_query
+    - definition:
+        comment: null
+        name: nq_articles
+        source: default
+        table:
+          name: author
+          schema: public
+        using:
+          manual_configuration:
+            column_mapping:
+              id: author_id
+            insertion_order: null
+            remote_native_query: articles_nq
+      name: array_relation nq_articles in table author in source default
+      reason: 'Inconsistent object: native query "articles_nq" is not tracked'
+      type: array_relation
+    is_consistent: false

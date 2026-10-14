@@ -212,18 +212,18 @@ fn obj_rel_target(using: &ObjectRelUsing) -> Option<&QualifiedTable> {
         ObjectRelUsing::ForeignKey { .. } => None,
         ObjectRelUsing::Manual {
             manual_configuration,
-        } => Some(&manual_configuration.remote_table),
+        } => manual_configuration.remote_table.as_ref(),
     }
 }
 
-fn arr_rel_target(using: &ArrayRelUsing) -> &QualifiedTable {
+fn arr_rel_target(using: &ArrayRelUsing) -> Option<&QualifiedTable> {
     match using {
         ArrayRelUsing::ForeignKey {
             foreign_key_constraint_on,
-        } => &foreign_key_constraint_on.table,
+        } => Some(&foreign_key_constraint_on.table),
         ArrayRelUsing::Manual {
             manual_configuration,
-        } => &manual_configuration.remote_table,
+        } => manual_configuration.remote_table.as_ref(),
     }
 }
 
@@ -242,7 +242,7 @@ fn table_dependents(tables: &[TableEntry], dropped: &QualifiedTable) -> Vec<Depe
             }
         }
         for r in &t.array_relationships {
-            if arr_rel_target(&r.using) == dropped {
+            if arr_rel_target(&r.using) == Some(dropped) {
                 out.push(Dependent::Relationship {
                     table: t.table.clone(),
                     name: r.name.clone(),
@@ -288,17 +288,16 @@ impl Rels {
                     } => Some(fk.table.clone()),
                     ObjectRelUsing::Manual {
                         manual_configuration: m,
-                    } => Some(m.remote_table.clone()),
+                    } => m.remote_table.clone(),
                 };
                 if let Some(target) = target {
                     map.insert((t.table.clone(), r.name.clone()), target);
                 }
             }
             for r in &t.array_relationships {
-                map.insert(
-                    (t.table.clone(), r.name.clone()),
-                    arr_rel_target(&r.using).clone(),
-                );
+                if let Some(target) = arr_rel_target(&r.using) {
+                    map.insert((t.table.clone(), r.name.clone()), target.clone());
+                }
             }
         }
         Rels(map)
@@ -595,7 +594,7 @@ fn column_dependents(
                     manual_configuration: m,
                 } => {
                     (own && m.column_mapping.contains_key(column))
-                        || (m.remote_table == *table
+                        || (m.remote_table.as_ref() == Some(table)
                             && m.column_mapping.values().any(|c| c == column))
                 }
             };
@@ -615,7 +614,7 @@ fn column_dependents(
                     manual_configuration: m,
                 } => {
                     (own && m.column_mapping.contains_key(column))
-                        || (m.remote_table == *table
+                        || (m.remote_table.as_ref() == Some(table)
                             && m.column_mapping.values().any(|c| c == column))
                 }
             };
@@ -801,7 +800,7 @@ fn rename_column(
                 ObjectRelUsing::Manual {
                     manual_configuration: m,
                 } => {
-                    let remote = m.remote_table == *table;
+                    let remote = m.remote_table.as_ref() == Some(table);
                     rename_mapping(&mut m.column_mapping, own, remote, old, new);
                 }
             }
@@ -814,7 +813,7 @@ fn rename_column(
                 ArrayRelUsing::Manual {
                     manual_configuration: m,
                 } => {
-                    let remote = m.remote_table == *table;
+                    let remote = m.remote_table.as_ref() == Some(table);
                     rename_mapping(&mut m.column_mapping, own, remote, old, new);
                 }
             }
@@ -861,7 +860,7 @@ fn rename_table(tables: &mut [TableEntry], old: &QualifiedTable, new: &Qualified
                 } if fk.table == *old => fk.table = new.clone(),
                 ObjectRelUsing::Manual {
                     manual_configuration: m,
-                } if m.remote_table == *old => m.remote_table = new.clone(),
+                } if m.remote_table.as_ref() == Some(old) => m.remote_table = Some(new.clone()),
                 _ => {}
             }
         }
@@ -872,7 +871,7 @@ fn rename_table(tables: &mut [TableEntry], old: &QualifiedTable, new: &Qualified
                 } if fk.table == *old => fk.table = new.clone(),
                 ArrayRelUsing::Manual {
                     manual_configuration: m,
-                } if m.remote_table == *old => m.remote_table = new.clone(),
+                } if m.remote_table.as_ref() == Some(old) => m.remote_table = Some(new.clone()),
                 _ => {}
             }
         }

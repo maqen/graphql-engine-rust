@@ -19,7 +19,7 @@ use crate::model::FieldKind;
 use crate::native::{CodePart, NativeQueryInfo};
 use crate::normalize::{NormalizedOperation, Selected, SelectedField};
 use crate::scalars;
-use crate::tables::{RelationshipInfo, TableInfo};
+use crate::tables::{RelKind, RelationshipInfo, TableInfo};
 
 const NO_QUERIES_MESSAGE: &str = "There are no queries available to the current role. Either there are no sources or remote schemas configured, or the current role doesn't have the required permissions.";
 
@@ -100,6 +100,17 @@ pub(crate) struct Lowerer<'a> {
 
 impl Lowerer<'_> {
     pub(crate) fn target(&self, rel: &RelationshipInfo) -> Result<&Arc<TableInfo>, Error> {
+        if rel.native_query.is_some() {
+            // Only filtering reaches here (other uses have their own field kinds), which V2
+            // offers but cannot translate.
+            return Err(
+                Error::new(hge_core::Code::Unexpected, "Internal Server Error").with_internal(
+                    serde_json::json!({
+                        "error": "translateBoolExp RelTargetNativeQuery"
+                    }),
+                ),
+            );
+        }
         self.rs
             .tables
             .get(&rel.source, &rel.target)
@@ -220,6 +231,30 @@ impl Lowerer<'_> {
                             mapping: rel.mapping.clone(),
                             select: self.select(target, sel, true)?,
                         }))
+                    }
+                    FieldKind::NativeQueryRelationship { rel, native_query } => {
+                        let model = self
+                            .rs
+                            .tables
+                            .logical_model(&native_query.source, &native_query.returns)
+                            .ok_or_else(|| {
+                                Error::unexpected(format!(
+                                    "unknown logical model {}",
+                                    native_query.returns
+                                ))
+                            })?;
+                        let array = rel.kind == RelKind::Array;
+                        let mut select = self.select(model, sel, array)?;
+                        select.from = Some(self.native_query_rows(native_query, sel)?);
+                        let select = Box::new(RelationshipSelect {
+                            mapping: rel.mapping.clone(),
+                            select,
+                        });
+                        if array {
+                            Field::ArrayRelationship(select)
+                        } else {
+                            Field::ObjectRelationship(select)
+                        }
                     }
                     FieldKind::ArrayRelationshipAggregate(rel) => {
                         Field::ArrayAggregate(Box::new(self.relationship_aggregate(rel, sel)?))
@@ -343,6 +378,19 @@ impl Lowerer<'_> {
             .logical_model(&nq.source, &nq.returns)
             .ok_or_else(|| Error::unexpected(format!("unknown logical model {}", nq.returns)))?;
         let mut select = self.select(model, field, true)?;
+        select.from = Some(self.native_query_rows(nq, field)?);
+        Ok(RootField::Database(Box::new(DatabaseRootField {
+            source: nq.source.clone(),
+            query: QueryRoot::Select(select),
+        })))
+    }
+
+    /// A native query's rows: its code with the field's `args` bound as parameters.
+    fn native_query_rows(
+        &self,
+        nq: &NativeQueryInfo,
+        field: &SelectedField<'_>,
+    ) -> Result<RowSource, Error> {
         let args = match field.arg("args") {
             Some(Json::Object(o)) => Some(o),
             _ => None,
@@ -361,11 +409,7 @@ impl Lowerer<'_> {
                 }
             });
         }
-        select.from = Some(RowSource::NativeQuery(parts));
-        Ok(RootField::Database(Box::new(DatabaseRootField {
-            source: nq.source.clone(),
-            query: QueryRoot::Select(select),
-        })))
+        Ok(RowSource::NativeQuery(parts))
     }
 
     /// `<function>_aggregate`: aggregates over the function's rows.

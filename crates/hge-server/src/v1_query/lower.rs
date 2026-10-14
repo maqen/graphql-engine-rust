@@ -80,7 +80,21 @@ impl<'a> Lowerer<'a> {
         })
     }
 
-    pub fn rel_target(&self, rel: &RelationshipInfo) -> Result<&'a Arc<TableInfo>, ApiError> {
+    /// The relationship's target table. V2 fails with a 500 naming the function (`context`)
+    /// on relationships onto native queries.
+    pub fn rel_target(
+        &self,
+        rel: &RelationshipInfo,
+        context: &str,
+    ) -> Result<&'a Arc<TableInfo>, ApiError> {
+        if rel.native_query.is_some() {
+            return Err(ApiError::from(
+                hge_core::Error::new(hge_core::Code::Unexpected, "Internal Server Error")
+                    .with_internal(
+                        serde_json::json!({ "error": format!("{context} RelTargetNativeQuery") }),
+                    ),
+            ));
+        }
         self.tables.get(&rel.source, &rel.target).ok_or_else(|| {
             ApiError::from(hge_core::Error::unexpected(format!(
                 "foreign table \"{}\" does not exist",

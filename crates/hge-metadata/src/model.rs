@@ -517,9 +517,14 @@ pub enum ArrayRelUsing {
     },
 }
 
+/// A manual relationship: onto a table (`remote_table`) or a native query
+/// (`remote_native_query`); V2 reads `remote_table` when both are given.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ManualRelConfig {
-    pub remote_table: QualifiedTable,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_table: Option<QualifiedTable>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_native_query: Option<String>,
     pub column_mapping: IndexMap<String, String>,
     /// Always written (`null` when unset), like V2.
     #[serde(default)]

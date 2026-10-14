@@ -142,7 +142,7 @@ impl BoolExpLowerer<'_, '_> {
             });
         }
         if let Some(rel) = table.relationship_by_name(key) {
-            let target = self.lw.rel_target(rel)?;
+            let target = self.lw.rel_target(rel, "annColExp")?;
             let item_path = path.key(key);
             let target_perm = self
                 .lw

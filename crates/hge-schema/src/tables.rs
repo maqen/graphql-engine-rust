@@ -41,7 +41,10 @@ pub struct RelationshipInfo {
     pub name: String,
     pub kind: RelKind,
     pub source: Arc<str>,
+    /// The target table (unused when the target is a native query).
     pub target: QualifiedTable,
+    /// The root field name of the target native query, for a relationship onto one.
+    pub native_query: Option<String>,
     /// `(column on this table, column on target table)`.
     pub mapping: Vec<(String, String)>,
     /// Whether the GraphQL field is nullable (object relationships only).
@@ -252,7 +255,7 @@ pub fn resolve_source(
     }
 }
 
-fn relationship_issue(
+pub(crate) fn relationship_issue(
     kind: &str,
     rel: &impl serde::Serialize,
     name: &str,
@@ -270,10 +273,18 @@ fn relationship_issue(
     )
 }
 
-/// V2's relationship definitions always carry `comment`.
+/// V2's relationship definitions always carry `comment`, and manual ones `insertion_order`.
 fn with_comment(mut def: serde_json::Value) -> serde_json::Value {
     if let Some(obj) = def.as_object_mut() {
         obj.entry("comment").or_insert(serde_json::Value::Null);
+    }
+    if let Some(manual) = def
+        .pointer_mut("/using/manual_configuration")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        manual
+            .entry("insertion_order")
+            .or_insert(serde_json::Value::Null);
     }
     def
 }
@@ -351,12 +362,14 @@ fn resolve_table(
                 ObjectFkOn::Remote(remote) => {
                     reverse_fk(cat, catalog, source, remote, &rel.name).map(|(t, m)| (t, m, false))
                 }
-            },
+            }
+            .map(|r| (r, None)),
             ObjectRelUsing::Manual {
                 manual_configuration,
-            } => manual(cat, catalog, tracked, manual_configuration).map(|(t, m)| (t, m, false)),
+            } => manual(cat, catalog, tracked, manual_configuration)
+                .map(|(t, m, nq)| ((t, m, false), nq)),
         };
-        let (target, mapping, forward) = match resolved {
+        let ((target, mapping, forward), native_query) = match resolved {
             Ok(r) => r,
             Err(e) => {
                 issues.push(relationship_issue(
@@ -390,6 +403,7 @@ fn resolve_table(
             kind: RelKind::Object,
             source: source.clone(),
             target,
+            native_query,
             mapping,
             nullable,
             description: rel.comment.clone(),
@@ -401,12 +415,13 @@ fn resolve_table(
         let resolved = match &rel.using {
             ArrayRelUsing::ForeignKey {
                 foreign_key_constraint_on,
-            } => reverse_fk(cat, catalog, source, foreign_key_constraint_on, &rel.name),
+            } => reverse_fk(cat, catalog, source, foreign_key_constraint_on, &rel.name)
+                .map(|r| (r, None)),
             ArrayRelUsing::Manual {
                 manual_configuration,
-            } => manual(cat, catalog, tracked, manual_configuration),
+            } => manual(cat, catalog, tracked, manual_configuration).map(|(t, m, nq)| ((t, m), nq)),
         };
-        let (target, mapping) = match resolved {
+        let ((target, mapping), native_query) = match resolved {
             Ok(r) => r,
             Err(e) => {
                 issues.push(relationship_issue(
@@ -437,6 +452,7 @@ fn resolve_table(
             kind: RelKind::Array,
             source: source.clone(),
             target,
+            native_query,
             mapping,
             nullable: true,
             description: rel.comment.clone(),
@@ -500,7 +516,10 @@ fn resolve_table(
 /// tables (untracked, or itself inconsistent) is reported and dropped.
 pub fn drop_dangling_relationships(tables: &mut Tables, issues: &mut Vec<InconsistentObject>) {
     let present: HashSet<(Arc<str>, QualifiedTable)> = tables.by_name.keys().cloned().collect();
-    let resolved = |r: &RelationshipInfo| present.contains(&(r.source.clone(), r.target.clone()));
+    // Relationships onto native queries are checked with the native queries.
+    let resolved = |r: &RelationshipInfo| {
+        r.native_query.is_some() || present.contains(&(r.source.clone(), r.target.clone()))
+    };
     for slot in &mut tables.ordered {
         let table = slot.as_ref();
         let dangling = |rels: &[Arc<RelationshipInfo>]| rels.iter().any(|r| !resolved(r));
@@ -644,17 +663,36 @@ fn no_constraint(cat: &TableCatalog, rel: &str) -> String {
     )
 }
 
+/// A manual relationship's target table (or native query) and column mapping.
+#[allow(clippy::type_complexity)]
 fn manual(
     cat: &TableCatalog,
     catalog: &SourceCatalog,
     tracked: &HashSet<QualifiedTable>,
     cfg: &ManualRelConfig,
-) -> Result<(QualifiedTable, Vec<(String, String)>), String> {
+) -> Result<(QualifiedTable, Vec<(String, String)>, Option<String>), String> {
+    let mapping = cfg
+        .column_mapping
+        .iter()
+        .map(|(l, r)| (l.clone(), r.clone()))
+        .collect();
+    let remote_table = match (&cfg.remote_table, &cfg.remote_native_query) {
+        (Some(table), _) => table,
+        // Checked once the native queries are resolved (`native::resolve`).
+        (None, Some(nq)) => {
+            return Ok((
+                QualifiedTable::new(String::new(), String::new()),
+                mapping,
+                Some(nq.clone()),
+            ));
+        }
+        (None, None) => return Err("key \"remote_table\" not found".to_owned()),
+    };
     let remote = tracked
-        .contains(&cfg.remote_table)
-        .then(|| catalog.table(&cfg.remote_table))
+        .contains(remote_table)
+        .then(|| catalog.table(remote_table))
         .flatten()
-        .ok_or_else(|| format!("table \"{}\" is not tracked", cfg.remote_table.v2_text()))?;
+        .ok_or_else(|| format!("table \"{}\" is not tracked", remote_table.v2_text()))?;
     for (local, remote_col) in &cfg.column_mapping {
         if cat.column(local).is_none() {
             return Err(format!(
@@ -669,13 +707,7 @@ fn manual(
             ));
         }
     }
-    Ok((
-        cfg.remote_table.clone(),
-        cfg.column_mapping
-            .iter()
-            .map(|(l, r)| (l.clone(), r.clone()))
-            .collect(),
-    ))
+    Ok((remote_table.clone(), mapping, None))
 }
 
 /// Names the schema itself defines; a table may not generate any of them.
