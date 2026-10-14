@@ -1,4 +1,1 @@
 # Steps whose outcome still differs from Hasura (see README). Only ever shrinks.
-# /v2/query select (Metadata API / Legacy query API threads), list_source_kinds (Metadata API),
-# scalar computed fields in aggregate fields (Mutations thread), action relationship
-# description (Actions thread).

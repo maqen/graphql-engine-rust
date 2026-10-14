@@ -668,6 +668,7 @@ def main() -> int:
         rows.append((sid, ok))
         if diff:
             report += [f"## {sid}", "", "```diff", *diff[:200], "```", ""]
+            print(f"--- {sid}", *diff[:60], sep="\n")  # visible in CI logs too
     passed = sum(ok for _, ok in rows)
     summary = [f"{passed} of {len(rows)} steps match Hasura v2.51.0-ce.", "",
                "| step | result |", "|---|---|"]
