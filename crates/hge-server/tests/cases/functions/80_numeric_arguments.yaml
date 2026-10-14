@@ -1,0 +1,127 @@
+# Recorded on hasura/graphql-engine:v2.51.0-ce.
+config:
+  fixture: functions
+cases:
+- description: its return table
+  url: /v2/query
+  query:
+    type: run_sql
+    args:
+      sql: CREATE TABLE num_arg_out(v text PRIMARY KEY);
+  response:
+    result_type: CommandOk
+    result: null
+- description: a function with a numeric argument
+  url: /v2/query
+  query:
+    type: run_sql
+    args:
+      sql: CREATE FUNCTION num_arg_fn(x numeric) RETURNS SETOF num_arg_out AS $$ SELECT x::text $$ LANGUAGE
+        sql STABLE;
+      cascade: false
+  response:
+    result_type: CommandOk
+    result: null
+- description: track the table
+  url: /v1/metadata
+  query:
+    type: pg_track_table
+    args:
+      source: default
+      table: num_arg_out
+  response:
+    message: success
+- description: track the function
+  url: /v1/metadata
+  query:
+    type: pg_track_function
+    args:
+      source: default
+      function: num_arg_fn
+  response:
+    message: success
+- description: a logical model
+  url: /v1/metadata
+  query:
+    type: pg_track_logical_model
+    args:
+      source: default
+      name: num_arg_lm
+      fields:
+      - name: v
+        type:
+          scalar: text
+          nullable: true
+  response:
+    message: success
+- description: a native query with a numeric argument
+  url: /v1/metadata
+  query:
+    type: pg_track_native_query
+    args:
+      source: default
+      root_field_name: num_arg_nq
+      returns: num_arg_lm
+      arguments:
+        n:
+          type: numeric
+          nullable: true
+      code: SELECT {{n}}::text AS v
+  response:
+    message: success
+- description: 'native query: numeric literals keep their written scale, padded to groups of 4 digits'
+  query:
+    query: '{ a0: num_arg_nq(args: {n: 1.5}) { v } a1: num_arg_nq(args: {n: 3}) { v } a2: num_arg_nq(args:
+      {n: 3.0}) { v } a3: num_arg_nq(args: {n: 1.123456789}) { v } a4: num_arg_nq(args: {n: 0.00001})
+      { v } a5: num_arg_nq(args: {n: -2.5}) { v } a6: num_arg_nq(args: {n: 12345.678}) { v } a7: num_arg_nq(args:
+      {n: 0}) { v } }'
+  response:
+    data:
+      a0:
+      - v: '1.5000'
+      a1:
+      - v: '3'
+      a2:
+      - v: '3.0000'
+      a3:
+      - v: '1.123456789000'
+      a4:
+      - v: '0.00001000'
+      a5:
+      - v: '-2.5000'
+      a6:
+      - v: '12345.6780'
+      a7:
+      - v: '0'
+- description: 'native query: a string is passed as written'
+  query:
+    query: '{ num_arg_nq(args: {n: "1.5"}) { v } }'
+  response:
+    data:
+      num_arg_nq:
+      - v: '1.5'
+- description: 'native query: variables'
+  query:
+    query: 'query($n: numeric, $m: numeric) { a: num_arg_nq(args: {n: $n}) { v } b: num_arg_nq(args: {n:
+      $m}) { v } }'
+    variables:
+      n: 1.5
+      m: 3
+  response:
+    data:
+      a:
+      - v: '1.5000'
+      b:
+      - v: '3'
+- description: tracked function
+  query:
+    query: '{ a: num_arg_fn(args: {x: 1.5}) { v } b: num_arg_fn(args: {x: 3}) { v } c: num_arg_fn(args:
+      {x: "1.5"}) { v } }'
+  response:
+    data:
+      a:
+      - v: '1.5000'
+      b:
+      - v: '3'
+      c:
+      - v: '1.5'
