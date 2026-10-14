@@ -1,0 +1,76 @@
+steps:
+- url: /v2/query
+  status: 200
+  query:
+    type: concurrent_bulk
+    source: default
+    args:
+    - type: select
+      args:
+        source: default
+        table:
+          schema: public
+          name: article
+        columns:
+        - id
+        - title
+        - author_id
+        where:
+          $and: []
+        offset: 0
+        limit: 10
+        order_by:
+        - column: id
+          type: desc
+    - type: count
+      args:
+        source: default
+        table:
+          schema: public
+          name: article
+        where:
+          $and: []
+    - type: run_sql
+      args:
+        source: default
+        sql: SELECT count(*) FROM public.article
+        cascade: false
+        read_only: true
+  response:
+  - - id: 3
+      title: Article 3
+      author_id: 2
+    - id: 2
+      title: Article 2
+      author_id: 1
+    - id: 1
+      title: Article 1
+      author_id: 1
+  - count: 3
+  - result_type: TuplesOk
+    result:
+    - - count
+    - - '3'
+- url: /v2/query
+  status: 200
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - id
+      - name: articles
+        columns:
+        - title
+        order_by:
+        - id
+      order_by:
+      - id
+  response:
+  - id: 1
+    articles:
+    - title: Article 1
+    - title: Article 2
+  - id: 2
+    articles:
+    - title: Article 3

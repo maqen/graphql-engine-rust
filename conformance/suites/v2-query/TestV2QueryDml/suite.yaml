@@ -1,0 +1,5 @@
+description: /v2/query envelopes, bulk and concurrent_bulk, JSON DML and error paths, as the V2 console's data browser uses them (written for hasura-rs, responses recorded from Hasura)
+admin_secret: false
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+isolation: none

@@ -1,0 +1,109 @@
+steps:
+- url: /v2/query
+  status: 400
+  query:
+    type: select
+    args:
+      source: nosuch
+      table: author
+      columns:
+      - id
+  response:
+    error: source with name "nosuch" does not exist
+    path: $
+    code: not-exists
+- url: /v2/query
+  status: 400
+  query:
+    type: bulk
+    args:
+    - type: select
+      args:
+        source: nosuch
+        table: author
+        columns:
+        - id
+  response:
+    error: source with name "nosuch" does not exist
+    path: $[0]
+    code: not-exists
+- url: /v2/query
+  status: 400
+  query:
+    type: mssql_run_sql
+    args:
+      sql: select 1
+  response:
+    error: source with name "default" is inconsistent
+    path: $
+    code: unexpected
+- url: /v2/query
+  status: 400
+  query:
+    type: mssql_run_sql
+    args:
+      sql: select 1
+      source: nosuch
+  response:
+    error: source with name "nosuch" does not exist
+    path: $
+    code: not-exists
+- url: /v2/query
+  status: 400
+  query:
+    type: mssql_run_sql
+    args: {}
+  response:
+    error: key "sql" not found
+    path: $.args
+    code: parse-failed
+- url: /v2/query
+  status: 400
+  query:
+    type: bigquery_run_sql
+    args:
+      sql: select 1
+  response:
+    error: parsing Hasura.Backends.BigQuery.DDL.RunSQL.BigQueryRunSQL(BigQueryRunSQL) failed, key "source" not found
+    path: $.args
+    code: parse-failed
+- url: /v2/query
+  status: 400
+  query:
+    type: bigquery_database_inspection
+    args:
+      source: default
+  response:
+    error: parsing Hasura.Backends.BigQuery.DDL.RunSQL.BigQueryRunSQL(BigQueryRunSQL) failed, key "sql" not found
+    path: $.args
+    code: parse-failed
+- url: /v2/query
+  status: 400
+  query:
+    type: sqlite_run_sql
+    args:
+      sql: select 1
+      source: default
+  response:
+    error: source with name "default" is inconsistent
+    path: $
+    code: unexpected
+- url: /v2/query
+  status: 400
+  query:
+    type: sqlite_run_sql
+    args:
+      sql: select 1
+  response:
+    error: key "source" not found
+    path: $.args
+    code: parse-failed
+- url: /v2/query
+  status: 400
+  query:
+    type: ab_c_run_sql
+    args: {}
+  response:
+    error: 'Unrecognised RQLQuery type: ab_c_run_sql'
+    path: $
+    code: parse-failed

@@ -1,0 +1,153 @@
+steps:
+- url: /v2/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - nope
+  response:
+    error: 'no such column exists: "nope"'
+    path: $.columns[0]
+    code: permission-denied
+- url: /v2/query
+  status: 400
+  query:
+    type: bulk
+    args:
+    - type: select
+      args:
+        table: author
+        columns:
+        - id
+    - type: select
+      args:
+        table: author
+        columns:
+        - nope
+  response:
+    error: 'no such column exists: "nope"'
+    path: $[1].columns[0]
+    code: permission-denied
+- url: /v2/query
+  status: 400
+  query:
+    type: bulk
+    args:
+    - type: select
+      args:
+        table: author
+        columns:
+        - id
+    - type: select
+      args:
+        table: author
+        columnz:
+        - id
+  response:
+    error: parsing Hasura.RQL.DML.Types.SelectG(SelectG) failed, key "columns" not found
+    path: $.args[1].args
+    code: parse-failed
+- url: /v2/query
+  status: 400
+  query:
+    type: concurrent_bulk
+    args:
+    - type: select
+      args:
+        table: author
+        columns:
+        - id
+    - type: select
+      args:
+        table: author
+        columns:
+        - nope
+  response:
+    error: 'no such column exists: "nope"'
+    path: $.columns[0]
+    code: permission-denied
+- url: /v2/query
+  status: 400
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - id
+      where:
+        nope: 1
+  response:
+    error: '"nope" does not exist'
+    path: $.where
+    code: not-exists
+- url: /v2/query
+  status: 400
+  query:
+    type: bulk
+    args:
+    - type: count
+      args:
+        table: author
+        where:
+          nope: 1
+  response:
+    error: '"nope" does not exist'
+    path: $[0].where
+    code: not-exists
+- url: /v2/query
+  status: 400
+  query:
+    type: bulk
+    args:
+    - type: run_sql
+      args:
+        sql: select 1/0
+  response:
+    error: query execution failed
+    path: $[0]
+    code: postgres-error
+    internal:
+      arguments: []
+      error:
+        description: null
+        exec_status: FatalError
+        hint: null
+        message: division by zero
+        status_code: '22012'
+      prepared: false
+      statement: select 1/0
+- url: /v2/query
+  status: 400
+  query:
+    type: bulk
+    args:
+    - type: bulk
+      args:
+      - type: select
+        args:
+          table: author
+          columns:
+          - nope
+  response:
+    error: 'no such column exists: "nope"'
+    path: $[0][0].columns[0]
+    code: permission-denied
+- url: /v2/query
+  status: 500
+  query:
+    type: bulk
+    args:
+    - type: count
+      args:
+        table: author
+    - type: concurrent_bulk
+      args:
+      - type: run_sql
+        args:
+          sql: alter table author add column w2 int
+  response:
+    error: Only read-only queries are allowed in a concurrent_bulk
+    path: $[1]
+    code: unexpected
