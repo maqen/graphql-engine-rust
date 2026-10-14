@@ -3,6 +3,7 @@
 use serde_json::Value;
 
 use crate::compare;
+use crate::jwt;
 use crate::suite::{Case, HttpStep, Step, Suite};
 use crate::target::Slot;
 use crate::ws;
@@ -139,7 +140,10 @@ async fn send(slot: &Slot, case: &Case, step: &HttpStep) -> Result<Actual, Strin
         has_content_type |= k.eq_ignore_ascii_case("content-type");
         let v = match v {
             Value::String(s) => s.clone(),
-            other => other.to_string(),
+            other => match jwt::header_value(other) {
+                Some(token) => token?,
+                None => other.to_string(),
+            },
         };
         req = req.header(k.as_str(), v);
     }

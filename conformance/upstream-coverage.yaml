@@ -1346,20 +1346,17 @@
   class: TestJwtExpirySkewWithEd25519
   area: auth
   tests:
-    test_jwt_expiry_leeway: 'skipped: token expiry is relative to the request time, so the token cannot
-      be static'
+    test_jwt_expiry_leeway: ported by hand
 - file: test_jwt.py
   class: TestJwtExpirySkewWithEs
   area: auth
   tests:
-    test_jwt_expiry_leeway: 'skipped: token expiry is relative to the request time, so the token cannot
-      be static'
+    test_jwt_expiry_leeway: ported by hand
 - file: test_jwt.py
   class: TestJwtExpirySkewWithRsa
   area: auth
   tests:
-    test_jwt_expiry_leeway: 'skipped: token expiry is relative to the request time, so the token cannot
-      be static'
+    test_jwt_expiry_leeway: ported by hand
 - file: test_jwt.py
   class: TestJwtIssuerCheckWithEd25519
   area: auth
@@ -1382,17 +1379,17 @@
   class: TestSubscriptionJwtExpiryWithEd25519
   area: auth
   tests:
-    test_jwt_expiry: 'skipped: token expiry is relative to the request time, so the token cannot be static'
+    test_jwt_expiry: ported by hand
 - file: test_jwt.py
   class: TestSubscriptionJwtExpiryWithEs
   area: auth
   tests:
-    test_jwt_expiry: 'skipped: token expiry is relative to the request time, so the token cannot be static'
+    test_jwt_expiry: ported by hand
 - file: test_jwt.py
   class: TestSubscriptionJwtExpiryWithRsa
   area: auth
   tests:
-    test_jwt_expiry: 'skipped: token expiry is relative to the request time, so the token cannot be static'
+    test_jwt_expiry: ported by hand
 - file: test_jwt_claims_map.py
   class: TestJWTClaimsMapBasicWithEd25519
   area: auth

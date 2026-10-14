@@ -1,0 +1,33 @@
+upstream:
+  file: test_jwt.py
+  class: TestSubscriptionJwtExpiryWithEs
+  method: test_jwt_expiry
+  by_hand: true
+admin_secret_header: false
+steps:
+- ws_connect:
+    protocol: graphql-ws
+- ws_send:
+    message:
+      type: connection_init
+      payload:
+        headers:
+          Authorization:
+            jwt:
+              key: es
+              claims:
+                sub: '1234567890'
+                name: John Doe
+                iat: '{{now}}'
+                exp: '{{now+4}}'
+                https://hasura.io/jwt/claims:
+                  x-hasura-user-id: '1'
+                  x-hasura-default-role: user
+                  x-hasura-allowed-roles:
+                  - user
+            prefix: 'Bearer '
+- ws_expect:
+    message:
+      type: connection_ack
+- ws_expect_close:
+    timeout_ms: 10000

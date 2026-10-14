@@ -163,7 +163,7 @@ fn substitute(text: &str, admin_secret: Option<&str>) -> Result<String, String> 
         .ok_or_else(|| format!("{SECRET_PLACEHOLDER} used in a suite without admin_secret"))
 }
 
-/// [`substitute`] in every string of a JSON value.
+/// [`substitute`] in every string of a JSON value; `{jwt: ...}` objects become signed tokens.
 fn substitute_value(v: &Value, admin_secret: Option<&str>) -> Result<Value, String> {
     Ok(match v {
         Value::String(s) => Value::String(substitute(s, admin_secret)?),
@@ -172,11 +172,14 @@ fn substitute_value(v: &Value, admin_secret: Option<&str>) -> Result<Value, Stri
                 .map(|v| substitute_value(v, admin_secret))
                 .collect::<Result<_, _>>()?,
         ),
-        Value::Object(o) => Value::Object(
-            o.iter()
-                .map(|(k, v)| Ok((k.clone(), substitute_value(v, admin_secret)?)))
-                .collect::<Result<_, String>>()?,
-        ),
+        Value::Object(o) => match crate::jwt::header_value(v) {
+            Some(token) => Value::String(token?),
+            None => Value::Object(
+                o.iter()
+                    .map(|(k, v)| Ok((k.clone(), substitute_value(v, admin_secret)?)))
+                    .collect::<Result<_, String>>()?,
+            ),
+        },
         v => v.clone(),
     })
 }

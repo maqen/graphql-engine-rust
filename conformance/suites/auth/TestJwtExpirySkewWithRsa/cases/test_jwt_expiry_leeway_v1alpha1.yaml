@@ -1,0 +1,52 @@
+upstream:
+  file: test_jwt.py
+  class: TestJwtExpirySkewWithRsa
+  method: test_jwt_expiry_leeway
+  by_hand: true
+admin_secret_header: false
+steps:
+- url: /v1alpha1/graphql
+  status: 200
+  headers:
+    Authorization:
+      jwt:
+        key: rsa
+        claims:
+          sub: '1234567890'
+          name: John Doe
+          iat: '{{now}}'
+          exp: '{{now-30}}'
+          https://hasura.io/jwt/claims:
+            x-hasura-user-id: '1'
+            x-hasura-default-role: user
+            x-hasura-allowed-roles:
+            - user
+      prefix: 'Bearer '
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    data:
+      article:
+      - id: 1
+        title: Article 1
+        content: Sample article content 1
+        is_published: false
+        author:
+          id: 1
+          name: Author 1

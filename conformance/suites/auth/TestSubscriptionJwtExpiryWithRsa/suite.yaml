@@ -1,0 +1,11 @@
+description: Hand-ported from hasura/graphql-engine server/tests-py/test_jwt.py::TestSubscriptionJwtExpiryWithRsa
+upstream:
+  file: test_jwt.py
+  class: TestSubscriptionJwtExpiryWithRsa
+  dir: queries/graphql_query/permissions
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_JWT_SECRET: '{"type": "RS512", "key": "{{public_key:rsa}}"}'
+isolation: none
+snapshot: permissions/TestGraphqlQueryPermissions
