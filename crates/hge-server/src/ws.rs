@@ -122,11 +122,13 @@ impl WebSockets {
 }
 
 /// Which endpoint a connection is on: `/v1alpha1/graphql` reports errors in the legacy
-/// (`{"path","error","code"}`) format.
+/// (`{"path","error","code"}`) format; the Relay endpoints report errors like `/v1/graphql`
+/// and plan against the Relay schema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Endpoint {
     V1,
     V1Alpha1,
+    Relay,
 }
 
 /// A `GET` handler argument: the WebSocket upgrade, when the request is one.
@@ -161,7 +163,6 @@ pub async fn reject_other_paths(
         .headers()
         .get(header::UPGRADE)
         .is_some_and(|v| v.as_bytes().eq_ignore_ascii_case(b"websocket"));
-    // The relay endpoints are not implemented yet; their upgrades fall through to a 404.
     let served = matches!(
         req.uri().path(),
         "/v1/graphql" | "/v1alpha1/graphql" | "/v1/relay" | "/v1beta1/relay"
@@ -709,6 +710,7 @@ impl Connection {
             variables: payload.variables,
             operation_name: payload.operation_name,
             read_only: false,
+            relay: self.endpoint == Endpoint::Relay,
         };
         let op = match graphql::plan(&state, &session, req) {
             Ok(op) => op,
@@ -952,14 +954,14 @@ fn is_planning_error(e: &Error) -> bool {
 fn error_message(protocol: Protocol, endpoint: Endpoint, id: &str, error: Json) -> String {
     match endpoint {
         Endpoint::V1Alpha1 => protocol::error_object(id, &error),
-        Endpoint::V1 => protocol.error(id, &[error]),
+        Endpoint::V1 | Endpoint::Relay => protocol.error(id, &[error]),
     }
 }
 
 /// An error as the endpoint reports it. WebSockets never include internal details.
 fn error_json(e: &Error, endpoint: Endpoint) -> Json {
     match endpoint {
-        Endpoint::V1 => e.to_graphql_json(false),
+        Endpoint::V1 | Endpoint::Relay => e.to_graphql_json(false),
         Endpoint::V1Alpha1 => e.to_api_json(false),
     }
 }

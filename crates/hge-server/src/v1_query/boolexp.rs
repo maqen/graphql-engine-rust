@@ -795,8 +795,8 @@ pub fn nullify_missing_in_select(select: &mut Select, session: &hge_core::Sessio
                 }
             }
             Field::ComputedTable(sel) => nullify_missing_in_select(sel, session),
-            // `/v1/query` builds no aggregate fields.
-            Field::Typename(_) | Field::ArrayAggregate(_) => {}
+            // `/v1/query` builds no aggregate or Relay fields.
+            _ => {}
         }
     }
 }

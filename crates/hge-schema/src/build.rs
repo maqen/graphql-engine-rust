@@ -73,6 +73,19 @@ pub fn build_role_schema(
     backend_only: bool,
     options: &SchemaOptions,
 ) -> RoleSchema {
+    build_role_schema_of_kind(tables, actions, remotes, role, backend_only, options, false)
+}
+
+/// [`build_role_schema`] for the Relay endpoint (`/v1beta1/relay`) when `relay` is set.
+pub(crate) fn build_role_schema_of_kind(
+    tables: &Arc<Tables>,
+    actions: &ResolvedActions,
+    remotes: &crate::remote::RemoteSchemas,
+    role: &RoleName,
+    backend_only: bool,
+    options: &SchemaOptions,
+    relay: bool,
+) -> RoleSchema {
     let access = role_access(tables, role);
     let mutation_access = crate::mutation::access::access_map(tables, role, backend_only);
     let schema = build_schema(
@@ -83,6 +96,7 @@ pub fn build_role_schema(
         remotes,
         role,
         options,
+        relay,
     );
     RoleSchema {
         role: role.clone(),
@@ -129,6 +143,7 @@ pub(crate) fn table_schema_names(tables: &Tables) -> TableSchemaNames {
         &crate::remote::RemoteSchemas::default(),
         &role,
         &SchemaOptions::default(),
+        false,
     );
     let fields = |root: &str| -> HashSet<String> {
         match schema.types.get(root) {
@@ -161,6 +176,7 @@ pub(crate) fn table_schema_names(tables: &Tables) -> TableSchemaNames {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_schema(
     tables: &Tables,
     access: &HashMap<(Arc<str>, QualifiedTable), SelectAccess>,
@@ -169,9 +185,11 @@ fn build_schema(
     remotes: &crate::remote::RemoteSchemas,
     role: &RoleName,
     options: &SchemaOptions,
+    relay: bool,
 ) -> Schema {
     let subscription_access = crate::subscription::subscription_access(access);
     let mut b = Builder {
+        relay,
         schema: Schema {
             types: IndexMap::new(),
             query_type: QUERY_ROOT.to_owned(),
@@ -193,21 +211,27 @@ fn build_schema(
     let mut mutation_root = ObjectDef::new(MUTATION_ROOT, Some("mutation root".to_owned()));
 
     // --- root field registration -------------------------------------------------------
-    for table in &tables.ordered {
-        b.add_table_select_root_fields(table, &mut query_root);
-        b.add_table_aggregate_root_field(table, &mut query_root);
+    if relay {
+        crate::relay::add_query_root_fields(&mut b, role, options, &mut query_root);
+    } else {
+        for table in &tables.ordered {
+            b.add_table_select_root_fields(table, &mut query_root);
+            b.add_table_aggregate_root_field(table, &mut query_root);
+        }
     }
     for table in &tables.ordered {
         b.add_table_mutation_root_fields(table, mutation_access, &mut mutation_root);
     }
     for function in &tables.functions {
         let root = match function.exposed_as {
+            // Relay has `<function>_connection` instead.
+            ExposedAs::Query if relay => continue,
             ExposedAs::Query => &mut query_root,
             ExposedAs::Mutation => &mut mutation_root,
         };
         b.add_function_root_field(function, role, options.infer_function_permissions, root);
     }
-    for nq in &tables.native_queries {
+    for nq in tables.native_queries.iter().filter(|_| !relay) {
         b.add_native_query_root_field(nq, &mut query_root);
     }
     // Actions come last; `resolve_actions` has dropped those whose names conflict with
@@ -237,19 +261,23 @@ fn build_schema(
     // `subscription_root_fields`, and adds the streaming fields.
     let mut subscription_root = ObjectDef::new(crate::subscription::SUBSCRIPTION_ROOT, None);
     b.access = &subscription_access;
-    for table in &tables.ordered {
-        b.add_table_select_root_fields(table, &mut subscription_root);
-        b.add_table_aggregate_root_field(table, &mut subscription_root);
-        b.add_table_stream_root_field(table, &mut subscription_root);
-    }
-    for function in &tables.functions {
-        if function.exposed_as == ExposedAs::Query {
-            let infer = options.infer_function_permissions;
-            b.add_function_root_field(function, role, infer, &mut subscription_root);
+    if relay {
+        crate::relay::add_query_root_fields(&mut b, role, options, &mut subscription_root);
+    } else {
+        for table in &tables.ordered {
+            b.add_table_select_root_fields(table, &mut subscription_root);
+            b.add_table_aggregate_root_field(table, &mut subscription_root);
+            b.add_table_stream_root_field(table, &mut subscription_root);
         }
-    }
-    for nq in &tables.native_queries {
-        b.add_native_query_root_field(nq, &mut subscription_root);
+        for function in &tables.functions {
+            if function.exposed_as == ExposedAs::Query {
+                let infer = options.infer_function_permissions;
+                b.add_function_root_field(function, role, infer, &mut subscription_root);
+            }
+        }
+        for nq in &tables.native_queries {
+            b.add_native_query_root_field(nq, &mut subscription_root);
+        }
     }
     b.access = access;
     // Async actions' `<action>(id:)` result fields can be subscribed to as well.
@@ -280,6 +308,8 @@ fn build_schema(
 }
 
 pub(crate) struct Builder<'a> {
+    /// Building the Relay schema (`/v1beta1/relay`).
+    pub(crate) relay: bool,
     pub(crate) schema: Schema,
     pub(crate) tables: &'a Tables,
     pub(crate) access: &'a HashMap<(Arc<str>, QualifiedTable), SelectAccess>,
@@ -442,6 +472,9 @@ impl Builder<'_> {
             if !access.allows_column(&col.name) {
                 continue;
             }
+            // Relay: the node id takes the place of a column named `id` (which stays in
+            // `where`, `order_by` and `distinct_on`).
+            let relay_hidden = self.relay && col.gql_name == "id";
             let mut field = FieldDef::new(
                 col.gql_name.clone(),
                 // Inherited-role redaction can null any column.
@@ -458,7 +491,9 @@ impl Builder<'_> {
                         .describe("JSON select path"),
                 );
             }
-            obj.fields.insert(field.name.clone(), field);
+            if !relay_hidden {
+                obj.fields.insert(field.name.clone(), field);
+            }
 
             let cmp = self.column_comparison_exp(col);
             bool_exp.fields.insert(
@@ -541,6 +576,9 @@ impl Builder<'_> {
             }
             let f = self.relationship_aggregate_order_by(&rel, &target);
             order_by.fields.insert(f.name.clone(), f);
+            if let Some(f) = self.relationship_connection_field(&rel, &target) {
+                obj.fields.insert(f.name.clone(), f);
+            }
         }
 
         for cf in table.computed_fields.clone() {
@@ -615,6 +653,7 @@ impl Builder<'_> {
             obj.fields.insert(cf.name.clone(), field);
         }
 
+        self.add_node_id(table, &mut obj);
         self.schema
             .types
             .insert(obj.name.clone(), TypeDef::Object(obj));
@@ -721,7 +760,7 @@ impl Builder<'_> {
     }
 
     /// The `args` argument of a function root field (when the function has input arguments).
-    fn with_function_args(&mut self, field: FieldDef, f: &FunctionInfo) -> FieldDef {
+    pub(crate) fn with_function_args(&mut self, field: FieldDef, f: &FunctionInfo) -> FieldDef {
         if !f.has_input_args() {
             return field;
         }

@@ -55,6 +55,9 @@ pub struct ServerConfig {
     pub use_prepared_statements: bool,
     /// `HASURA_GRAPHQL_PRESERVE_401_ERRORS`
     pub preserve_401_errors: bool,
+    /// `HASURA_GRAPHQL_ENABLE_RELAY`: serve queries on `/v1/relay` and `/v1beta1/relay`
+    /// (their websockets are served regardless, as in V2).
+    pub enable_relay: bool,
     /// Event trigger processing (`HASURA_GRAPHQL_EVENTS_*`, `DISABLE_EVENTING`, …).
     pub events: hge_events::EventingConfig,
     /// `HASURA_GRAPHQL_ENABLE_READ_ONLY_MODE`: reject metadata and database writes.
@@ -124,6 +127,7 @@ impl Default for ServerConfig {
             pg_connections: 50,
             use_prepared_statements: true,
             preserve_401_errors: false,
+            enable_relay: true,
             events: hge_events::EventingConfig {
                 user_agent: format!("hasura-graphql-engine/{}", crate::routes::VERSION),
                 ..hge_events::EventingConfig::default()

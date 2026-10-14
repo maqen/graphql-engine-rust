@@ -266,6 +266,18 @@ pub enum FieldKind {
     AsyncActionResult(AsyncResultField),
     /// A remote schema root field, a namespace field, or a field of a remote type.
     Remote(crate::remote::RemoteField),
+    /// Relay: `node(id:)` on the query and subscription roots.
+    Node,
+    /// Relay: a table's `id` (its node id).
+    NodeId(Arc<TableInfo>),
+    /// Relay: `author_connection(...)` on the query and subscription roots.
+    Connection(Arc<TableInfo>),
+    /// Relay: `<function>_connection(...)` on the query and subscription roots.
+    FunctionConnection(Arc<FunctionInfo>),
+    /// Relay: `<rel>_connection(...)` on a table's object type.
+    ArrayRelationshipConnection(Arc<RelationshipInfo>),
+    /// Relay: a field of a connection, edge or `PageInfo` object.
+    ConnectionPart(crate::relay::ConnectionPart),
 }
 
 #[derive(Debug, Clone)]

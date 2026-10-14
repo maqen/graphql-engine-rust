@@ -1,0 +1,123 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestRelayQueriesPermissions
+  method: test_article_pagination_backward
+  by_hand: true
+  fixtures:
+  - queries/graphql_query/relay/permissions/article_pagination/backward/page_1.yaml
+  - queries/graphql_query/relay/permissions/article_pagination/backward/page_2.yaml
+steps:
+- description: Get last page of articles with 3 items
+  url: /v1/relay
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '2'
+  query:
+    query: |
+      query {
+        article_connection(
+          last: 3
+        ){
+          pageInfo{
+            startCursor
+            endCursor
+            hasPreviousPage
+            hasNextPage
+          }
+          edges{
+            cursor
+            node{
+              id
+              title
+              content
+              is_published
+              author_id
+            }
+          }
+        }
+      }
+  response:
+    data:
+      article_connection:
+        pageInfo:
+          startCursor: eyJpZCIgOiA0fQ==
+          endCursor: eyJpZCIgOiA2fQ==
+          hasPreviousPage: true
+          hasNextPage: false
+        edges:
+        - cursor: eyJpZCIgOiA0fQ==
+          node:
+            id: WzEsICJwdWJsaWMiLCAiYXJ0aWNsZSIsIDRd
+            title: Article 4
+            content: Sample article content 4
+            is_published: true
+            author_id: 2
+        - cursor: eyJpZCIgOiA1fQ==
+          node:
+            id: WzEsICJwdWJsaWMiLCAiYXJ0aWNsZSIsIDVd
+            title: Article 5
+            content: Sample article content 5
+            is_published: false
+            author_id: 2
+        - cursor: eyJpZCIgOiA2fQ==
+          node:
+            id: WzEsICJwdWJsaWMiLCAiYXJ0aWNsZSIsIDZd
+            title: Article 6
+            content: Sample article content 6
+            is_published: true
+            author_id: 3
+- description: Get last page of articles with 2 items before 'Article 4'
+  url: /v1/relay
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '2'
+  query:
+    query: |
+      query {
+        article_connection(
+          last: 3
+          before: "eyJpZCIgOiA0fQ=="
+        ){
+          pageInfo{
+            startCursor
+            endCursor
+            hasPreviousPage
+            hasNextPage
+          }
+          edges{
+            cursor
+            node{
+              id
+              title
+              content
+              is_published
+              author_id
+            }
+          }
+        }
+      }
+  response:
+    data:
+      article_connection:
+        pageInfo:
+          startCursor: eyJpZCIgOiAxfQ==
+          endCursor: eyJpZCIgOiAyfQ==
+          hasPreviousPage: false
+          hasNextPage: true
+        edges:
+        - cursor: eyJpZCIgOiAxfQ==
+          node:
+            id: WzEsICJwdWJsaWMiLCAiYXJ0aWNsZSIsIDFd
+            title: Article 1
+            content: Sample article content 1
+            is_published: true
+            author_id: 1
+        - cursor: eyJpZCIgOiAyfQ==
+          node:
+            id: WzEsICJwdWJsaWMiLCAiYXJ0aWNsZSIsIDJd
+            title: Article 2
+            content: Sample article content 2
+            is_published: true
+            author_id: 1

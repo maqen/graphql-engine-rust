@@ -67,6 +67,9 @@ pub fn lower(rs: &RoleSchema, op: &NormalizedOperation<'_>) -> Result<Operation,
                     }))
                 }
                 FieldKind::Remote(r) => crate::remote::lower_root(op, field, r)?,
+                FieldKind::Node => lw.node(field)?,
+                FieldKind::Connection(table) => lw.connection_root(table, field)?,
+                FieldKind::FunctionConnection(f) => lw.function_connection_root(f, field)?,
                 other => {
                     return Err(Error::unexpected(format!(
                         "unexpected root field kind {other:?}"
@@ -223,6 +226,16 @@ impl Lowerer<'_> {
                     }
                     FieldKind::ArrayRelationshipAggregate(rel) => {
                         Field::ArrayAggregate(Box::new(self.relationship_aggregate(rel, sel)?))
+                    }
+                    FieldKind::NodeId(table) => {
+                        Field::NodeId(Box::new(Lowerer::node_id_field(table)))
+                    }
+                    FieldKind::ArrayRelationshipConnection(rel) => {
+                        let target = self.target(rel)?;
+                        Field::ArrayConnection(Box::new(hge_ir::RelationshipConnection {
+                            mapping: rel.mapping.clone(),
+                            connection: self.connection(target, sel)?,
+                        }))
                     }
                     FieldKind::ComputedField(cf) => {
                         let user_args = match sel.arg("args") {
@@ -384,7 +397,7 @@ impl Lowerer<'_> {
     }
 
     /// The call of a tracked function with the field's `args`.
-    fn function_call(
+    pub(crate) fn function_call(
         &self,
         f: &FunctionInfo,
         field: &SelectedField<'_>,

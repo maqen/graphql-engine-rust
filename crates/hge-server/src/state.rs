@@ -12,14 +12,17 @@ use hge_metadata::Metadata;
 use hge_metadata::store::MetadataStore;
 use hge_metadata_api::{ApiSettings, Installed, PrepareOptions, Runtime};
 use hge_postgres::PgSource;
-use hge_schema::{ResolvedActions, RoleSchema, SchemaOptions, Tables, build_role_schema};
+use hge_schema::{
+    ResolvedActions, RoleSchema, SchemaOptions, Tables, build_relay_role_schema, build_role_schema,
+};
 
 use crate::config::ServerConfig;
 use crate::load::{self, Prepared};
 
 /// A known role and whether the request uses backend-only permissions; `None` for every
 /// unknown role.
-type SchemaKey = Option<(RoleName, bool)>;
+/// `(role and backend-only, or None for an unknown role; relay)`.
+type SchemaKey = (Option<(RoleName, bool)>, bool);
 
 /// Everything derived from one metadata version.
 pub struct AppState {
@@ -131,7 +134,7 @@ impl AppState {
             && admin.options == options
             && !introspection_disabled.contains(&RoleName::admin())
         {
-            schemas.insert(Some((RoleName::admin(), false)), admin);
+            schemas.insert((Some((RoleName::admin(), false)), false), admin);
         }
         let state = AppState {
             known_roles,
@@ -164,18 +167,34 @@ impl AppState {
     ///
     /// [`Session::backend_only`]: hge_core::Session::backend_only
     pub fn role_schema(&self, role: &RoleName, backend_only: bool) -> Arc<RoleSchema> {
-        let key = self.known_roles.contains(role).then(|| {
+        self.role_schema_of_kind(role, backend_only, false)
+    }
+
+    /// [`Self::role_schema`], or the role's Relay schema when `relay` is set.
+    pub fn role_schema_of_kind(
+        &self,
+        role: &RoleName,
+        backend_only: bool,
+        relay: bool,
+    ) -> Arc<RoleSchema> {
+        let role_key = self.known_roles.contains(role).then(|| {
             (
                 role.clone(),
                 backend_only && self.backend_only_roles.contains(role),
             )
         });
+        let key = (role_key, relay);
         if let Some(s) = self.schemas.read().expect("lock").get(&key) {
             return s.clone();
         }
         // Unknown roles have no permissions; build for a name no permission can use.
-        let (build_as, backend_only) = key.clone().unwrap_or_else(|| (RoleName::new(""), false));
-        let mut built = build_role_schema(
+        let (build_as, backend_only) = key.0.clone().unwrap_or_else(|| (RoleName::new(""), false));
+        let build = if relay {
+            build_relay_role_schema
+        } else {
+            build_role_schema
+        };
+        let mut built = build(
             &self.tables,
             &self.actions,
             &self.prepared.remote_schemas,

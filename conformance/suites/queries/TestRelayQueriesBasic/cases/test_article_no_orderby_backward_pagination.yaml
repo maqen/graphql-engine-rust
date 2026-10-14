@@ -1,0 +1,144 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestRelayQueriesBasic
+  method: test_article_no_orderby_backward_pagination
+  by_hand: true
+  fixtures:
+  - queries/graphql_query/relay/basic/article_pagination_no_orderby/backward/page_1.yaml
+  - queries/graphql_query/relay/basic/article_pagination_no_orderby/backward/page_2.yaml
+  - queries/graphql_query/relay/basic/article_pagination_no_orderby/backward/page_3.yaml
+steps:
+- description: Get last page of articles with 3 items
+  url: /v1/relay
+  status: 200
+  query:
+    query: |
+      query {
+        article_connection(
+          last: 3
+        ){
+          pageInfo{
+            startCursor
+            endCursor
+            hasPreviousPage
+            hasNextPage
+          }
+          edges{
+            cursor
+            node{
+              title
+              content
+              author_id
+            }
+          }
+        }
+      }
+  response:
+    data:
+      article_connection:
+        pageInfo:
+          startCursor: eyJpZCIgOiA0fQ==
+          endCursor: eyJpZCIgOiA2fQ==
+          hasPreviousPage: true
+          hasNextPage: false
+        edges:
+        - cursor: eyJpZCIgOiA0fQ==
+          node:
+            title: Article 4
+            content: Sample article content 4
+            author_id: 2
+        - cursor: eyJpZCIgOiA1fQ==
+          node:
+            title: Article 5
+            content: Sample article content 5
+            author_id: 2
+        - cursor: eyJpZCIgOiA2fQ==
+          node:
+            title: Article 6
+            content: Sample article content 6
+            author_id: 3
+- description: Get last page of articles with 2 items before 'Article 4'
+  url: /v1/relay
+  status: 200
+  query:
+    query: |
+      query {
+        article_connection(
+          last: 2
+          before: "eyJpZCIgOiA0fQ=="
+        ){
+          pageInfo{
+            startCursor
+            endCursor
+            hasPreviousPage
+            hasNextPage
+          }
+          edges{
+            cursor
+            node{
+              title
+              content
+              author_id
+            }
+          }
+        }
+      }
+  response:
+    data:
+      article_connection:
+        pageInfo:
+          startCursor: eyJpZCIgOiAyfQ==
+          endCursor: eyJpZCIgOiAzfQ==
+          hasPreviousPage: true
+          hasNextPage: true
+        edges:
+        - cursor: eyJpZCIgOiAyfQ==
+          node:
+            title: Article 2
+            content: Sample article content 2
+            author_id: 1
+        - cursor: eyJpZCIgOiAzfQ==
+          node:
+            title: Article 3
+            content: Sample article content 3
+            author_id: 1
+- description: Get last page of articles before 'Article 2'
+  url: /v1/relay
+  status: 200
+  query:
+    query: |
+      query {
+        article_connection(
+          last: 2
+          before: "eyJpZCIgOiAyfQ=="
+        ){
+          pageInfo{
+            startCursor
+            endCursor
+            hasPreviousPage
+            hasNextPage
+          }
+          edges{
+            cursor
+            node{
+              title
+              content
+              author_id
+            }
+          }
+        }
+      }
+  response:
+    data:
+      article_connection:
+        pageInfo:
+          startCursor: eyJpZCIgOiAxfQ==
+          endCursor: eyJpZCIgOiAxfQ==
+          hasPreviousPage: false
+          hasNextPage: true
+        edges:
+        - cursor: eyJpZCIgOiAxfQ==
+          node:
+            title: Article 1
+            content: Sample article content 1
+            author_id: 1

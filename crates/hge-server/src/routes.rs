@@ -48,7 +48,9 @@ pub fn router(engine: Arc<Engine>) -> Router {
             .route(
                 "/v1alpha1/graphql",
                 get(graphql_ws_v1alpha1).post(graphql_post_v1alpha1),
-            );
+            )
+            .route("/v1/relay", get(relay_ws).post(relay_post))
+            .route("/v1beta1/relay", get(relay_ws).post(relay_post));
     }
     if engine.config.api_enabled("pgdump") {
         router = router.route(
@@ -150,18 +152,20 @@ pub(crate) fn json_response(
 }
 
 /// Which GraphQL endpoint: `/v1/graphql` reports errors with status 200 (except 401 with
-/// `HASURA_GRAPHQL_PRESERVE_401_ERRORS`); `/v1alpha1/graphql` keeps the real status.
+/// `HASURA_GRAPHQL_PRESERVE_401_ERRORS`); `/v1alpha1/graphql` keeps the real status. The
+/// Relay endpoints behave like `/v1/graphql`.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Endpoint {
     V1,
     V1Alpha1,
+    Relay,
 }
 
 impl Endpoint {
     /// The status of a request that failed with `err` (not used for authentication errors).
     fn error_status(self, err: &Error) -> StatusCode {
         match self {
-            Endpoint::V1 => StatusCode::OK,
+            Endpoint::V1 | Endpoint::Relay => StatusCode::OK,
             Endpoint::V1Alpha1 => {
                 StatusCode::from_u16(err.status.unwrap_or_else(|| err.code.http_status()))
                     .unwrap_or(StatusCode::BAD_REQUEST)
@@ -186,6 +190,47 @@ async fn graphql_post_v1alpha1(
     post(&engine, &headers, body, Endpoint::V1Alpha1).await
 }
 
+/// `/v1/relay` and `/v1beta1/relay`: `/v1/graphql` with the Relay schema.
+async fn relay_post(
+    State(engine): State<Arc<Engine>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if !engine.config.enable_relay {
+        // V2 answers in the API error format, before authentication and without a request id.
+        let err = Error::new(
+            Code::NotSupported,
+            "The Relay API is disabled. To enable it, set the HASURA_GRAPHQL_ENABLE_RELAY environment variable to 'true'.",
+        )
+        .with_path("$");
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            err.to_api_json(false).to_string(),
+            None,
+        );
+    }
+    post(&engine, &headers, body, Endpoint::Relay).await
+}
+
+/// The Relay endpoints take WebSockets on `GET`, not queries.
+async fn relay_ws(
+    State(engine): State<Arc<Engine>>,
+    headers: HeaderMap,
+    MaybeUpgrade(upgrade): MaybeUpgrade,
+) -> Response {
+    match upgrade {
+        Some(upgrade) => ws::upgrade(engine, upgrade, headers, ws::Endpoint::Relay),
+        None => {
+            let err = Error::new(Code::NotFound, "resource does not exist").with_path("$");
+            json_response(
+                StatusCode::NOT_FOUND,
+                err.to_api_json(false).to_string(),
+                None,
+            )
+        }
+    }
+}
+
 async fn post(engine: &Engine, headers: &HeaderMap, body: Bytes, endpoint: Endpoint) -> Response {
     let rid = request_id(headers);
     let log = http_log::wanted().then(|| HttpLogInfo::start(&rid).body(body.clone()));
@@ -204,7 +249,12 @@ async fn post(engine: &Engine, headers: &HeaderMap, body: Bytes, endpoint: Endpo
     let log = log.map(|l| l.session(&auth.session));
     let parsed: Result<GraphQLBody, _> = serde_json::from_slice(&body);
     let resp = match parsed {
-        Ok(body) => run(engine, &auth.session, headers, body, endpoint, rid, log).await,
+        Ok(mut body) => {
+            if endpoint == Endpoint::Relay {
+                body.set_relay();
+            }
+            run(engine, &auth.session, headers, body, endpoint, rid, log).await
+        }
         Err(e) => {
             let err = Error::new(Code::InvalidJson, format!("Error in $: {e}"));
             let mut resp = json_response(
@@ -290,6 +340,7 @@ async fn graphql_get(
         variables,
         operation_name: params.operation_name,
         read_only: true,
+        relay: false,
     };
     let resp = run(
         &engine,
@@ -331,13 +382,13 @@ async fn authenticate(
         Err(e) => {
             let status = match endpoint {
                 Endpoint::V1Alpha1 => e.status,
-                Endpoint::V1
+                Endpoint::V1 | Endpoint::Relay
                     if engine.config.preserve_401_errors
                         && e.status == StatusCode::UNAUTHORIZED =>
                 {
                     e.status
                 }
-                Endpoint::V1 => StatusCode::OK,
+                Endpoint::V1 | Endpoint::Relay => StatusCode::OK,
             };
             let mut resp = json_response(
                 status,

@@ -146,21 +146,24 @@ cases:
         - extensions: {path: "$.selectionSet.user.selectionSet.nope", code: validation-failed}
           message: "field 'nope' not found in type: 'User'"
 
-  - description: fields on a union must be selected in fragments
+  # V2 parses a union selection against each member object (schema-parsers
+  # `selectionSetUnion`), so a field every member has is accepted.
+  - description: a field every union member has can be selected directly
     query:
       query: "{ search { name } }"
     response:
-      errors:
-        - extensions: {path: "$.selectionSet.search.selectionSet.name", code: validation-failed}
-          message: "field 'name' not found in type: 'SearchResult'"
+      data:
+        search: [{name: alice}, {name: R2-D2}]
 
-  - description: unknown fields on an interface name the interface
+  # V2 parses an interface selection against each implementation in turn
+  # (`selectionSetInterface`), so the error names the first object lacking the field.
+  - description: unknown fields on an interface name an implementing object
     query:
       query: "{ characters { homePlanet } }"
     response:
       errors:
         - extensions: {path: "$.selectionSet.characters.selectionSet.homePlanet", code: validation-failed}
-          message: "field 'homePlanet' not found in type: 'Character'"
+          message: "field 'homePlanet' not found in type: 'Droid'"
 
   - description: remote subscription fields are not exposed yet
     query:
