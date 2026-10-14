@@ -169,15 +169,13 @@ async fn run(
     client_headers: &HeaderMap,
     req: GraphQLRequest,
 ) -> Result<(String, Vec<String>), Failure> {
-    // Introspection-only responses are cached per schema. The allowlist is checked on the
-    // parsed query, so requests it applies to always take the full path.
-    let cacheable = state.prepared.allowlist.is_none() || session.role.is_admin();
+    // Introspection-only responses are cached per schema.
     let schema_key = state.schema_key(&session.role, session.backend_only);
-    if cacheable
-        && let Some(query) = req.query.as_deref()
-        && let Some(body) = state.responses.get(&cache_key(&schema_key, query, &req))
+    let cache_key = cache_key(state, session, &schema_key, &req);
+    if let Some(key) = &cache_key
+        && let Some(body) = state.responses.get(key)
     {
-        return Ok((body, vec![]));
+        return Ok((body.to_string(), vec![]));
     }
     let op = plan_request(state, session, &req)?;
     if op.kind == OperationKind::Subscription {
@@ -189,24 +187,35 @@ async fn run(
     }
     let query = req.query.as_deref();
     let (body, cookies) = execute(engine, state, session, client_headers, query, &op).await?;
-    if cacheable && let Some(query) = query {
-        let key = cache_key(&schema_key, query, &req);
-        state.responses.insert_if_static(&key, &op, &body);
+    if let Some(key) = &cache_key {
+        state.responses.insert_if_static(key, &op, &body);
     }
     Ok((body, cookies))
 }
 
+/// The response cache key of a request that may be answered from the cache: one without
+/// variables, with a short query, that the allowlist does not apply to (it is checked on the
+/// parsed query, so those requests always take the full path).
 fn cache_key<'a>(
+    state: &AppState,
+    session: &Session,
     schema: &'a SchemaKey,
-    query: &'a str,
     req: &'a GraphQLRequest,
-) -> response_cache::Key<'a> {
-    response_cache::Key {
-        schema,
-        query,
-        operation_name: req.operation_name.as_deref(),
-        variables: req.variables.as_ref().filter(|v| !v.is_null()),
-    }
+) -> Option<response_cache::Key<'a>> {
+    let no_variables = match &req.variables {
+        None | Some(Json::Null) => true,
+        Some(Json::Object(m)) => m.is_empty(),
+        Some(_) => false,
+    };
+    let query = req.query.as_deref()?;
+    let allowlisted = state.prepared.allowlist.is_some() && !session.role.is_admin();
+    (no_variables && !allowlisted && query.len() <= response_cache::MAX_QUERY).then_some(
+        response_cache::Key {
+            schema,
+            query,
+            operation_name: req.operation_name.as_deref(),
+        },
+    )
 }
 
 /// Parse, validate and lower a request (everything that can fail before execution).

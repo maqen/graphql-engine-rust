@@ -5,48 +5,37 @@
 //! cached per metadata version (the cache lives in [`AppState`](crate::state::AppState) and
 //! goes away with it). Introspection is the expensive case: validating, resolving and
 //! serialising a full introspection query takes milliseconds, a cache hit microseconds.
+//!
+//! Only requests without variables and with a query of at most [`MAX_QUERY`] bytes are
+//! cached, which keeps both the lookup on every request and the cached keys small.
 
 use std::collections::HashMap;
-use std::hash::{BuildHasher, Hash, Hasher, RandomState};
-use std::sync::Mutex;
+use std::hash::{BuildHasher, Hash, RandomState};
+use std::sync::{Arc, RwLock};
 
 use hge_ir::{Operation, OperationKind, RootField};
-use serde_json::Value as Json;
 
-/// Total size of cached bodies before the cache starts over.
+/// Total size of cached queries and bodies before the cache starts over.
 const MAX_BYTES: usize = 32 << 20;
 /// Cached entries before the cache starts over.
 const MAX_ENTRIES: usize = 1024;
+/// Longest query text that is cached (a full introspection query is about 2 KB).
+pub(crate) const MAX_QUERY: usize = 64 << 10;
 
 /// What a cached response is keyed on, borrowed from the request.
-#[derive(PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct Key<'a> {
     /// Identifies the role schema the response was built from.
     pub schema: &'a crate::state::SchemaKey,
     pub query: &'a str,
     pub operation_name: Option<&'a str>,
-    /// `None` when the request has no variables (or `null`).
-    pub variables: Option<&'a Json>,
-}
-
-impl Hash for Key<'_> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.schema.hash(state);
-        self.query.hash(state);
-        self.operation_name.hash(state);
-        // Variables are rare on these operations; hash their text form when present.
-        if let Some(v) = self.variables {
-            v.to_string().hash(state);
-        }
-    }
 }
 
 struct Entry {
     schema: crate::state::SchemaKey,
     query: Box<str>,
     operation_name: Option<Box<str>>,
-    variables: Option<Json>,
-    body: String,
+    body: Arc<str>,
 }
 
 impl Entry {
@@ -54,7 +43,10 @@ impl Entry {
         self.schema == *key.schema
             && *self.query == *key.query
             && self.operation_name.as_deref() == key.operation_name
-            && self.variables.as_ref() == key.variables
+    }
+
+    fn size(&self) -> usize {
+        self.query.len() + self.body.len()
     }
 }
 
@@ -64,11 +56,11 @@ struct Inner {
     bytes: usize,
 }
 
-/// Response bodies of data-free operations, keyed by (schema, query, operation, variables).
+/// Response bodies of data-free operations, keyed by (schema, query, operation name).
 #[derive(Default)]
 pub(crate) struct ResponseCache {
     hasher: RandomState,
-    inner: Mutex<Inner>,
+    inner: RwLock<Inner>,
 }
 
 impl ResponseCache {
@@ -76,19 +68,21 @@ impl ResponseCache {
         self.hasher.hash_one(key)
     }
 
-    pub(crate) fn get(&self, key: &Key<'_>) -> Option<String> {
-        let hash = self.hash(key);
-        let inner = self.inner.lock().expect("lock");
+    pub(crate) fn get(&self, key: &Key<'_>) -> Option<Arc<str>> {
+        let inner = self.inner.read().expect("lock");
+        if inner.entries.is_empty() {
+            return None;
+        }
         inner
             .entries
-            .get(&hash)
+            .get(&self.hash(key))
             .filter(|e| e.matches(key))
             .map(|e| e.body.clone())
     }
 
     /// Cache `body` as the response of `op` if `op` reads no data.
     pub(crate) fn insert_if_static(&self, key: &Key<'_>, op: &Operation, body: &str) {
-        if !is_static(op) || body.len() > MAX_BYTES {
+        if !is_static(op) || key.query.len() > MAX_QUERY || body.len() > MAX_BYTES {
             return;
         }
         let hash = self.hash(key);
@@ -96,17 +90,17 @@ impl ResponseCache {
             schema: key.schema.clone(),
             query: key.query.into(),
             operation_name: key.operation_name.map(Into::into),
-            variables: key.variables.cloned(),
-            body: body.to_owned(),
+            body: body.into(),
         };
-        let mut inner = self.inner.lock().expect("lock");
-        if inner.bytes + body.len() > MAX_BYTES || inner.entries.len() >= MAX_ENTRIES {
+        let size = entry.size();
+        let mut inner = self.inner.write().expect("lock");
+        if inner.bytes + size > MAX_BYTES || inner.entries.len() >= MAX_ENTRIES {
             inner.entries.clear();
             inner.bytes = 0;
         }
-        inner.bytes += body.len();
+        inner.bytes += size;
         if let Some(old) = inner.entries.insert(hash, entry) {
-            inner.bytes -= old.body.len();
+            inner.bytes -= old.size();
         }
     }
 }
@@ -124,6 +118,7 @@ fn is_static(op: &Operation) -> bool {
 mod tests {
     use super::*;
     use hge_core::RoleName;
+    use serde_json::Value as Json;
 
     fn op(fields: Vec<RootField>, kind: OperationKind) -> Operation {
         Operation {
@@ -145,7 +140,6 @@ mod tests {
             schema: &schema,
             query: "{ __typename }",
             operation_name: None,
-            variables: None,
         };
         let mutation = op(
             vec![RootField::Static(Json::String("x".into()))],
@@ -161,9 +155,17 @@ mod tests {
         cache.insert_if_static(&key, &query, "q");
         assert_eq!(cache.get(&key).as_deref(), Some("q"));
 
+        // Long queries are not cached.
+        let long = "#".repeat(MAX_QUERY + 1);
+        let long_key = Key {
+            query: &long,
+            ..key
+        };
+        cache.insert_if_static(&long_key, &query, "q");
+        assert_eq!(cache.get(&long_key), None);
+
         // Any part of the key differing is a miss.
         let other_role = Some((RoleName::new("user"), false));
-        let vars = serde_json::json!({"a": 1});
         for other in [
             Key {
                 schema: &other_role,
@@ -179,10 +181,6 @@ mod tests {
             },
             Key {
                 operation_name: Some("Q"),
-                ..key
-            },
-            Key {
-                variables: Some(&vars),
                 ..key
             },
         ] {
@@ -201,12 +199,11 @@ mod tests {
                 schema: &schema,
                 query: t,
                 operation_name: None,
-                variables: None,
             };
             cache.insert_if_static(&key, &query, "body");
         }
-        let inner = cache.inner.lock().unwrap();
+        let inner = cache.inner.read().unwrap();
         assert_eq!(inner.entries.len(), 1);
-        assert_eq!(inner.bytes, 4);
+        assert_eq!(inner.bytes, texts[MAX_ENTRIES].len() + 4);
     }
 }
