@@ -4,10 +4,9 @@
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
-use hge_core::{InconsistentObject, RoleName};
+use hge_core::{Code, Error, InconsistentObject, RoleName};
 use hge_ir::{NamespaceItem, RemoteRootField, RemoteRootKind};
 use hge_metadata::Metadata;
-use hge_metadata_api::Reload;
 use hge_remote_schema::{
     RemoteError, RemoteResponse, RemoteSchemaClient, RemoteSettings, RequestContext,
 };
@@ -50,8 +49,68 @@ fn inconsistency(entry: &Json, name: &str, reason: impl Into<String>) -> Inconsi
     )
 }
 
+fn env_lookup(config: &ServerConfig) -> hge_remote_schema::EnvLookup {
+    let overrides = config.env_overrides.clone();
+    Arc::new(move |name: &str| {
+        overrides
+            .get(name)
+            .cloned()
+            .or_else(|| hge_remote_schema::process_env(name))
+    })
+}
+
+fn parse_entry(entry: &Json) -> Result<metadata::RemoteSchemaMetadata, hge_core::Error> {
+    let parsed = metadata::parse(entry).map_err(|e| Error::new(Code::ParseFailed, e))?;
+    parsed
+        .definition
+        .validate()
+        .map_err(|e| Error::new(Code::InvalidParams, e))?;
+    Ok(parsed)
+}
+
+/// Validate a `remote_schemas[]` entry, introspect its server and build the remote's
+/// schema (spec 08 §3-§4).
+async fn introspect(
+    entry: &Json,
+    env: hge_remote_schema::EnvLookup,
+) -> Result<PreparedRemote, hge_core::Error> {
+    let name = metadata::entry_name(entry);
+    let parsed = parse_entry(entry)?;
+    let user_agent = format!("hasura-graphql-engine/{}", crate::routes::VERSION);
+    let client = RemoteSchemaClient::new(
+        &name,
+        parsed.definition.clone(),
+        http_client(),
+        &user_agent,
+        env,
+    );
+    let (raw, json) = client.introspect().await?;
+    let info = RemoteSchemaInfo::new(&name, parsed.definition.customization.as_ref(), &json)
+        .map_err(|e| Error::new(Code::RemoteSchemaError, e))?;
+    Ok(PreparedRemote {
+        key: entry.to_string(),
+        client: Arc::new(client),
+        raw_introspection: raw.into(),
+        info: Arc::new(info),
+    })
+}
+
+/// `add_remote_schema`'s check before it changes the metadata: the entry must be valid
+/// and (with `fetch`) its server must answer the introspection query with a usable schema.
+pub async fn validate(
+    entry: &Json,
+    fetch: bool,
+    config: &ServerConfig,
+) -> Result<(), hge_core::Error> {
+    if fetch {
+        introspect(entry, env_lookup(config)).await.map(|_| ())
+    } else {
+        parse_entry(entry).map(|_| ())
+    }
+}
+
 /// Introspect the metadata's remote schemas (reusing `base`'s results for unchanged ones
-/// unless `reload` asks for re-introspection) and check them against the schema of the
+/// unless `reintrospect` says otherwise) and check them against the schema of the
 /// tables and actions.
 /// Returns every introspected remote, the ones accepted into the schema, and the
 /// inconsistencies.
@@ -59,7 +118,7 @@ pub async fn prepare(
     metadata: &Metadata,
     config: &ServerConfig,
     base: Option<&HashMap<String, PreparedRemote>>,
-    reload: &Reload,
+    reintrospect: impl Fn(&str) -> bool + Sync,
     tables: &Arc<Tables>,
     actions: &ResolvedActions,
     options: &SchemaOptions,
@@ -69,51 +128,23 @@ pub async fn prepare(
     Vec<InconsistentObject>,
 ) {
     let mut inconsistencies = vec![];
-    let reintrospect = matches!(reload, Reload::All | Reload::Introspect);
-    let user_agent = format!("hasura-graphql-engine/{}", crate::routes::VERSION);
-    let overrides = config.env_overrides.clone();
-    let env: hge_remote_schema::EnvLookup = Arc::new(move |name: &str| {
-        overrides
-            .get(name)
-            .cloned()
-            .or_else(|| hge_remote_schema::process_env(name))
-    });
+    let env = env_lookup(config);
 
+    let reintrospect = &reintrospect;
     let tasks = metadata.remote_schemas.iter().map(|entry| {
-        let user_agent = &user_agent;
         let env = env.clone();
         async move {
             let name = metadata::entry_name(entry);
-            let parsed = metadata::parse(entry)
-                .and_then(|m| m.definition.validate().map(|()| m))
-                .map_err(|e| inconsistency(entry, &name, e))?;
             let key = entry.to_string();
             if let Some(prev) = base
                 .and_then(|b| b.get(&name))
-                .filter(|p| p.key == key && !reintrospect)
+                .filter(|p| p.key == key && !reintrospect(&name))
             {
                 return Ok(prev.clone());
             }
-            let client = RemoteSchemaClient::new(
-                &name,
-                parsed.definition.clone(),
-                http_client(),
-                user_agent,
-                env,
-            );
-            let (raw, json) = client
-                .introspect()
+            introspect(entry, env)
                 .await
-                .map_err(|e| inconsistency(entry, &name, e.message))?;
-            let info =
-                RemoteSchemaInfo::new(&name, parsed.definition.customization.as_ref(), &json)
-                    .map_err(|e| inconsistency(entry, &name, e))?;
-            Ok::<_, InconsistentObject>(PreparedRemote {
-                key,
-                client: Arc::new(client),
-                raw_introspection: raw.into(),
-                info: Arc::new(info),
-            })
+                .map_err(|e| inconsistency(entry, &name, e.message))
         }
     });
     let mut prepared = HashMap::new();

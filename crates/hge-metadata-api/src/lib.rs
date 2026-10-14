@@ -22,4 +22,4 @@ pub use api::handle_metadata;
 pub use catalog::PgCatalog;
 pub use query::handle_query;
 pub use response::{ApiError, ApiResponse};
-pub use runtime::{ApiSettings, Installed, PrepareOptions, Reload, Runtime};
+pub use runtime::{ApiSettings, Installed, PrepareOptions, Reload, RemoteReload, Runtime};

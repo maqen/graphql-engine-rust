@@ -8,7 +8,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use hge_metadata_api::{PrepareOptions, Reload, Runtime};
+use hge_metadata_api::{PrepareOptions, Reload, RemoteReload, Runtime};
 use tracing::{info, warn};
 
 use crate::state::Engine;
@@ -45,16 +45,28 @@ pub async fn sync_once(engine: &Engine) -> Result<bool, hge_core::Error> {
     if fresh.resource_version <= installed {
         return Ok(false);
     }
-    // Sources the other instance asked to reconnect (e.g. reload_metadata).
-    let reload = match engine
+    // Sources and remote schemas the other instance asked to reload (e.g. reload_metadata).
+    let (reload, remote_schemas) = match engine
         .store
         .notification_since(installed, &engine.instance_id)
         .await
     {
-        Ok(Some((_, inv))) if !inv.sources.is_empty() => {
-            Reload::Sources(inv.sources.into_iter().collect())
+        Ok(Some((version, inv))) => {
+            let reload = if inv.sources.is_empty() {
+                Reload::Introspect
+            } else {
+                Reload::Sources(inv.sources.into_iter().collect())
+            };
+            // Only the latest notification is kept: when we missed versions, a remote
+            // schema reload among them is lost, so re-introspect them all.
+            let remotes = if version == fresh.resource_version && version == installed + 1 {
+                RemoteReload::Only(inv.remote_schemas.into_iter().collect())
+            } else {
+                RemoteReload::All
+            };
+            (reload, remotes)
         }
-        _ => Reload::Introspect,
+        _ => (Reload::Introspect, RemoteReload::All),
     };
     let metadata = hge_metadata::from_json(fresh.metadata)?;
     let prepared = engine
@@ -63,6 +75,7 @@ pub async fn sync_once(engine: &Engine) -> Result<bool, hge_core::Error> {
             PrepareOptions {
                 base: None,
                 reload,
+                remote_schemas,
                 catalogs: Default::default(),
             },
         )

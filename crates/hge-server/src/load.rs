@@ -11,7 +11,7 @@ use hge_core::{
 };
 use hge_metadata::store::MetadataStore;
 use hge_metadata::{Metadata, PgConnectionInfo, Source, SourceConfiguration, UrlConfig, load_dir};
-use hge_metadata_api::Reload;
+use hge_metadata_api::{Reload, RemoteReload};
 use hge_postgres::{IsolationLevel, PgSource, PoolConfig};
 use hge_schema::{ResolvedActions, SchemaOptions, Tables, resolve_actions, resolve_tables};
 use serde_json::json;
@@ -241,6 +241,7 @@ pub async fn prepare(
     config: &ServerConfig,
     base: Option<&Prepared>,
     reload: &Reload,
+    remote_reload: &RemoteReload,
     mut catalogs: HashMap<String, SourceCatalog>,
 ) -> Prepared {
     let mut sources = HashMap::new();
@@ -363,7 +364,7 @@ pub async fn prepare(
         metadata,
         config,
         base.map(|b| &b.remotes),
-        reload,
+        |name| remote_reload.includes(name),
         &tables,
         &actions,
         &schema_options(config),
