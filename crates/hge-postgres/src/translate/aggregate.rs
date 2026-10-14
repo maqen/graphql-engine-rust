@@ -16,7 +16,7 @@
 use hge_core::{ColumnType, Error, QualifiedTable};
 use hge_ir::{
     AggregateColumn, AggregateColumnField, AggregateCount, AggregateField, AggregateOrderBy,
-    AggregateSelect, AggregateSelectField, AggregationPredicate, BoolExp, Field,
+    AggregateSelect, AggregateSelectField, AggregationPredicate, BoolExp, Field, FunctionCall,
 };
 
 use super::Translator;
@@ -100,6 +100,29 @@ impl Translator<'_> {
                                 }
                                 t.b.push(function.name()).push("(");
                                 t.aggregate_column(column, base)?;
+                                t.b.push(")");
+                                if *stringify {
+                                    t.b.push(")::text");
+                                }
+                            }
+                            AggregateColumnField::ComputedField {
+                                call,
+                                redact,
+                                stringify,
+                            } => {
+                                if *stringify {
+                                    t.b.push("(");
+                                }
+                                t.b.push(function.name()).push("(");
+                                if let Some(condition) = redact {
+                                    t.b.push("(CASE WHEN ");
+                                    t.bool_exp(condition, base)?;
+                                    t.b.push(" THEN ");
+                                }
+                                t.function_call(call, base)?;
+                                if redact.is_some() {
+                                    t.b.push(" ELSE NULL END)");
+                                }
                                 t.b.push(")");
                                 if *stringify {
                                     t.b.push(")::text");
@@ -209,6 +232,37 @@ impl Translator<'_> {
         if let Some(f) = filter {
             self.b.push(" AND ");
             self.bool_exp(f, &rel)?;
+        }
+        self.b.push(")");
+        Ok(())
+    }
+
+    /// `(SELECT <aggregate> FROM <computed field>(<row>) AS _o WHERE <filter>)`.
+    pub(crate) fn computed_field_aggregate_order_target(
+        &mut self,
+        call: &FunctionCall,
+        filter: Option<&BoolExp>,
+        aggregate: &AggregateOrderBy,
+        alias: &str,
+    ) -> Result<(), Error> {
+        let rows = self.fresh("_o");
+        self.b.push("(SELECT ");
+        match aggregate {
+            AggregateOrderBy::Count => {
+                self.b.push("count(*)");
+            }
+            AggregateOrderBy::Function { function, column } => {
+                self.b.push(function.name()).push("(");
+                self.aggregate_column(column, &rows)?;
+                self.b.push(")");
+            }
+        }
+        self.b.push(" FROM ");
+        self.function_call(call, alias)?;
+        self.b.push(" AS ").ident(&rows);
+        if let Some(f) = filter {
+            self.b.push(" WHERE ");
+            self.bool_exp(f, &rows)?;
         }
         self.b.push(")");
         Ok(())

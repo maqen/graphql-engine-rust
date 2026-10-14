@@ -615,6 +615,12 @@ impl Builder<'_> {
                                 TypeRef::named(target.bool_exp_name()),
                             ),
                         );
+                        // Like an array relationship's, without needing allow_aggregations.
+                        let name = format!("{}_aggregate", cf.name);
+                        let ty = self.ensure_aggregate_order_by(&target);
+                        order_by
+                            .fields
+                            .insert(name.clone(), InputValueDef::new(name, TypeRef::named(ty)));
                     }
                     let field = FieldDef::new(
                         cf.name.clone(),
@@ -625,18 +631,7 @@ impl Builder<'_> {
                 }
             };
             field.description = cf.description.clone();
-            if cf.has_input_args() {
-                let name = self.ensure_computed_field_args(table, &cf);
-                let ty = if cf.args_required() {
-                    TypeRef::nn(name)
-                } else {
-                    TypeRef::named(name)
-                };
-                field = field.arg(InputValueDef::new("args", ty).describe(format!(
-                    "input parameters for computed field \"{}\" defined on table \"{display}\"",
-                    cf.name
-                )));
-            }
+            let field = self.with_computed_field_args(field, table, &cf);
             obj.fields.insert(cf.name.clone(), field);
         }
 
@@ -755,6 +750,29 @@ impl Builder<'_> {
             }));
         }
         field.arg(InputValueDef::new("args", TypeRef::nn(name)).describe(description))
+    }
+
+    /// `args` of a computed field that takes arguments besides the row and the session.
+    pub(crate) fn with_computed_field_args(
+        &mut self,
+        field: FieldDef,
+        table: &TableInfo,
+        cf: &ComputedFieldInfo,
+    ) -> FieldDef {
+        if !cf.has_input_args() {
+            return field;
+        }
+        let name = self.ensure_computed_field_args(table, cf);
+        let ty = if cf.args_required() {
+            TypeRef::nn(name)
+        } else {
+            TypeRef::named(name)
+        };
+        field.arg(InputValueDef::new("args", ty).describe(format!(
+            "input parameters for computed field \"{}\" defined on table \"{}\"",
+            cf.name,
+            table.display_name()
+        )))
     }
 
     /// The object type of a native query's rows (see [`NativeQueryInfo::object_type_name`]),

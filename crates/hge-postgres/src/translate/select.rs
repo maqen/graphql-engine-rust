@@ -295,6 +295,14 @@ impl<'s> Translator<'s> {
                 let filter = permission_filter.as_deref();
                 self.aggregate_order_target(table, mapping, filter, aggregate, alias)?;
             }
+            OrderByTarget::ComputedFieldAggregate {
+                call,
+                permission_filter,
+                aggregate,
+            } => {
+                let filter = permission_filter.as_deref();
+                self.computed_field_aggregate_order_target(call, filter, aggregate, alias)?;
+            }
         }
         Ok(())
     }

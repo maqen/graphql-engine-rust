@@ -12,6 +12,7 @@ use indexmap::IndexMap;
 
 use super::{AggregateFieldKind, relationship_aggregate_name};
 use crate::build::Builder;
+use crate::functions::ComputedFieldInfo;
 use crate::model::*;
 use crate::scalars;
 use crate::tables::{ColumnInfo, RelationshipInfo, TableInfo};
@@ -116,6 +117,19 @@ impl Builder<'_> {
             .collect()
     }
 
+    /// The scalar computed fields of `table` the role may select, in metadata order.
+    fn visible_computed_fields(&self, table: &TableInfo) -> Vec<Arc<ComputedFieldInfo>> {
+        let Some(access) = self.access(table) else {
+            return vec![];
+        };
+        table
+            .computed_fields
+            .iter()
+            .filter(|cf| cf.scalar_type().is_some() && access.computed_fields.contains(&cf.name))
+            .cloned()
+            .collect()
+    }
+
     /// `T_aggregate`, `T_aggregate_fields` and the `T_<function>_fields` objects; returns the
     /// name of `T_aggregate`.
     pub(crate) fn ensure_aggregate_types(&mut self, table: &TableInfo) -> String {
@@ -147,6 +161,7 @@ impl Builder<'_> {
     /// visible column.
     fn ensure_aggregate_fields(&mut self, table: &TableInfo) -> String {
         let columns = self.visible_columns(table);
+        let computed = self.visible_computed_fields(table);
         let mut count = FieldDef::new(
             "count",
             TypeRef::nn("Int"),
@@ -166,10 +181,11 @@ impl Builder<'_> {
         .field(count);
         for function in AggregateFunction::ALL {
             let applicable = applicable_columns(&columns, function);
-            if applicable.is_empty() {
+            let applicable_computed = applicable_computed_fields(&computed, function);
+            if applicable.is_empty() && applicable_computed.is_empty() {
                 continue;
             }
-            let ty = self.add_function_fields(table, function, &applicable);
+            let ty = self.add_function_fields(table, function, &applicable, &applicable_computed);
             fields = fields.field(FieldDef::new(
                 function.name(),
                 TypeRef::named(ty),
@@ -188,6 +204,7 @@ impl Builder<'_> {
         table: &TableInfo,
         function: AggregateFunction,
         columns: &[&ColumnInfo],
+        computed: &[&Arc<ComputedFieldInfo>],
     ) -> String {
         let keeps_type = function == AggregateFunction::Sum || function.is_comparison();
         let mut obj = ObjectDef::new(
@@ -212,13 +229,25 @@ impl Builder<'_> {
                 .describe_opt(col.description.clone()),
             );
         }
+        // V2 gives computed fields their own type, even for the statistical functions.
+        for cf in computed {
+            let ty = cf.scalar_type().expect("scalar computed field");
+            let field = FieldDef::new(
+                cf.name.clone(),
+                scalars::column_type_ref(ty, true),
+                FieldKind::ComputedField((*cf).clone()),
+            )
+            .describe_opt(cf.description.clone());
+            let field = self.with_computed_field_args(field, table, cf);
+            obj = obj.field(field);
+        }
         let name = obj.name.clone();
         self.schema.add(TypeDef::Object(obj));
         name
     }
 
     /// `T_aggregate_order_by` and its `T_<function>_order_by` inputs.
-    fn ensure_aggregate_order_by(&mut self, table: &TableInfo) -> String {
+    pub(crate) fn ensure_aggregate_order_by(&mut self, table: &TableInfo) -> String {
         let name = table.aggregate_order_by_name();
         if self.schema.types.contains_key(&name) {
             return name;
@@ -420,6 +449,25 @@ fn applicable_columns(columns: &[ColumnInfo], function: AggregateFunction) -> Ve
     columns
         .iter()
         .filter(|c| c.enum_ref.is_none() && applies(&c.ty))
+        .collect()
+}
+
+/// The scalar computed fields an aggregate function applies to, by the same rules as columns.
+fn applicable_computed_fields(
+    computed: &[Arc<ComputedFieldInfo>],
+    function: AggregateFunction,
+) -> Vec<&Arc<ComputedFieldInfo>> {
+    computed
+        .iter()
+        .filter(|cf| {
+            cf.scalar_type().is_some_and(|ty| {
+                if function.is_comparison() {
+                    scalars::is_comparable(ty)
+                } else {
+                    scalars::is_numeric(ty)
+                }
+            })
+        })
         .collect()
 }
 

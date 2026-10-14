@@ -78,3 +78,8 @@ $$;
 CREATE FUNCTION publish_article(article_id integer) RETURNS SETOF article LANGUAGE sql VOLATILE AS $$
   UPDATE article SET is_published = true WHERE id = article_id RETURNING *
 $$;
+
+-- Numeric computed fields for aggregates.
+CREATE FUNCTION author_id2(a author) RETURNS integer LANGUAGE sql STABLE AS $$ SELECT a.id * 2 $$;
+CREATE FUNCTION author_idn(a author) RETURNS numeric LANGUAGE sql STABLE AS $$ SELECT a.id / 3.0 $$;
+CREATE FUNCTION author_idarg(a author, k integer DEFAULT 1) RETURNS integer LANGUAGE sql STABLE AS $$ SELECT a.id * k $$;

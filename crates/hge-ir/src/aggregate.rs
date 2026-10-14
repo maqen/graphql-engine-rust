@@ -3,7 +3,7 @@
 
 use hge_core::{ColumnType, QualifiedTable};
 
-use crate::{BoolExp, Field, RowSource, SelectArgs};
+use crate::{BoolExp, Field, FunctionCall, RowSource, SelectArgs};
 
 /// `author_aggregate(where: …) { aggregate { … } nodes { … } }`: one JSON object computed over
 /// the rows left after the filters, ordering, `limit` and `offset`.
@@ -71,6 +71,14 @@ pub enum AggregateColumnField {
         /// The column's type; it decides stringification, not the function's result type.
         ty: ColumnType,
         /// Return the value as a JSON string (`HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES`).
+        stringify: bool,
+    },
+    /// A scalar computed field's value for each row, as in V2: the function keeps the
+    /// field's type in the schema whatever it returns.
+    ComputedField {
+        call: FunctionCall,
+        /// For an inherited role that redacts the field: NULL on rows where this fails.
+        redact: Option<Box<BoolExp>>,
         stringify: bool,
     },
     Typename(String),

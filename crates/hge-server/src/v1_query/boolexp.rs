@@ -774,6 +774,17 @@ pub fn nullify_missing_in_select(select: &mut Select, session: &hge_core::Sessio
                     nullify_missing_session_variables(condition, session);
                     break;
                 }
+                OrderByTarget::ComputedFieldAggregate {
+                    call,
+                    permission_filter,
+                    ..
+                } => {
+                    for_each_call_value(call, &mut |v| nullify_missing_value(v, session));
+                    if let Some(f) = permission_filter {
+                        nullify_missing_session_variables(f, session);
+                    }
+                    break;
+                }
                 OrderByTarget::Column(_) => break,
             }
         }
