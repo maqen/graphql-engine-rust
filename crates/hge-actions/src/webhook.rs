@@ -69,7 +69,10 @@ pub fn header_pairs(headers: &HeaderMap) -> Vec<(String, String)> {
         .collect()
 }
 
-fn forwarded_client_headers(
+/// The client headers forwarded by `forward_client_headers` (§7.3): `X-Forwarded-Host`,
+/// `-User-Agent` and `-Origin`, then every header except `ignored` (lower-cased names) and
+/// session variables. Also used by `validate_input` webhooks.
+pub fn forwarded_client_headers(
     ignored: &HashSet<String>,
     headers: ClientHeaders<'_>,
 ) -> Vec<(String, String)> {

@@ -368,6 +368,7 @@ impl Lowerer<'_> {
                 query,
             })),
             ExposedAs::Mutation => RootField::Mutation(Box::new(MutationRootField {
+                validations: vec![],
                 source: f.source.clone(),
                 mutation: Mutation::Function(Box::new(query)),
             })),

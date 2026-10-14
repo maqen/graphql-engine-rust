@@ -476,6 +476,24 @@ pub(crate) fn one_transaction(op: &Operation) -> Option<&str> {
     sources.all(|s| s == Some(first)).then_some(first)
 }
 
+/// Call the root field's `validate_input` webhooks (spec 04 §10).
+async fn validate_input(
+    state: &AppState,
+    m: &hge_ir::MutationRootField,
+    ctx: &Context<'_>,
+) -> Result<(), Error> {
+    if m.validations.is_empty() {
+        return Ok(());
+    }
+    crate::input_validation::validate(
+        &state.action_registry,
+        &m.validations,
+        ctx.session,
+        ctx.actions.client_headers,
+    )
+    .await
+}
+
 /// Run the root fields of a mutation operation in order; the first error stops the
 /// operation (spec 03 §1). Like V2, when every root field is a database mutation on the same
 /// source they share one transaction (a failure rolls back all of them); otherwise each runs
@@ -488,6 +506,13 @@ async fn run_mutations(
     set_cookies: &mut Vec<String>,
 ) -> Result<Vec<Option<String>>, Failure> {
     let session = ctx.session;
+    // Like V2, every root field's `validate_input` webhooks run while the operation is
+    // planned, before any root field executes.
+    for (_, rf) in &op.root_fields {
+        if let RootField::Mutation(m) = rf {
+            validate_input(state, m, ctx).await?;
+        }
+    }
     let mut results: Vec<Option<String>> = vec![None; op.root_fields.len()];
     if let Some(first_source) = one_transaction(op) {
         let batch: Vec<&Mutation> = op

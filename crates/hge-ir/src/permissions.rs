@@ -5,6 +5,8 @@
 //! whose values may be [`Value::Session`] references, bound per request by the backend.
 //! Owned by the *Permissions & roles* workstream; mutations read the insert/update/delete parts.
 
+use std::sync::Arc;
+
 use indexmap::IndexMap;
 
 use crate::{BoolExp, Value};
@@ -101,6 +103,7 @@ pub struct InsertPermission {
     /// Column presets (`set`), applied to every row; the user cannot provide these columns.
     pub presets: IndexMap<String, Value>,
     pub backend_only: bool,
+    pub validate_input: Option<Arc<InputValidation>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -113,6 +116,28 @@ pub struct UpdatePermission {
     pub check: Option<BoolExp>,
     pub presets: IndexMap<String, Value>,
     pub backend_only: bool,
+    pub validate_input: Option<Arc<InputValidation>>,
+}
+
+/// `validate_input` on an insert, update or delete permission: an HTTP webhook that gets
+/// the mutation's input before it runs and may reject it (V2's `ValidateInput`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct InputValidation {
+    /// Always [`EnvValue::Template`]: V2 takes a URL template only.
+    pub url: EnvValue,
+    /// Configured headers, in metadata order.
+    pub headers: Vec<(String, EnvValue)>,
+    pub timeout_secs: u64,
+    pub forward_client_headers: bool,
+}
+
+/// A configured string resolved from the environment per request.
+#[derive(Debug, Clone, PartialEq)]
+pub enum EnvValue {
+    /// Text with `{{ENV_VAR}}` segments.
+    Template(String),
+    /// The whole value is this environment variable (`from_env` / `value_from_env`).
+    FromEnv(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -120,4 +145,5 @@ pub struct DeletePermission {
     /// Rows the role may delete.
     pub filter: BoolExp,
     pub backend_only: bool,
+    pub validate_input: Option<Arc<InputValidation>>,
 }

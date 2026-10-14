@@ -18,8 +18,8 @@ use std::sync::Arc;
 
 use hge_core::{ADMIN_ROLE, InconsistentObject, RoleName};
 use hge_ir::{
-    BoolExp, DeletePermission, InsertPermission, RootFields, SelectPermission, TablePermissions,
-    UpdatePermission,
+    BoolExp, DeletePermission, EnvValue, InputValidation, InsertPermission, RootFields,
+    SelectPermission, TablePermissions, UpdatePermission,
 };
 use hge_metadata::{Columns, Metadata};
 use indexmap::IndexMap;
@@ -167,15 +167,18 @@ fn resolve_table<'m>(
             );
             continue;
         }
-        match parser.bool_exp(table, &p.permission.filter) {
-            Ok(filter) => set_once(
-                &mut by_role.entry(&p.role).or_default().delete,
-                DeletePermission {
+        let delete = parser
+            .bool_exp(table, &p.permission.filter)
+            .and_then(|filter| {
+                Ok(DeletePermission {
                     filter,
                     backend_only: p.permission.backend_only,
-                },
-            )
-            .unwrap_or_else(|e| report("delete", p, e)),
+                    validate_input: validate_input(&p.permission.extra)?,
+                })
+            });
+        match delete {
+            Ok(perm) => set_once(&mut by_role.entry(&p.role).or_default().delete, perm)
+                .unwrap_or_else(|e| report("delete", p, e)),
             Err(e) => report("delete", p, e),
         }
     }
@@ -278,6 +281,7 @@ fn admin_permissions(table: &TableInfo) -> TablePermissions {
             check: BoolExp::always_true(),
             presets: IndexMap::new(),
             backend_only: false,
+            validate_input: None,
         }),
         update: Some(UpdatePermission {
             columns,
@@ -285,10 +289,12 @@ fn admin_permissions(table: &TableInfo) -> TablePermissions {
             check: None,
             presets: IndexMap::new(),
             backend_only: false,
+            validate_input: None,
         }),
         delete: Some(DeletePermission {
             filter: BoolExp::always_true(),
             backend_only: false,
+            validate_input: None,
         }),
     }
 }
@@ -390,6 +396,7 @@ fn insert_permission(
         check: parser.bool_exp(table, &p.check)?,
         presets,
         backend_only: p.backend_only,
+        validate_input: validate_input(&p.extra)?,
     })
 }
 
@@ -410,7 +417,74 @@ fn update_permission(
         },
         presets,
         backend_only: p.backend_only,
+        validate_input: validate_input(&p.extra)?,
     })
+}
+
+/// `validate_input` of an insert, update or delete permission (V2's `ValidateInput`):
+/// `{"type": "http", "definition": {"url", "headers", "timeout", "forward_client_headers"}}`.
+fn validate_input(extra: &hge_metadata::Extra) -> Result<Option<Arc<InputValidation>>, PermError> {
+    use serde_json::Value as Json;
+    let Some(v) = extra.get("validate_input").filter(|v| !v.is_null()) else {
+        return Ok(None);
+    };
+    let obj = v.as_object().ok_or("validate_input: expected an object")?;
+    match obj.get("type") {
+        Some(Json::String(t)) if t == "http" => {}
+        Some(Json::String(t)) => {
+            return Err(format!("expecting only 'http' for 'type' but got {t}"));
+        }
+        _ => return Err("validate_input: key \"type\" not found".to_owned()),
+    }
+    let def = obj
+        .get("definition")
+        .and_then(Json::as_object)
+        .ok_or("validate_input: key \"definition\" not found")?;
+    // `url` is a template string, like an action handler (V2's `InputWebhook`).
+    let url = match def.get("url") {
+        Some(Json::String(s)) => EnvValue::Template(s.clone()),
+        Some(_) => return Err("validate_input: \"url\" must be a string".to_owned()),
+        None => return Err("validate_input: key \"url\" not found".to_owned()),
+    };
+    let header_list = match def.get("headers") {
+        None | Some(Json::Null) => &vec![],
+        Some(Json::Array(items)) => items,
+        Some(_) => return Err("validate_input: \"headers\" must be an array".to_owned()),
+    };
+    let mut headers = Vec::with_capacity(header_list.len());
+    for h in header_list {
+        // V2's `HeaderConf`, shared with actions (no `HASURA_GRAPHQL_*` variables).
+        headers.push(match hge_metadata::actions::HeaderConf::from_json(h)? {
+            hge_metadata::actions::HeaderConf::Value { name, value } => {
+                (name, EnvValue::Template(value))
+            }
+            hge_metadata::actions::HeaderConf::FromEnv { name, env } => {
+                (name, EnvValue::FromEnv(env))
+            }
+        });
+    }
+    let timeout_secs = match def.get("timeout") {
+        None | Some(Json::Null) => 10,
+        Some(t) if t.as_i64().is_some_and(|n| n < 0) => {
+            return Err("timeout value cannot be negative".to_owned());
+        }
+        Some(t) => t
+            .as_u64()
+            .ok_or("validate_input: \"timeout\" must be an integer")?,
+    };
+    let forward_client_headers = match def.get("forward_client_headers") {
+        None | Some(Json::Null) => false,
+        Some(Json::Bool(b)) => *b,
+        Some(_) => {
+            return Err("validate_input: \"forward_client_headers\" must be a boolean".to_owned());
+        }
+    };
+    Ok(Some(Arc::new(InputValidation {
+        url,
+        headers,
+        timeout_secs,
+        forward_client_headers,
+    })))
 }
 
 #[cfg(test)]
