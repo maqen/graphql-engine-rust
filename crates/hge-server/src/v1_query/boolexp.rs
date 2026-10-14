@@ -8,8 +8,8 @@
 
 use hge_core::{Code, ColumnType};
 use hge_ir::{
-    BoolExp, ColumnCompareOp, ColumnRef, CompareOp, Field, OrderByTarget, Select, SelectPermission,
-    Value,
+    BoolExp, ColumnCompareOp, ColumnRef, CompareOp, DWithin, Field, OrderByTarget, Select,
+    SelectPermission, SpatialOp, Value,
 };
 use hge_metadata_api::ApiError;
 use hge_schema::TableInfo;
@@ -17,7 +17,7 @@ use hge_schema::scalars;
 use hge_schema::tables::ColumnInfo;
 use serde_json::Value as Json;
 
-use super::json::{Path, err400, kind, parse_failed, type_mismatch};
+use super::json::{Obj, Path, err400, kind, parse_failed, type_mismatch};
 use super::lower::Lowerer;
 
 impl Lowerer<'_> {
@@ -317,11 +317,105 @@ impl BoolExpLowerer<'_, '_> {
                     other,
                 })
             }
-            "cast" | "ancestor" | "ancestor_any" | "descendant" | "descendant_any" | "matches"
-            | "matches_any" | "matches_fulltext" => Err(not_supported_yet(op, path)),
-            _ if name.starts_with("st_") => Err(not_supported_yet(op, path)),
+            "cast" => self.cast(table, perm, col, v, path),
+            "st_contains" | "st_crosses" | "st_equals" | "st_overlaps" | "st_touches"
+            | "st_within" | "st_3d_intersects" | "st_intersects" => {
+                if name == "st_intersects" {
+                    guard(scalars::is_geo(ty), GEO_TYPES)?;
+                } else {
+                    guard(is_geometry(ty), "\"geometry\"")?;
+                }
+                let f = SpatialOp::from_name(name).expect("a spatial operator");
+                cmp(CompareOp::Spatial(f, scalar(v)?))
+            }
+            "st_d_within" => {
+                guard(scalars::is_geo(ty), GEO_TYPES)?;
+                cmp(d_within(false, v, ty, path)?)
+            }
+            "st_3d_d_within" => {
+                guard(is_geometry(ty), "\"geometry\"")?;
+                cmp(d_within(true, v, ty, path)?)
+            }
+            "ancestor" | "ancestor_any" | "descendant" | "descendant_any" | "matches"
+            | "matches_any" | "matches_fulltext" => {
+                guard(!ty.is_array() && ty.name == "ltree", "\"ltree\"")?;
+                let sibling = |name: &str| ColumnType {
+                    name: name.to_owned(),
+                    ..ty.clone()
+                };
+                let lquery = sibling("lquery");
+                // V2 renders the ltree operators with the generic `@>`, `<@`, `~` and `?`.
+                cmp(match name {
+                    "ancestor" => CompareOp::Contains(scalar(v)?),
+                    "ancestor_any" => CompareOp::Contains(list(v, ty, path)?),
+                    "descendant" => CompareOp::ContainedIn(scalar(v)?),
+                    "descendant_any" => CompareOp::ContainedIn(list(v, ty, path)?),
+                    "matches" => CompareOp::Regex(literal(v, &lquery, path)?),
+                    "matches_any" => CompareOp::HasKey(list(v, &lquery, path)?),
+                    _ => CompareOp::MatchesFulltext(literal(v, &sibling("ltxtquery"), path)?),
+                })
+            }
             _ => Err(unknown()),
         }
+    }
+
+    /// `$cast: {<type>: <operators>}`: the operators applied to the column cast to `<type>`
+    /// (geometry and geography to each other, jsonb to text).
+    fn cast(
+        &self,
+        table: &TableInfo,
+        perm: &SelectPermission,
+        col: &ColumnInfo,
+        v: &Json,
+        path: &Path,
+    ) -> Result<BoolExp, ApiError> {
+        let Json::Object(targets) = v else {
+            return Err(type_mismatch("HashMap", "Object", v, path));
+        };
+        let mut items = Vec::with_capacity(targets.len());
+        for (target, ops) in targets {
+            let to = hge_schema::operators::permission_cast_target(&col.ty, target).ok_or_else(
+                || {
+                    err400(
+                        Code::UnexpectedPayload,
+                        format!(
+                            "cannot cast column of type \"{}\" to type \"{}\"",
+                            type_display(&col.ty),
+                            type_display(&ColumnType::builtin(target))
+                        ),
+                        path,
+                    )
+                },
+            )?;
+            let cast_col = ColumnInfo {
+                ty: to.clone(),
+                nullable: true,
+                ..col.clone()
+            };
+            let target_path = path.key(target);
+            let exp = match ops {
+                Json::Object(ops) => {
+                    let mut parts = Vec::with_capacity(ops.len());
+                    for (op, v) in ops {
+                        parts.push(self.operator(
+                            table,
+                            perm,
+                            &cast_col,
+                            op,
+                            v,
+                            &target_path.key(op),
+                        )?);
+                    }
+                    BoolExp::And(parts)
+                }
+                other => equality(&cast_col, other, true, false, &target_path)?,
+            };
+            items.push(cast_compares(exp, &col.ty, &to, &target_path)?);
+        }
+        Ok(match items.len() {
+            1 => items.pop().expect("one item"),
+            _ => BoolExp::And(items),
+        })
     }
 
     /// The right-hand side of a column comparison: `"col"`, `["col"]` or `["$", "col"]`.
@@ -448,7 +542,109 @@ fn equality(
 
 /// A literal of type `ty`.
 pub fn literal(v: &Json, ty: &ColumnType, path: &Path) -> Result<Value, ApiError> {
+    if ty.name == "ltree" {
+        validate_ltree(v, ty.dimensions, path)?;
+    }
+    // V2 parses `lquery` and `ltxtquery` values as Text.
+    if matches!(ty.name.as_str(), "lquery" | "ltxtquery")
+        && ty.dimensions == 0
+        && !matches!(v, Json::String(_) | Json::Null)
+    {
+        return Err(type_mismatch("Text", "String", v, path));
+    }
     hge_schema::lower::to_value(v, ty, path.as_str()).map_err(|e| parse_failed(e.message, path))
+}
+
+/// V2's `FromJSON Ltree`: a string of non-empty labels separated by dots.
+fn validate_ltree(v: &Json, dimensions: u32, path: &Path) -> Result<(), ApiError> {
+    match v {
+        Json::Null => Ok(()),
+        Json::Array(items) if dimensions > 0 => items
+            .iter()
+            .enumerate()
+            .try_for_each(|(i, item)| validate_ltree(item, dimensions - 1, &path.index(i))),
+        // A string for an array is passed through as a Postgres array literal.
+        Json::String(_) if dimensions > 0 => Ok(()),
+        Json::String(s) if dimensions == 0 && !s.split('.').any(str::is_empty) => Ok(()),
+        _ => Err(parse_failed(
+            "Expecting label path: a sequence of zero or more labels separated by dots, for example L1.L2.L3",
+            path,
+        )),
+    }
+}
+
+const GEO_TYPES: &str = "\"geometry\", \"geography\"";
+
+fn is_geometry(ty: &ColumnType) -> bool {
+    !ty.is_array() && ty.name == "geometry"
+}
+
+/// `$st_d_within` / `$st_3d_d_within`: `{distance, from}`, plus a required `use_spheroid` on
+/// geography (V2's generically derived `DWithinGeomOp` / `DWithinGeogOp`).
+fn d_within(three_d: bool, v: &Json, ty: &ColumnType, path: &Path) -> Result<CompareOp, ApiError> {
+    let geography = ty.name == "geography";
+    let record = if geography {
+        "Hasura.RQL.IR.BoolExp.DWithinGeogOp(DWithinGeogOp)"
+    } else {
+        "Hasura.RQL.IR.BoolExp.DWithinGeomOp(DWithinGeomOp)"
+    };
+    let obj = Obj::record(v, path.clone(), record)?;
+    // V2 decodes the whole record before parsing any value.
+    let distance = obj.req("distance")?;
+    let from = obj.req("from")?;
+    let use_spheroid = geography.then(|| obj.req("use_spheroid")).transpose()?;
+    let float8 = ColumnType::builtin("float8");
+    let bool_ty = ColumnType::builtin("bool");
+    let distance = literal(distance, &float8, &path.key("distance"))?;
+    let from = literal(from, ty, &path.key("from"))?;
+    let use_spheroid = use_spheroid
+        .map(|s| literal(s, &bool_ty, &path.key("use_spheroid")))
+        .transpose()?;
+    Ok(CompareOp::DWithin(Box::new(DWithin {
+        three_d,
+        from,
+        distance,
+        use_spheroid,
+    })))
+}
+
+/// Turn the comparisons of a cast column (`exp`, built against type `to`) into comparisons
+/// of the column of type `ty` cast to `to`.
+fn cast_compares(
+    exp: BoolExp,
+    ty: &ColumnType,
+    to: &ColumnType,
+    path: &Path,
+) -> Result<BoolExp, ApiError> {
+    let all = |items: Vec<BoolExp>| {
+        items
+            .into_iter()
+            .map(|e| cast_compares(e, ty, to, path))
+            .collect::<Result<Vec<_>, _>>()
+    };
+    Ok(match exp {
+        BoolExp::Compare { column, op, .. } => BoolExp::Compare {
+            column,
+            ty: ty.clone(),
+            op: CompareOp::Cast {
+                to: to.clone(),
+                op: Box::new(op),
+            },
+        },
+        BoolExp::And(items) => match all(items)? {
+            mut one if one.len() == 1 => one.pop().expect("one item"),
+            items => BoolExp::And(items),
+        },
+        BoolExp::Or(items) => BoolExp::Or(all(items)?),
+        BoolExp::Not(e) => BoolExp::Not(Box::new(cast_compares(*e, ty, to, path)?)),
+        _ => {
+            return Err(err400(
+                Code::NotSupported,
+                "column comparison operators are not supported inside $cast",
+                path,
+            ));
+        }
+    })
 }
 
 /// A list of values of type `ty`, as one array-typed value.
@@ -480,14 +676,6 @@ fn type_display(ty: &ColumnType) -> String {
         name.push_str("[]");
     }
     name
-}
-
-fn not_supported_yet(op: &str, path: &Path) -> ApiError {
-    err400(
-        Code::NotSupported,
-        format!("the operator {op} is not supported on /v1/query yet"),
-        path,
-    )
 }
 
 /// Wrap every column comparison in `exp` (a lowered condition on one column) in
@@ -645,5 +833,301 @@ fn for_each_call_value(call: &mut hge_ir::FunctionCall, f: &mut impl FnMut(&mut 
         if let hge_ir::FunctionArgValue::Value(v) = &mut arg.value {
             f(v);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use hge_core::{QualifiedTable, RoleName, TableMutability};
+    use hge_ir::RootFields;
+    use hge_schema::tables::RootFieldNames;
+    use hge_schema::{SchemaOptions, Tables};
+    use indexmap::IndexMap;
+    use serde_json::json;
+
+    use super::*;
+
+    fn ty(schema: &str, name: &str) -> ColumnType {
+        ColumnType {
+            schema: schema.to_owned(),
+            ..ColumnType::builtin(name)
+        }
+    }
+
+    fn table() -> TableInfo {
+        let columns = [
+            ("id", ColumnType::builtin("int4")),
+            ("name", ColumnType::builtin("text")),
+            ("data", ColumnType::builtin("jsonb")),
+            ("geom", ty("public", "geometry")),
+            ("geog", ty("public", "geography")),
+            ("path", ty("public", "ltree")),
+        ]
+        .into_iter()
+        .map(|(name, ty)| {
+            (
+                name.to_owned(),
+                ColumnInfo {
+                    name: name.to_owned(),
+                    gql_name: name.to_owned(),
+                    ty,
+                    nullable: true,
+                    description: None,
+                    mutable: true,
+                    enum_ref: None,
+                },
+            )
+        })
+        .collect::<IndexMap<_, _>>();
+        TableInfo {
+            source: Arc::from("default"),
+            name: QualifiedTable::new("public", "t"),
+            gql_name: "t".to_owned(),
+            description: None,
+            columns,
+            primary_key: None,
+            constraints: vec![],
+            mutability: TableMutability::ALL,
+            logical_model: false,
+            enum_values: None,
+            object_relationships: vec![],
+            array_relationships: vec![],
+            computed_fields: vec![],
+            root_fields: RootFieldNames {
+                select: "t".to_owned(),
+                select_by_pk: "t_by_pk".to_owned(),
+                select_aggregate: "t_aggregate".to_owned(),
+                select_comment: None,
+                select_by_pk_comment: None,
+                select_aggregate_comment: None,
+            },
+            is_enum: false,
+            entry: serde_json::from_value(json!({"table": {"schema": "public", "name": "t"}}))
+                .expect("table entry"),
+            permissions: HashMap::new(),
+        }
+    }
+
+    fn lower(where_: Json) -> Result<BoolExp, ApiError> {
+        let table = table();
+        let tables = Tables::default();
+        let role = RoleName::admin();
+        let options = SchemaOptions::default();
+        let lw = Lowerer {
+            tables: &tables,
+            source: Arc::from("default"),
+            role: &role,
+            options: &options,
+        };
+        let perm = SelectPermission {
+            columns: table.columns.keys().cloned().collect(),
+            redactions: IndexMap::new(),
+            filter: BoolExp::And(vec![]),
+            limit: None,
+            allow_aggregations: true,
+            computed_fields: vec![],
+            query_root_fields: RootFields::ALL,
+            subscription_root_fields: RootFields::ALL,
+        };
+        let path = Path::root().key("where");
+        lw.bool_exp(&table, &perm, &where_, &path)
+    }
+
+    fn op(where_: Json) -> CompareOp {
+        match lower(where_).expect("lowers") {
+            BoolExp::Compare { op, .. } => op,
+            other => panic!("expected a comparison, got {other:?}"),
+        }
+    }
+
+    fn err(where_: Json) -> (String, String) {
+        let e = lower(where_).expect_err("fails");
+        (e.error.message, e.error.path)
+    }
+
+    const POINT: &str = r#"{"type": "Point", "coordinates": [1, 2]}"#;
+
+    fn point() -> Json {
+        serde_json::from_str(POINT).expect("json")
+    }
+
+    #[test]
+    fn spatial_operators_and_aliases() {
+        for (name, f) in [
+            ("st_contains", SpatialOp::Contains),
+            ("st_crosses", SpatialOp::Crosses),
+            ("st_equals", SpatialOp::Equals),
+            ("st_intersects", SpatialOp::Intersects),
+            ("st_overlaps", SpatialOp::Overlaps),
+            ("st_touches", SpatialOp::Touches),
+            ("st_within", SpatialOp::Within),
+            ("st_3d_intersects", SpatialOp::Intersects3d),
+        ] {
+            for prefix in ["$", "_"] {
+                let got = op(json!({"geom": {format!("{prefix}{name}"): point()}}));
+                assert!(
+                    matches!(got, CompareOp::Spatial(g, _) if g == f),
+                    "{prefix}{name}: {got:?}"
+                );
+            }
+        }
+        assert!(matches!(
+            op(json!({"geog": {"$st_intersects": point()}})),
+            CompareOp::Spatial(SpatialOp::Intersects, _)
+        ));
+    }
+
+    #[test]
+    fn spatial_operator_type_errors() {
+        assert_eq!(
+            err(json!({"geog": {"$st_contains": point()}})),
+            (
+                " is of type \"geography\"; this operator works only on columns of type \"geometry\""
+                    .to_owned(),
+                "$.where.geog[\"$st_contains\"]".to_owned()
+            )
+        );
+        assert_eq!(
+            err(json!({"name": {"_st_intersects": point()}})).0,
+            " is of type \"text\"; this operator works only on columns of type \"geometry\", \"geography\""
+        );
+        assert_eq!(
+            err(json!({"geom": {"$st_foo": point()}})).0,
+            "Unknown operator: $st_foo"
+        );
+    }
+
+    #[test]
+    fn d_within() {
+        let CompareOp::DWithin(d) = op(json!({"geog": {"$st_d_within": {
+            "distance": 10, "from": point(), "use_spheroid": false
+        }}})) else {
+            panic!("expected DWithin");
+        };
+        assert!(!d.three_d);
+        assert_eq!(
+            d.use_spheroid,
+            Some(Value::literal("false", ColumnType::builtin("bool")))
+        );
+        assert_eq!(
+            d.distance,
+            Value::literal("10", ColumnType::builtin("float8"))
+        );
+        // `use_spheroid` is required on geography; geometry has none.
+        let CompareOp::DWithin(d) = op(json!({"geog": {"_st_d_within": {
+            "distance": 10, "from": point(), "use_spheroid": false
+        }}})) else {
+            panic!("expected DWithin");
+        };
+        assert_eq!(
+            d.use_spheroid,
+            Some(Value::literal("false", ColumnType::builtin("bool")))
+        );
+        assert_eq!(
+            err(json!({"geog": {"$st_d_within": {"distance": 10, "from": point()}}})).0,
+            "parsing Hasura.RQL.IR.BoolExp.DWithinGeogOp(DWithinGeogOp) failed, key \"use_spheroid\" not found"
+        );
+        assert_eq!(
+            err(json!({"path": {"$matches": 5}})).0,
+            "parsing Text failed, expected String, but encountered Number"
+        );
+        let CompareOp::DWithin(d) = op(json!({"geom": {"$st_3d_d_within": {
+            "distance": 1, "from": point()
+        }}})) else {
+            panic!("expected DWithin");
+        };
+        assert!(d.three_d);
+        assert_eq!(d.use_spheroid, None);
+        assert_eq!(
+            err(json!({"geom": {"$st_d_within": {"from": point()}}})),
+            (
+                "parsing Hasura.RQL.IR.BoolExp.DWithinGeomOp(DWithinGeomOp) failed, key \"distance\" not found".to_owned(),
+                "$.where.geom[\"$st_d_within\"]".to_owned()
+            )
+        );
+        assert_eq!(
+            err(json!({"geog": {"$st_3d_d_within": {"distance": 1, "from": point()}}})).0,
+            " is of type \"geography\"; this operator works only on columns of type \"geometry\""
+        );
+    }
+
+    #[test]
+    fn cast() {
+        let got = op(json!({"geog": {"$cast": {"geometry": {"$st_within": point()}}}}));
+        let CompareOp::Cast { to, op: inner } = got else {
+            panic!("expected a cast, got {got:?}");
+        };
+        assert_eq!(to, ty("public", "geometry"));
+        assert!(matches!(*inner, CompareOp::Spatial(SpatialOp::Within, _)));
+        let got = op(json!({"data": {"_cast": {"text": {"_like": "%a%"}}}}));
+        assert!(
+            matches!(&got, CompareOp::Cast { to, op: inner } if to.name == "text" && matches!(**inner, CompareOp::Like(_))),
+            "{got:?}"
+        );
+        assert_eq!(
+            err(json!({"geog": {"$cast": {"integer": {"$eq": 0}}}})),
+            (
+                "cannot cast column of type \"geography\" to type \"integer\"".to_owned(),
+                "$.where.geog[\"$cast\"]".to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn ltree_operators() {
+        let ltree = ty("public", "ltree");
+        let lquery = ty("public", "lquery");
+        assert_eq!(
+            op(json!({"path": {"$ancestor": "a.b"}})),
+            CompareOp::Contains(Value::literal("a.b", ltree.clone()))
+        );
+        assert_eq!(
+            op(json!({"path": {"_descendant": "a.b"}})),
+            CompareOp::ContainedIn(Value::literal("a.b", ltree.clone()))
+        );
+        assert_eq!(
+            op(json!({"path": {"$ancestor_any": ["a", "b.c"]}})),
+            CompareOp::Contains(Value::literal(r#"{"a","b.c"}"#, ltree.array_of()))
+        );
+        assert_eq!(
+            op(json!({"path": {"$descendant_any": ["a"]}})),
+            CompareOp::ContainedIn(Value::literal(r#"{"a"}"#, ltree.array_of()))
+        );
+        assert_eq!(
+            op(json!({"path": {"$matches": "*.a.*"}})),
+            CompareOp::Regex(Value::literal("*.a.*", lquery.clone()))
+        );
+        assert_eq!(
+            op(json!({"path": {"_matches_any": ["*.a"]}})),
+            CompareOp::HasKey(Value::literal(r#"{"*.a"}"#, lquery.array_of()))
+        );
+        assert_eq!(
+            op(json!({"path": {"$matches_fulltext": "a & b"}})),
+            CompareOp::MatchesFulltext(Value::literal("a & b", ty("public", "ltxtquery")))
+        );
+    }
+
+    #[test]
+    fn ltree_errors() {
+        let label = "Expecting label path: a sequence of zero or more labels separated by dots, for example L1.L2.L3";
+        assert_eq!(
+            err(json!({"path": {"$ancestor": "a.b."}})),
+            (label.to_owned(), "$.where.path[\"$ancestor\"]".to_owned())
+        );
+        assert_eq!(
+            err(json!({"path": {"$ancestor_any": ["a", "a..b"]}})),
+            (
+                label.to_owned(),
+                "$.where.path[\"$ancestor_any\"][1]".to_owned()
+            )
+        );
+        assert_eq!(err(json!({"path": {"$eq": ""}})).0, label);
+        assert_eq!(
+            err(json!({"name": {"$matches": "*"}})).0,
+            " is of type \"text\"; this operator works only on columns of type \"ltree\""
+        );
     }
 }
