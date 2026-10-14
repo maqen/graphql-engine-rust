@@ -7,6 +7,8 @@ use futures::future::BoxFuture;
 
 #[derive(Debug, Clone)]
 pub struct WebhookRequest {
+    /// `POST` unless a request transform changed it.
+    pub method: String,
     pub url: String,
     /// Sent in order.
     pub headers: Vec<(String, String)>,
@@ -40,6 +42,7 @@ pub enum WebhookError {
 }
 
 pub trait WebhookClient: Send + Sync {
+    /// Send the request (named for the usual method).
     fn post(&self, req: WebhookRequest) -> BoxFuture<'_, Result<WebhookResponse, WebhookError>>;
 }
 
@@ -64,7 +67,18 @@ impl WebhookClient for HttpClient {
         Box::pin(async move {
             let url = reqwest::Url::parse(&req.url)
                 .map_err(|e| WebhookError::InvalidUrl(e.to_string()))?;
-            let mut builder = self.client.post(url).timeout(req.timeout).body(req.body);
+            // Request transforms only produce valid methods.
+            let method = reqwest::Method::from_bytes(req.method.as_bytes()).map_err(|e| {
+                WebhookError::Http {
+                    message: e.to_string(),
+                    timeout: false,
+                }
+            })?;
+            let mut builder = self
+                .client
+                .request(method, url)
+                .timeout(req.timeout)
+                .body(req.body);
             for (k, v) in &req.headers {
                 builder = builder.header(k.as_str(), v.as_str());
             }

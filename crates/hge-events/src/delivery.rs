@@ -3,7 +3,12 @@
 
 use std::time::Duration;
 
+use hge_transforms::{
+    ErrorBundle, Request, RequestContext, RequestTransform, ResponseContext, ResponseTransform,
+    apply_request_transform, apply_response_transform,
+};
 use rand::Rng;
+use serde_json::Value;
 
 use crate::json::Json;
 use crate::model::{HeaderConf, ResolvedHeader};
@@ -137,11 +142,121 @@ pub fn prepare_headers(
     (send, log)
 }
 
-/// Everything needed for one attempt.
-pub struct Attempt<'a> {
-    pub url: &'a str,
+/// A trigger's request and response transforms, parsed.
+#[derive(Debug, Clone, Default)]
+pub struct Transforms {
+    pub request: Option<RequestTransform>,
+    pub response: Option<ResponseTransform>,
+}
+
+impl Transforms {
+    /// Parse the metadata JSON; the error is the inconsistency message. Kriti templates are
+    /// only checked when an event is delivered (V2 checks them in the metadata API, not when
+    /// metadata is loaded), so a bad template fails deliveries instead of the trigger.
+    pub fn parse(request: Option<&Value>, response: Option<&Value>) -> Result<Self, String> {
+        let request = match request {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(RequestTransform::from_json(v).map_err(|e| e.to_string())?),
+        };
+        let response = match response {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(ResponseTransform::from_json(v).map_err(|e| e.to_string())?),
+        };
+        Ok(Transforms { request, response })
+    }
+}
+
+/// The request one attempt sends.
+#[derive(Debug, Clone)]
+pub struct Outgoing {
+    pub method: String,
+    pub url: String,
     pub headers: Vec<(String, String)>,
-    pub body: String,
+    pub body: Vec<u8>,
+    /// The invocation log's `payload`: the body sent, as JSON (`null` when it is not).
+    pub logged_payload: Json,
+    /// `$request` of the response transform: the context the request transform saw, or
+    /// `null` without one.
+    request_context: Value,
+}
+
+/// V2's `mkRequest`: a `POST` of `body` to `url`, put through the request transform if
+/// there is one. The transform sees the body, the resolved URL as `$base_url` and
+/// `session_variables`. A failing transform is not an attempt: V2 marks the event as an
+/// error without logging an invocation.
+pub fn build_request(
+    transforms: &Transforms,
+    url: &str,
+    headers: Vec<(String, String)>,
+    body: Json,
+    session_variables: Value,
+) -> Result<Outgoing, ErrorBundle> {
+    let text = body.encode().into_bytes();
+    let untransformed = |headers, text, body| Outgoing {
+        method: "POST".to_owned(),
+        url: url.to_owned(),
+        headers,
+        body: text,
+        logged_payload: body,
+        request_context: Value::Null,
+    };
+    let Some(t) = &transforms.request else {
+        return Ok(untransformed(headers, text, body));
+    };
+    // An unusable URL fails the attempt itself, as without a transform.
+    let request = match Request::new("POST", url, headers.clone(), text.clone()) {
+        Ok(r) => r,
+        Err(_) => return Ok(untransformed(headers, text, body)),
+    };
+    let ctx = RequestContext::new(&request, Some(url), Some(session_variables));
+    let request_context = ctx.to_response_json();
+    let sent = apply_request_transform(t, request, ctx)?;
+    let logged_payload = std::str::from_utf8(&sent.body)
+        .ok()
+        .and_then(|s| Json::parse(s).ok())
+        .unwrap_or(Json::Null);
+    Ok(Outgoing {
+        url: sent.full_url(),
+        method: sent.method,
+        headers: sent.headers,
+        body: sent.body,
+        logged_payload,
+        request_context,
+    })
+}
+
+/// Apply the response transform to a 2xx response. The new body is the transform's result,
+/// encoded like aeson; a failure is an engine-side error carrying the error bundle.
+pub fn transform_response(
+    transforms: &Transforms,
+    result: AttemptResult,
+    sent: &Outgoing,
+    session_variables: &Value,
+) -> AttemptResult {
+    let Some(t) = &transforms.response else {
+        return result;
+    };
+    let mut resp = match result {
+        AttemptResult::Success(resp) => resp,
+        other => return other,
+    };
+    let ctx = ResponseContext {
+        request: sent.request_context.clone(),
+        status: resp.status,
+        session_variables: session_variables.clone(),
+    };
+    match apply_response_transform(t, &resp.body, ctx) {
+        Ok(body) => {
+            resp.body = Json::from(&body).encode().into_bytes();
+            AttemptResult::Success(resp)
+        }
+        Err(bundle) => AttemptResult::Internal(Json::from(&bundle.to_json()).encode()),
+    }
+}
+
+/// Everything needed for one attempt.
+pub struct Attempt {
+    pub request: Outgoing,
     /// HTTP response timeout.
     pub http_timeout: Duration,
     /// Bound on the whole attempt (`min(30 min, timeout)`).
@@ -152,13 +267,14 @@ pub struct Attempt<'a> {
 }
 
 /// Perform the attempt. Never fails: every failure is an [`AttemptResult`].
-pub async fn attempt(client: &dyn WebhookClient, a: Attempt<'_>) -> AttemptResult {
+pub async fn attempt(client: &dyn WebhookClient, a: Attempt) -> AttemptResult {
     let mut headers = a.trace.headers();
-    headers.extend(a.headers);
+    headers.extend(a.request.headers);
     let req = WebhookRequest {
-        url: a.url.to_owned(),
+        method: a.request.method,
+        url: a.request.url,
         headers,
-        body: a.body.into_bytes(),
+        body: a.request.body,
         timeout: a.http_timeout,
     };
     match tokio::time::timeout(a.processing_timeout, client.post(req)).await {
@@ -340,6 +456,15 @@ mod tests {
                 .collect(),
             body: body.as_bytes().to_vec(),
         }
+    }
+
+    #[test]
+    fn bad_template_fails_delivery_not_loading() {
+        let bad = serde_json::json!({"version": 2, "url": "{{ unparsed"});
+        let t = Transforms::parse(Some(&bad), None).expect("loads like V2");
+        let body = Json::from(&serde_json::json!({"a": 1}));
+        let r = build_request(&t, "http://h/x", vec![], body, Value::Null);
+        assert!(r.is_err());
     }
 
     #[test]

@@ -158,6 +158,42 @@ fn string<'a>(path: &str, v: &'a Value) -> Result<&'a str, ParseError> {
     v.as_str().map_or_else(|| expected(path, "Text", v), Ok)
 }
 
+/// An object decoded by a V2 type whose parser names itself (`withObject "<name>"`).
+fn named_object<'a>(
+    path: &str,
+    name: &str,
+    v: &'a Value,
+) -> Result<&'a Map<String, Value>, ParseError> {
+    v.as_object().map_or_else(
+        || {
+            err(
+                path,
+                format!(
+                    "parsing {name} failed, expected Object, but encountered {}",
+                    type_name(v)
+                ),
+            )
+        },
+        Ok,
+    )
+}
+
+/// A string decoded by a V2 type whose parser names itself (`withText "<name>"`).
+fn named_string<'a>(path: &str, name: &str, v: &'a Value) -> Result<&'a str, ParseError> {
+    v.as_str().map_or_else(
+        || {
+            err(
+                path,
+                format!(
+                    "parsing {name} failed, expected String, but encountered {}",
+                    type_name(v)
+                ),
+            )
+        },
+        Ok,
+    )
+}
+
 /// An optional key: absent and `null` are the same (aeson's `.:?`).
 fn opt<'a>(o: &'a Map<String, Value>, key: &str) -> Option<&'a Value> {
     o.get(key).filter(|v| !v.is_null())
@@ -220,7 +256,7 @@ fn body(version: Version, v: &Value) -> Result<BodyTransform, ParseError> {
             "$.body", v,
         )?)));
     }
-    let o = object("$.body", v)?;
+    let o = named_object("$.body", "BodyTransformFn", v)?;
     let Some(action) = o.get("action") else {
         return err("$.body", "key \"action\" not found");
     };
@@ -287,7 +323,7 @@ fn query_params(v: &Value) -> Result<QueryParamsTransform, ParseError> {
 }
 
 fn request_headers(v: &Value) -> Result<HeadersTransform, ParseError> {
-    let o = object("$.request_headers", v)?;
+    let o = named_object("$.request_headers", "AddReplaceRemoveFields", v)?;
     let add_headers = match opt(o, "add_headers") {
         None => vec![],
         Some(a) => object("$.request_headers.add_headers", a)?
@@ -318,16 +354,16 @@ fn request_headers(v: &Value) -> Result<HeadersTransform, ParseError> {
 impl RequestTransform {
     /// Parses a `request_transform` object (unknown keys are ignored).
     pub fn from_json(v: &Value) -> Result<RequestTransform, ParseError> {
-        let o = object("$", v)?;
+        let o = named_object("$", "RequestTransform", v)?;
         let version = version(o)?;
         template_engine(o)?;
         Ok(RequestTransform {
             version,
             method: opt(o, "method")
-                .map(|m| string("$.method", m).map(str::to_owned))
+                .map(|m| named_string("$.method", "Method", m).map(str::to_owned))
                 .transpose()?,
             url: opt(o, "url")
-                .map(|u| string("$.url", u).map(Tmpl::string))
+                .map(|u| named_string("$.url", "Template", u).map(Tmpl::string))
                 .transpose()?,
             query_params: opt(o, "query_params").map(query_params).transpose()?,
             request_headers: opt(o, "request_headers").map(request_headers).transpose()?,
@@ -418,7 +454,7 @@ fn body_templates(b: &BodyTransform) -> Vec<&Tmpl> {
 impl ResponseTransform {
     /// Parses a `response_transform` object (unknown keys are ignored).
     pub fn from_json(v: &Value) -> Result<ResponseTransform, ParseError> {
-        let o = object("$", v)?;
+        let o = named_object("$", "MetadataResponseTransform", v)?;
         template_engine(o)?;
         let version = version(o)?;
         Ok(ResponseTransform {

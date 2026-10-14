@@ -1,0 +1,699 @@
+{
+ "description": "Recorded from hasura/graphql-engine:v2.51.0-ce by record/transforms_steps.py.",
+ "steps": [
+  {
+   "url": "/v2/query",
+   "body": {
+    "type": "run_sql",
+    "args": {
+     "sql": "CREATE TABLE tx (id int PRIMARY KEY, name text)"
+    }
+   },
+   "status": 200
+  },
+  {
+   "url": "/v1/metadata",
+   "body": {
+    "type": "replace_metadata",
+    "args": {
+     "version": 3,
+     "sources": [
+      {
+       "name": "default",
+       "kind": "postgres",
+       "tables": [
+        {
+         "table": {
+          "schema": "public",
+          "name": "tx"
+         }
+        }
+       ],
+       "configuration": {
+        "connection_info": {
+         "database_url": {
+          "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+         }
+        }
+       }
+      }
+     ]
+    }
+   },
+   "status": 200
+  },
+  {
+   "url": "/v1/metadata",
+   "body": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "e1",
+     "table": "tx",
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "__HOOK__/hook1",
+     "headers": [
+      {
+       "name": "x-conf",
+       "value": "c"
+      }
+     ],
+     "retry_conf": {
+      "num_retries": 0,
+      "interval_sec": 1
+     },
+     "request_transform": {
+      "version": 2,
+      "template_engine": "Kriti",
+      "method": "PUT",
+      "url": "{{$base_url}}/x/{{$body.event.data.new.id}}",
+      "query_params": {
+       "a": "{{$body.table.name}}"
+      },
+      "request_headers": {
+       "add_headers": {
+        "x-added": "v",
+        "x-sess": "{{$session_variables['x-hasura-user-id']}}"
+       },
+       "remove_headers": [
+        "x-conf"
+       ]
+      },
+      "body": {
+       "action": "transform",
+       "template": "{\"n\": {{$body.event.data.new.name}}, \"op\": {{$body.event.op}}, \"s\": {{$session_variables}}, \"t\": {{$body.trigger.name}}}"
+      }
+     },
+     "response_transform": {
+      "version": 2,
+      "body": {
+       "action": "transform",
+       "template": "{\"got\": {{$body.hello}}, \"st\": {{$response.status}}, \"req\": {{$request}}, \"sv\": {{$session_variables}}}"
+      }
+     }
+    }
+   },
+   "status": 200
+  },
+  {
+   "url": "/v1/metadata",
+   "body": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "e2",
+     "table": "tx",
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "__HOOK__/hook2",
+     "headers": [
+      {
+       "name": "x-conf",
+       "value": "c"
+      }
+     ],
+     "retry_conf": {
+      "num_retries": 0,
+      "interval_sec": 1
+     },
+     "request_transform": {
+      "version": 2,
+      "body": {
+       "action": "transform",
+       "template": "{{$body.nope.x}}"
+      }
+     }
+    }
+   },
+   "status": 200
+  },
+  {
+   "url": "/v1/metadata",
+   "body": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "e3",
+     "table": "tx",
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "__HOOK__/hook3",
+     "headers": [
+      {
+       "name": "x-conf",
+       "value": "c"
+      }
+     ],
+     "retry_conf": {
+      "num_retries": 0,
+      "interval_sec": 1
+     },
+     "response_transform": {
+      "version": 2,
+      "body": {
+       "action": "transform",
+       "template": "{{$body.nope.y}}"
+      }
+     }
+    }
+   },
+   "status": 200
+  },
+  {
+   "url": "/v1/metadata",
+   "body": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "e4",
+     "table": "tx",
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "__HOOK__/hook4",
+     "headers": [
+      {
+       "name": "x-conf",
+       "value": "c"
+      }
+     ],
+     "retry_conf": {
+      "num_retries": 0,
+      "interval_sec": 1
+     },
+     "request_transform": {
+      "version": 2,
+      "method": "PATCH",
+      "body": {
+       "action": "x_www_form_urlencoded",
+       "form_template": {
+        "name": "{{$body.event.data.new.name}}"
+       }
+      }
+     }
+    }
+   },
+   "status": 200
+  },
+  {
+   "url": "/v1/metadata",
+   "body": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "e5",
+     "table": "tx",
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "__HOOK__/hook5",
+     "headers": [
+      {
+       "name": "x-conf",
+       "value": "c"
+      }
+     ],
+     "retry_conf": {
+      "num_retries": 0,
+      "interval_sec": 1
+     },
+     "request_transform": {
+      "version": 2,
+      "body": {
+       "action": "remove"
+      }
+     },
+     "response_transform": {
+      "version": 2,
+      "body": {
+       "action": "remove"
+      }
+     }
+    }
+   },
+   "status": 200
+  },
+  {
+   "url": "/v1/metadata",
+   "body": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "e6",
+     "table": "tx",
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "__HOOK__/fail6",
+     "headers": [
+      {
+       "name": "x-conf",
+       "value": "c"
+      }
+     ],
+     "retry_conf": {
+      "num_retries": 0,
+      "interval_sec": 1
+     },
+     "request_transform": {
+      "version": 1,
+      "body": "{{$body.event.op}}"
+     },
+     "response_transform": {
+      "version": 2,
+      "body": {
+       "action": "transform",
+       "template": "{\"got\": {{$body.hello}}, \"st\": {{$response.status}}, \"req\": {{$request}}, \"sv\": {{$session_variables}}}"
+      }
+     }
+    }
+   },
+   "status": 200
+  },
+  {
+   "url": "/v1/metadata",
+   "body": {
+    "type": "pg_create_event_trigger",
+    "args": {
+     "name": "e7",
+     "table": "tx",
+     "insert": {
+      "columns": "*"
+     },
+     "webhook": "__HOOK__/hook7",
+     "headers": [
+      {
+       "name": "x-conf",
+       "value": "c"
+      }
+     ],
+     "retry_conf": {
+      "num_retries": 0,
+      "interval_sec": 1
+     },
+     "request_transform": {
+      "version": 2,
+      "url": "{{$base_url}}?q={{$body.table.name}}"
+     }
+    }
+   },
+   "status": 200
+  },
+  {
+   "url": "/v1/metadata",
+   "body": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c1",
+     "webhook": "__HOOK__/cron1",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true,
+     "payload": {
+      "k": 1
+     },
+     "headers": [
+      {
+       "name": "x-conf",
+       "value": "c"
+      }
+     ],
+     "request_transform": {
+      "version": 2,
+      "method": "PUT",
+      "query_params": {
+       "q": "1"
+      },
+      "body": {
+       "action": "transform",
+       "template": "{\"keys\": {{$body}}, \"sv\": {{$session_variables}}}"
+      }
+     },
+     "response_transform": {
+      "version": 2,
+      "body": {
+       "action": "transform",
+       "template": "{\"req\": {{$request}}, \"sv\": {{$session_variables}}}"
+      }
+     }
+    }
+   },
+   "status": 200
+  },
+  {
+   "url": "/v1/metadata",
+   "body": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c2",
+     "webhook": "__HOOK__/cron2",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true,
+     "payload": {
+      "k": 1
+     },
+     "headers": [
+      {
+       "name": "x-conf",
+       "value": "c"
+      }
+     ],
+     "response_transform": {
+      "version": 2,
+      "body": {
+       "action": "transform",
+       "template": "{\"req\": {{$request}}}"
+      }
+     }
+    }
+   },
+   "status": 200
+  },
+  {
+   "url": "/v1/metadata",
+   "body": {
+    "type": "create_cron_trigger",
+    "args": {
+     "name": "c3",
+     "webhook": "__HOOK__/cron3",
+     "schedule": "0 0 1 1 *",
+     "include_in_metadata": true,
+     "payload": {
+      "k": 1
+     },
+     "headers": [
+      {
+       "name": "x-conf",
+       "value": "c"
+      }
+     ],
+     "request_transform": {
+      "version": 2,
+      "template_engine": "Kriti",
+      "method": "PUT",
+      "url": "{{$base_url}}/x/{{$body.event.data.new.id}}",
+      "query_params": {
+       "a": "{{$body.table.name}}"
+      },
+      "request_headers": {
+       "add_headers": {
+        "x-added": "v",
+        "x-sess": "{{$session_variables['x-hasura-user-id']}}"
+       },
+       "remove_headers": [
+        "x-conf"
+       ]
+      },
+      "body": {
+       "action": "transform",
+       "template": "{\"n\": {{$body.event.data.new.name}}, \"op\": {{$body.event.op}}, \"s\": {{$session_variables}}, \"t\": {{$body.trigger.name}}}"
+      }
+     }
+    }
+   },
+   "status": 200
+  },
+  {
+   "url": "/v1/metadata",
+   "body": {
+    "type": "create_scheduled_event",
+    "args": {
+     "webhook": "__HOOK__/oneoff",
+     "schedule_at": "2099-01-01T00:00:00Z",
+     "payload": {
+      "k": 2
+     },
+     "request_transform": {
+      "version": 2,
+      "method": "PUT"
+     }
+    }
+   },
+   "status": 200
+  },
+  {
+   "url": "/v1/graphql",
+   "body": {
+    "query": "mutation { insert_tx_one(object: {id: 7, name: \"ann\"}) { id } }"
+   },
+   "headers": {
+    "x-hasura-role": "admin",
+    "x-hasura-user-id": "u1"
+   },
+   "status": 200
+  },
+  {
+   "url": "/v2/query",
+   "body": {
+    "type": "run_sql",
+    "args": {
+     "sql": "INSERT INTO hdb_catalog.hdb_cron_events (trigger_name, scheduled_time) VALUES ('c1', now()), ('c2', now()), ('c3', now())"
+    }
+   },
+   "status": 200
+  },
+  {
+   "url": "/v2/query",
+   "body": {
+    "type": "run_sql",
+    "args": {
+     "sql": "UPDATE hdb_catalog.hdb_scheduled_events SET scheduled_time = now()"
+    }
+   },
+   "status": 200
+  }
+ ],
+ "observe": {
+  "event_log": "SELECT trigger_name, delivered, error, tries, locked IS NULL FROM hdb_catalog.event_log ORDER BY trigger_name",
+  "event_invocations": "SELECT trigger_name, status, request::text, (response::jsonb #- '{data,headers}')::text FROM hdb_catalog.event_invocation_logs ORDER BY trigger_name",
+  "cron_events": "SELECT trigger_name, status, tries FROM hdb_catalog.hdb_cron_events WHERE scheduled_time < now() ORDER BY trigger_name",
+  "cron_invocations": "SELECT e.trigger_name, i.status, i.request::text, (i.response::jsonb #- '{data,headers}')::text FROM hdb_catalog.hdb_cron_event_invocation_logs i JOIN hdb_catalog.hdb_cron_events e ON e.id = i.event_id ORDER BY e.trigger_name",
+  "one_off": "SELECT e.status, e.tries, i.status, i.request::text FROM hdb_catalog.hdb_scheduled_events e LEFT JOIN hdb_catalog.hdb_scheduled_event_invocation_logs i ON i.event_id = e.id"
+ },
+ "webhook_headers": [
+  "content-type",
+  "user-agent",
+  "x-added",
+  "x-conf",
+  "x-sess"
+ ],
+ "observed": {
+  "event_log": [
+   [
+    "e1",
+    "t",
+    "f",
+    "1",
+    "t"
+   ],
+   [
+    "e2",
+    "f",
+    "t",
+    "0",
+    "t"
+   ],
+   [
+    "e3",
+    "f",
+    "t",
+    "1",
+    "t"
+   ],
+   [
+    "e4",
+    "t",
+    "f",
+    "1",
+    "t"
+   ],
+   [
+    "e5",
+    "t",
+    "f",
+    "1",
+    "t"
+   ],
+   [
+    "e6",
+    "f",
+    "t",
+    "1",
+    "t"
+   ],
+   [
+    "e7",
+    "t",
+    "f",
+    "1",
+    "t"
+   ]
+  ],
+  "event_invocations": [
+   [
+    "e1",
+    "200",
+    "{\"headers\":[{\"name\":\"Content-Type\",\"value\":\"application/json\"},{\"name\":\"User-Agent\",\"value\":\"<user-agent>\"},{\"name\":\"x-conf\",\"value\":\"c\"}],\"payload\":{\"n\":\"ann\",\"op\":\"INSERT\",\"s\":{\"x-hasura-role\":\"admin\",\"x-hasura-user-id\":\"u1\"},\"t\":\"e1\"},\"version\":\"2\"}",
+    "{\"data\": {\"body\": \"{\\\"got\\\":\\\"world\\\",\\\"req\\\":{\\\"body\\\":{\\\"base_url\\\":\\\"http://127.0.0.1:9911/hook1\\\",\\\"body\\\":{\\\"created_at\\\":\\\"<time>\\\",\\\"delivery_info\\\":{\\\"current_retry\\\":0,\\\"max_retries\\\":0},\\\"event\\\":{\\\"data\\\":{\\\"new\\\":{\\\"id\\\":7,\\\"name\\\":\\\"ann\\\"},\\\"old\\\":null},\\\"op\\\":\\\"INSERT\\\",\\\"session_variables\\\":{\\\"x-hasura-role\\\":\\\"admin\\\",\\\"x-hasura-user-id\\\":\\\"u1\\\"},\\\"trace_context\\\":{\\\"sampling_state\\\":\\\"1\\\",\\\"span_id\\\":\\\"<hex>\\\",\\\"trace_id\\\":\\\"<hex>\\\"}},\\\"id\\\":\\\"<uuid>\\\",\\\"table\\\":{\\\"name\\\":\\\"tx\\\",\\\"schema\\\":\\\"public\\\"},\\\"trigger\\\":{\\\"name\\\":\\\"e1\\\"}},\\\"query_params\\\":[],\\\"session_variables\\\":{\\\"x-hasura-role\\\":\\\"admin\\\",\\\"x-hasura-user-id\\\":\\\"u1\\\"}},\\\"method\\\":{\\\"base_url\\\":\\\"http://127.0.0.1:9911/hook1\\\",\\\"body\\\":{\\\"created_at\\\":\\\"<time>\\\",\\\"delivery_info\\\":{\\\"current_retry\\\":0,\\\"max_retries\\\":0},\\\"event\\\":{\\\"data\\\":{\\\"new\\\":{\\\"id\\\":7,\\\"name\\\":\\\"ann\\\"},\\\"old\\\":null},\\\"op\\\":\\\"INSERT\\\",\\\"session_variables\\\":{\\\"x-hasura-role\\\":\\\"admin\\\",\\\"x-hasura-user-id\\\":\\\"u1\\\"},\\\"trace_context\\\":{\\\"sampling_state\\\":\\\"1\\\",\\\"span_id\\\":\\\"<hex>\\\",\\\"trace_id\\\":\\\"<hex>\\\"}},\\\"id\\\":\\\"<uuid>\\\",\\\"table\\\":{\\\"name\\\":\\\"tx\\\",\\\"schema\\\":\\\"public\\\"},\\\"trigger\\\":{\\\"name\\\":\\\"e1\\\"}},\\\"query_params\\\":[],\\\"session_variables\\\":{\\\"x-hasura-role\\\":\\\"admin\\\",\\\"x-hasura-user-id\\\":\\\"u1\\\"}},\\\"query_params\\\":{\\\"base_url\\\":\\\"http://127.0.0.1:9911/hook1\\\",\\\"body\\\":{\\\"created_at\\\":\\\"<time>\\\",\\\"delivery_info\\\":{\\\"current_retry\\\":0,\\\"max_retries\\\":0},\\\"event\\\":{\\\"data\\\":{\\\"new\\\":{\\\"id\\\":7,\\\"name\\\":\\\"ann\\\"},\\\"old\\\":null},\\\"op\\\":\\\"INSERT\\\",\\\"session_variables\\\":{\\\"x-hasura-role\\\":\\\"admin\\\",\\\"x-hasura-user-id\\\":\\\"u1\\\"},\\\"trace_context\\\":{\\\"sampling_state\\\":\\\"1\\\",\\\"span_id\\\":\\\"<hex>\\\",\\\"trace_id\\\":\\\"<hex>\\\"}},\\\"id\\\":\\\"<uuid>\\\",\\\"table\\\":{\\\"name\\\":\\\"tx\\\",\\\"schema\\\":\\\"public\\\"},\\\"trigger\\\":{\\\"name\\\":\\\"e1\\\"}},\\\"query_params\\\":[],\\\"session_variables\\\":{\\\"x-hasura-role\\\":\\\"admin\\\",\\\"x-hasura-user-id\\\":\\\"u1\\\"}},\\\"request_headers\\\":{\\\"base_url\\\":\\\"http://127.0.0.1:9911/hook1\\\",\\\"body\\\":{\\\"created_at\\\":\\\"<time>\\\",\\\"delivery_info\\\":{\\\"current_retry\\\":0,\\\"max_retries\\\":0},\\\"event\\\":{\\\"data\\\":{\\\"new\\\":{\\\"id\\\":7,\\\"name\\\":\\\"ann\\\"},\\\"old\\\":null},\\\"op\\\":\\\"INSERT\\\",\\\"session_variables\\\":{\\\"x-hasura-role\\\":\\\"admin\\\",\\\"x-hasura-user-id\\\":\\\"u1\\\"},\\\"trace_context\\\":{\\\"sampling_state\\\":\\\"1\\\",\\\"span_id\\\":\\\"<hex>\\\",\\\"trace_id\\\":\\\"<hex>\\\"}},\\\"id\\\":\\\"<uuid>\\\",\\\"table\\\":{\\\"name\\\":\\\"tx\\\",\\\"schema\\\":\\\"public\\\"},\\\"trigger\\\":{\\\"name\\\":\\\"e1\\\"}},\\\"query_params\\\":[],\\\"session_variables\\\":{\\\"x-hasura-role\\\":\\\"admin\\\",\\\"x-hasura-user-id\\\":\\\"u1\\\"}},\\\"url\\\":{\\\"base_url\\\":\\\"http://127.0.0.1:9911/hook1\\\",\\\"body\\\":{\\\"created_at\\\":\\\"<time>\\\",\\\"delivery_info\\\":{\\\"current_retry\\\":0,\\\"max_retries\\\":0},\\\"event\\\":{\\\"data\\\":{\\\"new\\\":{\\\"id\\\":7,\\\"name\\\":\\\"ann\\\"},\\\"old\\\":null},\\\"op\\\":\\\"INSERT\\\",\\\"session_variables\\\":{\\\"x-hasura-role\\\":\\\"admin\\\",\\\"x-hasura-user-id\\\":\\\"u1\\\"},\\\"trace_context\\\":{\\\"sampling_state\\\":\\\"1\\\",\\\"span_id\\\":\\\"<hex>\\\",\\\"trace_id\\\":\\\"<hex>\\\"}},\\\"id\\\":\\\"<uuid>\\\",\\\"table\\\":{\\\"name\\\":\\\"tx\\\",\\\"schema\\\":\\\"public\\\"},\\\"trigger\\\":{\\\"name\\\":\\\"e1\\\"}},\\\"query_params\\\":[],\\\"session_variables\\\":{\\\"x-hasura-role\\\":\\\"admin\\\",\\\"x-hasura-user-id\\\":\\\"u1\\\"}}},\\\"st\\\":200,\\\"sv\\\":{\\\"x-hasura-role\\\":\\\"admin\\\",\\\"x-hasura-user-id\\\":\\\"u1\\\"}}\", \"status\": 200}, \"type\": \"webhook_response\", \"version\": \"2\"}"
+   ],
+   [
+    "e3",
+    "500",
+    "{\"headers\":[{\"name\":\"Content-Type\",\"value\":\"application/json\"},{\"name\":\"User-Agent\",\"value\":\"<user-agent>\"},{\"name\":\"x-conf\",\"value\":\"c\"}],\"payload\":{\"created_at\":\"<time>\",\"delivery_info\":{\"current_retry\":0,\"max_retries\":0},\"event\":{\"data\":{\"new\":{\"id\":7,\"name\":\"ann\"},\"old\":null},\"op\":\"INSERT\",\"session_variables\":{\"x-hasura-role\":\"admin\",\"x-hasura-user-id\":\"u1\"},\"trace_context\":{\"sampling_state\":\"1\",\"span_id\":\"<hex>\",\"trace_id\":\"<hex>\"}},\"id\":\"<uuid>\",\"table\":{\"name\":\"tx\",\"schema\":\"public\"},\"trigger\":{\"name\":\"e3\"}},\"version\":\"2\"}",
+    "{\"data\": {\"message\": \"\\\"[{\\\\\\\"error_code\\\\\\\":\\\\\\\"Attribute Error\\\\\\\",\\\\\\\"message\\\\\\\":\\\\\\\"'Object' has no attritubte 'nope'.\\\\\\\",\\\\\\\"source_position\\\\\\\":{\\\\\\\"end_column\\\\\\\":13,\\\\\\\"end_line\\\\\\\":0,\\\\\\\"start_column\\\\\\\":3,\\\\\\\"start_line\\\\\\\":0}}]\\\"\"}, \"type\": \"client_error\", \"version\": \"2\"}"
+   ],
+   [
+    "e4",
+    "200",
+    "{\"headers\":[{\"name\":\"Content-Type\",\"value\":\"application/json\"},{\"name\":\"User-Agent\",\"value\":\"<user-agent>\"},{\"name\":\"x-conf\",\"value\":\"c\"}],\"payload\":null,\"version\":\"2\"}",
+    "{\"data\": {\"body\": \"{\\\"hello\\\": \\\"world\\\", \\\"n\\\": 3}\", \"status\": 200}, \"type\": \"webhook_response\", \"version\": \"2\"}"
+   ],
+   [
+    "e5",
+    "200",
+    "{\"headers\":[{\"name\":\"Content-Type\",\"value\":\"application/json\"},{\"name\":\"User-Agent\",\"value\":\"<user-agent>\"},{\"name\":\"x-conf\",\"value\":\"c\"}],\"payload\":null,\"version\":\"2\"}",
+    "{\"data\": {\"body\": \"null\", \"status\": 200}, \"type\": \"webhook_response\", \"version\": \"2\"}"
+   ],
+   [
+    "e6",
+    "500",
+    "{\"headers\":[{\"name\":\"Content-Type\",\"value\":\"application/json\"},{\"name\":\"User-Agent\",\"value\":\"<user-agent>\"},{\"name\":\"x-conf\",\"value\":\"c\"}],\"payload\":\"INSERT\",\"version\":\"2\"}",
+    "{\"data\": {\"message\": \"{\\\"oops\\\": 1}\"}, \"type\": \"client_error\", \"version\": \"2\"}"
+   ],
+   [
+    "e7",
+    "200",
+    "{\"headers\":[{\"name\":\"Content-Type\",\"value\":\"application/json\"},{\"name\":\"User-Agent\",\"value\":\"<user-agent>\"},{\"name\":\"x-conf\",\"value\":\"c\"}],\"payload\":{\"created_at\":\"<time>\",\"delivery_info\":{\"current_retry\":0,\"max_retries\":0},\"event\":{\"data\":{\"new\":{\"id\":7,\"name\":\"ann\"},\"old\":null},\"op\":\"INSERT\",\"session_variables\":{\"x-hasura-role\":\"admin\",\"x-hasura-user-id\":\"u1\"},\"trace_context\":{\"sampling_state\":\"1\",\"span_id\":\"<hex>\",\"trace_id\":\"<hex>\"}},\"id\":\"<uuid>\",\"table\":{\"name\":\"tx\",\"schema\":\"public\"},\"trigger\":{\"name\":\"e7\"}},\"version\":\"2\"}",
+    "{\"data\": {\"body\": \"{\\\"hello\\\": \\\"world\\\", \\\"n\\\": 3}\", \"status\": 200}, \"type\": \"webhook_response\", \"version\": \"2\"}"
+   ]
+  ],
+  "cron_events": [
+   [
+    "c1",
+    "delivered",
+    "1"
+   ],
+   [
+    "c2",
+    "delivered",
+    "1"
+   ],
+   [
+    "c3",
+    "error",
+    "0"
+   ]
+  ],
+  "cron_invocations": [
+   [
+    "c1",
+    "200",
+    "{\"headers\":[{\"name\":\"Content-Type\",\"value\":\"application/json\"},{\"name\":\"User-Agent\",\"value\":\"<user-agent>\"},{\"name\":\"x-conf\",\"value\":\"c\"}],\"payload\":{\"keys\":{\"id\":\"<uuid>\",\"name\":\"c1\",\"payload\":{\"k\":1},\"request_transform\":{\"body\":{\"action\":\"transform\",\"template\":\"{\\\"keys\\\": {{$body}}, \\\"sv\\\": {{$session_variables}}}\"},\"method\":\"PUT\",\"query_params\":{\"q\":\"1\"},\"template_engine\":\"Kriti\",\"version\":2},\"response_transform\":{\"body\":{\"action\":\"transform\",\"template\":\"{\\\"req\\\": {{$request}}, \\\"sv\\\": {{$session_variables}}}\"},\"template_engine\":\"Kriti\",\"version\":2},\"scheduled_time\":\"<time>\"},\"sv\":null},\"version\":\"1\"}",
+    "{\"data\": {\"body\": \"{\\\"req\\\":{\\\"body\\\":{\\\"base_url\\\":\\\"http://127.0.0.1:9911/cron1\\\",\\\"body\\\":{\\\"id\\\":\\\"<uuid>\\\",\\\"name\\\":\\\"c1\\\",\\\"payload\\\":{\\\"k\\\":1},\\\"request_transform\\\":{\\\"body\\\":{\\\"action\\\":\\\"transform\\\",\\\"template\\\":\\\"{\\\\\\\"keys\\\\\\\": {{$body}}, \\\\\\\"sv\\\\\\\": {{$session_variables}}}\\\"},\\\"method\\\":\\\"PUT\\\",\\\"query_params\\\":{\\\"q\\\":\\\"1\\\"},\\\"template_engine\\\":\\\"Kriti\\\",\\\"version\\\":2},\\\"response_transform\\\":{\\\"body\\\":{\\\"action\\\":\\\"transform\\\",\\\"template\\\":\\\"{\\\\\\\"req\\\\\\\": {{$request}}, \\\\\\\"sv\\\\\\\": {{$session_variables}}}\\\"},\\\"template_engine\\\":\\\"Kriti\\\",\\\"version\\\":2},\\\"scheduled_time\\\":\\\"<time>\\\"},\\\"query_params\\\":[],\\\"session_variables\\\":null},\\\"method\\\":{\\\"base_url\\\":\\\"http://127.0.0.1:9911/cron1\\\",\\\"body\\\":{\\\"id\\\":\\\"<uuid>\\\",\\\"name\\\":\\\"c1\\\",\\\"payload\\\":{\\\"k\\\":1},\\\"request_transform\\\":{\\\"body\\\":{\\\"action\\\":\\\"transform\\\",\\\"template\\\":\\\"{\\\\\\\"keys\\\\\\\": {{$body}}, \\\\\\\"sv\\\\\\\": {{$session_variables}}}\\\"},\\\"method\\\":\\\"PUT\\\",\\\"query_params\\\":{\\\"q\\\":\\\"1\\\"},\\\"template_engine\\\":\\\"Kriti\\\",\\\"version\\\":2},\\\"response_transform\\\":{\\\"body\\\":{\\\"action\\\":\\\"transform\\\",\\\"template\\\":\\\"{\\\\\\\"req\\\\\\\": {{$request}}, \\\\\\\"sv\\\\\\\": {{$session_variables}}}\\\"},\\\"template_engine\\\":\\\"Kriti\\\",\\\"version\\\":2},\\\"scheduled_time\\\":\\\"<time>\\\"},\\\"query_params\\\":[],\\\"session_variables\\\":null},\\\"query_params\\\":{\\\"base_url\\\":\\\"http://127.0.0.1:9911/cron1\\\",\\\"body\\\":{\\\"id\\\":\\\"<uuid>\\\",\\\"name\\\":\\\"c1\\\",\\\"payload\\\":{\\\"k\\\":1},\\\"request_transform\\\":{\\\"body\\\":{\\\"action\\\":\\\"transform\\\",\\\"template\\\":\\\"{\\\\\\\"keys\\\\\\\": {{$body}}, \\\\\\\"sv\\\\\\\": {{$session_variables}}}\\\"},\\\"method\\\":\\\"PUT\\\",\\\"query_params\\\":{\\\"q\\\":\\\"1\\\"},\\\"template_engine\\\":\\\"Kriti\\\",\\\"version\\\":2},\\\"response_transform\\\":{\\\"body\\\":{\\\"action\\\":\\\"transform\\\",\\\"template\\\":\\\"{\\\\\\\"req\\\\\\\": {{$request}}, \\\\\\\"sv\\\\\\\": {{$session_variables}}}\\\"},\\\"template_engine\\\":\\\"Kriti\\\",\\\"version\\\":2},\\\"scheduled_time\\\":\\\"<time>\\\"},\\\"query_params\\\":[],\\\"session_variables\\\":null},\\\"request_headers\\\":{\\\"base_url\\\":\\\"http://127.0.0.1:9911/cron1\\\",\\\"body\\\":{\\\"id\\\":\\\"<uuid>\\\",\\\"name\\\":\\\"c1\\\",\\\"payload\\\":{\\\"k\\\":1},\\\"request_transform\\\":{\\\"body\\\":{\\\"action\\\":\\\"transform\\\",\\\"template\\\":\\\"{\\\\\\\"keys\\\\\\\": {{$body}}, \\\\\\\"sv\\\\\\\": {{$session_variables}}}\\\"},\\\"method\\\":\\\"PUT\\\",\\\"query_params\\\":{\\\"q\\\":\\\"1\\\"},\\\"template_engine\\\":\\\"Kriti\\\",\\\"version\\\":2},\\\"response_transform\\\":{\\\"body\\\":{\\\"action\\\":\\\"transform\\\",\\\"template\\\":\\\"{\\\\\\\"req\\\\\\\": {{$request}}, \\\\\\\"sv\\\\\\\": {{$session_variables}}}\\\"},\\\"template_engine\\\":\\\"Kriti\\\",\\\"version\\\":2},\\\"scheduled_time\\\":\\\"<time>\\\"},\\\"query_params\\\":[],\\\"session_variables\\\":null},\\\"url\\\":{\\\"base_url\\\":\\\"http://127.0.0.1:9911/cron1\\\",\\\"body\\\":{\\\"id\\\":\\\"<uuid>\\\",\\\"name\\\":\\\"c1\\\",\\\"payload\\\":{\\\"k\\\":1},\\\"request_transform\\\":{\\\"body\\\":{\\\"action\\\":\\\"transform\\\",\\\"template\\\":\\\"{\\\\\\\"keys\\\\\\\": {{$body}}, \\\\\\\"sv\\\\\\\": {{$session_variables}}}\\\"},\\\"method\\\":\\\"PUT\\\",\\\"query_params\\\":{\\\"q\\\":\\\"1\\\"},\\\"template_engine\\\":\\\"Kriti\\\",\\\"version\\\":2},\\\"response_transform\\\":{\\\"body\\\":{\\\"action\\\":\\\"transform\\\",\\\"template\\\":\\\"{\\\\\\\"req\\\\\\\": {{$request}}, \\\\\\\"sv\\\\\\\": {{$session_variables}}}\\\"},\\\"template_engine\\\":\\\"Kriti\\\",\\\"version\\\":2},\\\"scheduled_time\\\":\\\"<time>\\\"},\\\"query_params\\\":[],\\\"session_variables\\\":null}},\\\"sv\\\":null}\", \"status\": 200}, \"type\": \"webhook_response\", \"version\": \"1\"}"
+   ],
+   [
+    "c2",
+    "200",
+    "{\"headers\":[{\"name\":\"Content-Type\",\"value\":\"application/json\"},{\"name\":\"User-Agent\",\"value\":\"<user-agent>\"},{\"name\":\"x-conf\",\"value\":\"c\"}],\"payload\":{\"id\":\"<uuid>\",\"name\":\"c2\",\"payload\":{\"k\":1},\"response_transform\":{\"body\":{\"action\":\"transform\",\"template\":\"{\\\"req\\\": {{$request}}}\"},\"template_engine\":\"Kriti\",\"version\":2},\"scheduled_time\":\"<time>\"},\"version\":\"1\"}",
+    "{\"data\": {\"body\": \"{\\\"req\\\":null}\", \"status\": 200}, \"type\": \"webhook_response\", \"version\": \"1\"}"
+   ]
+  ],
+  "one_off": [
+   [
+    "delivered",
+    "1",
+    "200",
+    "{\"headers\":[{\"name\":\"Content-Type\",\"value\":\"application/json\"},{\"name\":\"User-Agent\",\"value\":\"<user-agent>\"}],\"payload\":{\"created_at\":\"<time>\",\"id\":\"<uuid>\",\"payload\":{\"k\":2},\"scheduled_time\":\"<time>\"},\"version\":\"1\"}"
+   ]
+  ],
+  "webhook": [
+   {
+    "method": "PUT",
+    "path": "/cron1?q=1",
+    "headers": {
+     "content-type": "application/json",
+     "user-agent": "<user-agent>",
+     "x-conf": "c"
+    },
+    "body": "{\"keys\":{\"id\":\"<uuid>\",\"name\":\"c1\",\"payload\":{\"k\":1},\"request_transform\":{\"body\":{\"action\":\"transform\",\"template\":\"{\\\"keys\\\": {{$body}}, \\\"sv\\\": {{$session_variables}}}\"},\"method\":\"PUT\",\"query_params\":{\"q\":\"1\"},\"template_engine\":\"Kriti\",\"version\":2},\"response_transform\":{\"body\":{\"action\":\"transform\",\"template\":\"{\\\"req\\\": {{$request}}, \\\"sv\\\": {{$session_variables}}}\"},\"template_engine\":\"Kriti\",\"version\":2},\"scheduled_time\":\"<time>\"},\"sv\":null}"
+   },
+   {
+    "method": "POST",
+    "path": "/cron2",
+    "headers": {
+     "content-type": "application/json",
+     "user-agent": "<user-agent>",
+     "x-conf": "c"
+    },
+    "body": "{\"id\":\"<uuid>\",\"name\":\"c2\",\"payload\":{\"k\":1},\"response_transform\":{\"body\":{\"action\":\"transform\",\"template\":\"{\\\"req\\\": {{$request}}}\"},\"template_engine\":\"Kriti\",\"version\":2},\"scheduled_time\":\"<time>\"}"
+   },
+   {
+    "method": "POST",
+    "path": "/fail6",
+    "headers": {
+     "content-type": "application/json",
+     "user-agent": "<user-agent>",
+     "x-conf": "c"
+    },
+    "body": "\"INSERT\""
+   },
+   {
+    "method": "PUT",
+    "path": "/hook1/x/7?a=tx",
+    "headers": {
+     "content-type": "application/json",
+     "user-agent": "<user-agent>",
+     "x-added": "v",
+     "x-sess": "u1"
+    },
+    "body": "{\"n\":\"ann\",\"op\":\"INSERT\",\"s\":{\"x-hasura-role\":\"admin\",\"x-hasura-user-id\":\"u1\"},\"t\":\"e1\"}"
+   },
+   {
+    "method": "POST",
+    "path": "/hook3",
+    "headers": {
+     "content-type": "application/json",
+     "user-agent": "<user-agent>",
+     "x-conf": "c"
+    },
+    "body": "{\"created_at\":\"<time>\",\"delivery_info\":{\"current_retry\":0,\"max_retries\":0},\"event\":{\"data\":{\"new\":{\"id\":7,\"name\":\"ann\"},\"old\":null},\"op\":\"INSERT\",\"session_variables\":{\"x-hasura-role\":\"admin\",\"x-hasura-user-id\":\"u1\"},\"trace_context\":{\"sampling_state\":\"1\",\"span_id\":\"<hex>\",\"trace_id\":\"<hex>\"}},\"id\":\"<uuid>\",\"table\":{\"name\":\"tx\",\"schema\":\"public\"},\"trigger\":{\"name\":\"e3\"}}"
+   },
+   {
+    "method": "PATCH",
+    "path": "/hook4",
+    "headers": {
+     "content-type": "application/json",
+     "user-agent": "<user-agent>",
+     "x-conf": "c"
+    },
+    "body": "name=ann"
+   },
+   {
+    "method": "POST",
+    "path": "/hook5",
+    "headers": {
+     "content-type": "application/json",
+     "user-agent": "<user-agent>",
+     "x-conf": "c"
+    },
+    "body": ""
+   },
+   {
+    "method": "POST",
+    "path": "/hook7",
+    "headers": {
+     "content-type": "application/json",
+     "user-agent": "<user-agent>",
+     "x-conf": "c"
+    },
+    "body": "{\"created_at\":\"<time>\",\"delivery_info\":{\"current_retry\":0,\"max_retries\":0},\"event\":{\"data\":{\"new\":{\"id\":7,\"name\":\"ann\"},\"old\":null},\"op\":\"INSERT\",\"session_variables\":{\"x-hasura-role\":\"admin\",\"x-hasura-user-id\":\"u1\"},\"trace_context\":{\"sampling_state\":\"1\",\"span_id\":\"<hex>\",\"trace_id\":\"<hex>\"}},\"id\":\"<uuid>\",\"table\":{\"name\":\"tx\",\"schema\":\"public\"},\"trigger\":{\"name\":\"e7\"}}"
+   },
+   {
+    "method": "POST",
+    "path": "/oneoff",
+    "headers": {
+     "content-type": "application/json",
+     "user-agent": "<user-agent>"
+    },
+    "body": "{\"created_at\":\"<time>\",\"id\":\"<uuid>\",\"payload\":{\"k\":2},\"scheduled_time\":\"<time>\"}"
+   }
+  ]
+ }
+}

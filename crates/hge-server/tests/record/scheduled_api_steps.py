@@ -148,4 +148,20 @@ STEPS = [
     md("delete_cron_trigger", {"name": "c2"}),
     md("get_cron_triggers", {}),
     md("export_metadata", {}),
+    # Request and response transforms (parse-checked after the schedule, before the name is
+    # looked at); one-off events decode theirs but do not keep them.
+    cron(name="t", request_transform={"version": 2, "body": {"action": "transform", "template": "{{ $body.x "}}),
+    cron(name="t", schedule="bad", request_transform={"version": 2, "body": {"action": "transform", "template": "{{ $body.x "}}),
+    cron(name="nope", replace=True, response_transform={"version": 2, "body": {"action": "transform", "template": "{{ $body.x "}}),
+    cron(name="t", request_transform={"version": 2, "method": 5}),
+    cron(name="t", request_transform={"version": 3}),
+    cron(name="t", request_transform="nope"),
+    cron(name="t", response_transform={"version": 2, "body": {"action": "nope"}}),
+    cron(name="t", request_transform={"version": 1, "body": "{{$body}}"}, response_transform={"version": 2, "body": {"action": "remove"}}),
+    md("get_cron_triggers", {}),
+    md("delete_cron_trigger", {"name": "t"}),
+    md("create_scheduled_event", {"webhook": HOOK, "schedule_at": "2030-01-01T00:00:00Z", "request_transform": {"version": 2, "method": 5}}),
+    md("create_scheduled_event", {"webhook": HOOK, "schedule_at": "2030-01-01T00:00:00Z", "request_transform": {"version": 2, "body": {"action": "transform", "template": "{{ $body.x "}}}),
+    sql("SELECT count(*) FROM hdb_catalog.hdb_scheduled_events"),
+    md("export_metadata", {}),
 ]

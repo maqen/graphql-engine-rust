@@ -252,4 +252,23 @@ STEPS = [
     md("get_inconsistent_metadata", {}),
     md("drop_inconsistent_metadata", {}),
     md("export_metadata", {}),
+    # Request and response transforms: decoded with the arguments, parse-checked before the
+    # table and the name are looked at, and stored in their normalised form.
+    *[
+        md("pg_create_event_trigger", {"name": name, "table": table, "insert": {"columns": "*"}, "webhook": HOOK, **t})
+        for name, table, t in [
+            ("tt", T1, {"request_transform": {"version": 2, "body": {"action": "transform", "template": "{{ $body.x "}}}),
+            ("tt", {"schema": "public", "name": "nope"}, {"response_transform": {"version": 2, "body": {"action": "transform", "template": "{{ $body.x "}}}),
+            ("tt", T1, {"request_transform": {"version": 2, "method": 5}}),
+            ("tt", T1, {"request_transform": {"version": 3}}),
+            ("tt", T1, {"request_transform": "nope"}),
+            ("tt", T1, {"request_transform": {"version": 2, "body": {"action": "nope"}}}),
+            ("tt", T1, {"response_transform": {"version": 2, "body": {"action": "nope"}}}),
+            ("tt", T1, {"request_transform": {"version": 2, "url": "{{$base_url}}/x", "query_params": "{{ bad"}}),
+            ("tt", T1, {"request_transform": None, "response_transform": None}),
+            ("tu", T1, {"request_transform": {"version": 1, "body": "{{$body}}"}, "response_transform": {"version": 2, "body": {"action": "x_www_form_urlencoded", "form_template": {"a": "b"}}}}),
+            ("tv", T1, {"request_transform": {"version": 2, "method": "PUT", "query_params": {"a": "{{$body.id}}"}, "request_headers": {"add_headers": {"x": "y"}, "remove_headers": ["z"]}, "body": {"action": "remove"}}}),
+        ]
+    ],
+    md("export_metadata", {}),
 ]

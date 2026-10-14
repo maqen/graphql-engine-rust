@@ -100,10 +100,6 @@ pub async fn prepare(
                         "Event trigger with duplicate names not allowed: \"{}\"",
                         conf.name
                     ))
-                } else if conf.request_transform.is_some() || conf.response_transform.is_some() {
-                    // Delivering untransformed bodies would break the webhook; leave the
-                    // events queued until transforms are supported.
-                    Some("request/response transforms are not supported yet".to_owned())
                 } else {
                     None
                 };

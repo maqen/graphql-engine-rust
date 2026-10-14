@@ -9,6 +9,7 @@ description = "Event triggers, cron triggers and one-off scheduled events (Hasur
 
 [dependencies]
 hge-core.workspace = true
+hge-transforms.workspace = true
 deadpool-postgres.workspace = true
 futures.workspace = true
 rand.workspace = true

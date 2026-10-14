@@ -17,6 +17,8 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
+use serde_json::Value;
+
 use crate::delivery::{self, Attempt, AttemptResult, INVOCATION_VERSION_EVENT, TraceIds};
 use crate::json::Json;
 use crate::store::{self, Event};
@@ -387,9 +389,31 @@ async fn deliver(
         }
     };
     let trace = TraceIds::for_event(stored.get("trace_context"));
+    let session_variables = stored
+        .get("session_variables")
+        .and_then(|s| serde_json::from_str(&s.encode()).ok())
+        .unwrap_or(Value::Null);
     let body = event_body(info, event, stored);
-    let body_text = body.encode();
     let (headers, log_headers) = delivery::prepare_headers(&ctx.config.user_agent, &info.headers);
+    let request = match delivery::build_request(
+        &info.transforms,
+        &info.webhook.url,
+        headers,
+        body,
+        session_variables.clone(),
+    ) {
+        Ok(r) => r,
+        Err(bundle) => {
+            error!(
+                target: "event-trigger",
+                event_id = %event.id,
+                event_name = %info.name,
+                errors = %bundle.to_json(),
+                "Request Transformation Failed"
+            );
+            return store::set_error(pool, &event.id).await;
+        }
+    };
     let http_timeout = Duration::from_secs(info.timeout_seconds());
     let timeout_message = format!(
         "Event Trigger \"{}\" timed out while processing.",
@@ -398,9 +422,7 @@ async fn deliver(
     let result = delivery::attempt(
         ctx.client.as_ref(),
         Attempt {
-            url: &info.webhook.url,
-            headers,
-            body: body_text,
+            request: request.clone(),
             http_timeout,
             processing_timeout: info.processing_timeout(),
             timeout_message,
@@ -408,17 +430,20 @@ async fn deliver(
         },
     )
     .await;
+    // The processing timeout is the only engine-side failure of the attempt itself.
     let request_payload = match &result {
         AttemptResult::Internal(_) => Json::Null,
-        _ => body,
+        _ => request.logged_payload.clone(),
     };
+    let result =
+        delivery::transform_response(&info.transforms, result, &request, &session_variables);
     log_delivery(ctx, info, event, &result);
     let invocation = delivery::invocation(
         INVOCATION_VERSION_EVENT,
         request_payload,
         &log_headers,
         &result,
-        &info.webhook.url,
+        &request.url,
         http_timeout,
     );
     let outcome = (!result.is_success()).then(|| {
