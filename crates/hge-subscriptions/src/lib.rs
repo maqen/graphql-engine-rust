@@ -5,4 +5,4 @@
 pub mod poller;
 pub mod protocol;
 
-pub use poller::{PollerOptions, Registry, Subscriber, SubscriptionHandle};
+pub use poller::{PollerInfo, PollerOptions, Registry, Subscriber, SubscriptionHandle};

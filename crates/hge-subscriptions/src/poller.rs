@@ -25,6 +25,7 @@ use std::time::{Duration, Instant};
 
 use hge_core::Error;
 use hge_ir::{MultiplexedQuery, MultiplexedRow, SourceExecutor};
+use serde_json::{Value as Json, json};
 use xxhash_rust::xxh3::Xxh3;
 
 /// Poller settings (`HASURA_GRAPHQL_LIVE_QUERIES_MULTIPLEXED_*`,
@@ -59,6 +60,23 @@ pub trait Subscriber: Send + Sync {
 
 type Values = Arc<[Option<String>]>;
 
+/// The source and role a poller runs for (V2 keys pollers by them; here they only label its
+/// logs, since the SQL already embeds the role's permissions).
+#[derive(Debug, Clone)]
+pub struct PollerInfo {
+    pub source: Arc<str>,
+    pub role: Arc<str>,
+}
+
+impl Default for PollerInfo {
+    fn default() -> Self {
+        PollerInfo {
+            source: "default".into(),
+            role: "admin".into(),
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct PollerKey {
     /// Address of the executor (kept alive by the poller, so it cannot be reused).
@@ -79,6 +97,10 @@ struct RegistryInner {
 
 struct Poller {
     key: PollerKey,
+    /// Who and what it polls, for `livequery-poller-log`.
+    info: PollerInfo,
+    /// V2's `poller_id`.
+    poller_id: uuid::Uuid,
     executor: Arc<dyn SourceExecutor>,
     /// Streaming: index of the cursor among the values.
     cursor: Option<usize>,
@@ -156,6 +178,19 @@ impl Registry {
         query: MultiplexedQuery,
         sink: Arc<dyn Subscriber>,
     ) -> Result<SubscriptionHandle, Error> {
+        self.subscribe_with(executor, query, sink, PollerInfo::default())
+            .await
+    }
+
+    /// [`Registry::subscribe`], naming the source and role for the poller's logs (a new poller
+    /// takes them from its first subscriber).
+    pub async fn subscribe_with(
+        &self,
+        executor: Arc<dyn SourceExecutor>,
+        query: MultiplexedQuery,
+        sink: Arc<dyn Subscriber>,
+        info: PollerInfo,
+    ) -> Result<SubscriptionHandle, Error> {
         let MultiplexedQuery {
             sql,
             mut variables,
@@ -187,9 +222,16 @@ impl Registry {
         };
         let values: Values = variables.into();
         let id = self.inner.next_id.fetch_add(1, Ordering::Relaxed);
-        let poller = self
-            .inner
-            .add(executor, sql.into(), cursor, values, id, sink, last_hash);
+        let poller = self.inner.add(
+            executor,
+            sql.into(),
+            cursor,
+            values,
+            id,
+            sink,
+            last_hash,
+            info,
+        );
         Ok(SubscriptionHandle {
             registry: Arc::downgrade(&self.inner),
             poller,
@@ -230,6 +272,7 @@ impl RegistryInner {
         id: u64,
         sink: Arc<dyn Subscriber>,
         last_hash: Option<u128>,
+        info: PollerInfo,
     ) -> Arc<Poller> {
         let key = PollerKey {
             executor: Arc::as_ptr(&executor) as *const () as usize,
@@ -246,6 +289,8 @@ impl RegistryInner {
                 .or_insert_with(|| {
                     let poller = Arc::new(Poller {
                         key: key.clone(),
+                        info: info.clone(),
+                        poller_id: uuid::Uuid::new_v4(),
                         executor: executor.clone(),
                         cursor,
                         state: Mutex::new(PollerState::default()),
@@ -300,7 +345,7 @@ impl RegistryInner {
 async fn run(poller: Arc<Poller>, options: PollerOptions) {
     loop {
         tokio::time::sleep(options.refetch_interval).await;
-        poller.poll(options.batch_size).await;
+        poller.poll(options).await;
     }
 }
 
@@ -342,7 +387,7 @@ impl Poller {
         true
     }
 
-    async fn poll(&self, batch_size: usize) {
+    async fn poll(&self, options: PollerOptions) {
         let started = Instant::now();
         let (epoch, cohorts) = {
             let mut state = self.state.lock().expect("lock");
@@ -355,7 +400,8 @@ impl Poller {
                 .collect();
             (epoch, cohorts)
         };
-        let batches = cohorts.chunks(batch_size).map(|batch| async move {
+        let snapshot_time = started.elapsed();
+        let batches = cohorts.chunks(options.batch_size).map(|batch| async move {
             let mut json = String::from("[");
             for (i, (_, values)) in batch.iter().enumerate() {
                 if i > 0 {
@@ -364,17 +410,33 @@ impl Poller {
                 json.push_str(values);
             }
             json.push(']');
+            let started = Instant::now();
             let result = self
                 .executor
                 .execute_multiplexed(&self.key.sql, &json)
                 .await;
-            (batch, result)
+            (batch, result, started.elapsed())
         });
         let results = futures::future::join_all(batches).await;
+        let logging =
+            tracing::event_enabled!(target: "livequery-poller-log", tracing::Level::ERROR);
+        let mut log = PollLog::default();
         let mut state = self.state.lock().expect("lock");
-        for (batch, result) in results {
+        for (batch_id, (batch, result, db_time)) in (1..).zip(results) {
+            let pushing = Instant::now();
+            let mut size = None;
             match result {
                 Ok(rows) => {
+                    if logging {
+                        // V2 sums each cohort's response; this is the result columns' size.
+                        size = Some(
+                            rows.iter()
+                                .flat_map(|r| &r.columns)
+                                .flatten()
+                                .map(String::len)
+                                .sum::<usize>(),
+                        );
+                    }
                     for row in rows {
                         let Some((values, _)) = batch.get(row.index) else {
                             continue;
@@ -387,19 +449,114 @@ impl Poller {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!(target: "livequery-poller-log", error = %e, "poll failed");
                     for (values, _) in batch {
                         state.deliver_error(values, &e, epoch);
                     }
+                    if logging {
+                        log.errors
+                            .push(json!({"batch_id": batch_id, "detail": e.to_api_json(true)}));
+                    }
                 }
             }
+            if logging {
+                log.batches.push(BatchLog {
+                    db_time,
+                    push_time: pushing.elapsed(),
+                    batch_id,
+                    size,
+                });
+            }
         }
-        tracing::debug!(
-            target: "livequery-poller-log",
-            cohorts = cohorts.len(),
-            total_time = started.elapsed().as_secs_f64(),
-            "polled"
-        );
+        drop(state);
+        if logging {
+            self.log(
+                &log,
+                cohorts.len(),
+                snapshot_time,
+                started.elapsed(),
+                options,
+            );
+        }
+    }
+
+    /// V2's `livequery-poller-log` (`pollDetailMinimal`): info after every poll, error when a
+    /// batch failed.
+    fn log(
+        &self,
+        log: &PollLog,
+        cohorts: usize,
+        snapshot_time: Duration,
+        total_time: Duration,
+        options: PollerOptions,
+    ) {
+        let detail = || {
+            let batches: Vec<Json> = log
+                .batches
+                .iter()
+                .map(|b| {
+                    let mut o = json!({
+                        "db_execution_time": b.db_time.as_secs_f64(),
+                        "push_time": b.push_time.as_secs_f64(),
+                        "batch_id": b.batch_id,
+                        // Postgres is the only backend: its execution time is the database's.
+                        "pg_execution_time": b.db_time.as_secs_f64(),
+                    });
+                    if let Some(size) = b.size {
+                        o["batch_response_size_bytes"] = size.into();
+                    }
+                    o
+                })
+                .collect();
+            let mut detail = json!({
+                "poller_id": self.poller_id.to_string(),
+                "kind": if self.cursor.is_some() { "streaming" } else { "live-query" },
+                "snapshot_time": snapshot_time.as_secs_f64(),
+                "batches": batches,
+                "execution_batches": batches,
+                "subscriber_count": cohorts,
+                "total_time": total_time.as_secs_f64(),
+                "source": &*self.info.source,
+                "generated_sql": &*self.key.sql,
+                "role": &*self.info.role,
+                "subscription_options": {
+                    "batch_size": options.batch_size,
+                    "refetch_delay": seconds(options.refetch_interval),
+                },
+            });
+            if !log.errors.is_empty() {
+                detail["errors"] = Json::Array(log.errors.clone());
+            }
+            detail
+        };
+        if log.errors.is_empty() {
+            tracing::info!(target: "livequery-poller-log", detail = %detail());
+        } else {
+            tracing::error!(target: "livequery-poller-log", detail = %detail());
+        }
+    }
+}
+
+/// What a poll records for its log.
+#[derive(Default)]
+struct PollLog {
+    batches: Vec<BatchLog>,
+    errors: Vec<Json>,
+}
+
+struct BatchLog {
+    db_time: Duration,
+    push_time: Duration,
+    batch_id: u32,
+    /// Bytes of the batch's results (`None` when it failed).
+    size: Option<usize>,
+}
+
+/// A duration in seconds as V2 writes a `DiffTime`: an integer when it is whole.
+fn seconds(d: Duration) -> Json {
+    if d.subsec_nanos() == 0 {
+        d.as_secs().into()
+    } else {
+        d.as_secs_f64().into()
     }
 }
 
