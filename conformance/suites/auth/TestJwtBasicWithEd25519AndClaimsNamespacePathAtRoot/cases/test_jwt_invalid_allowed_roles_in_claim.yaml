@@ -1,0 +1,65 @@
+upstream:
+  by_hand: true
+  file: test_jwt.py
+  class: TestJwtBasicWithEd25519AndClaimsNamespacePathAtRoot
+  method: test_jwt_invalid_allowed_roles_in_claim
+admin_secret_header: false
+steps:
+- description: User can only get his unpublished articles
+  url: /v1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsIngtaGFzdXJhLXVzZXItaWQiOiIxIiwieC1oYXN1cmEtYWxsb3dlZC1yb2xlcyI6InVzZXIiLCJ4LWhhc3VyYS1kZWZhdWx0LXJvbGUiOiJ1c2VyIn0.4AIIpI5z4-TTGGOolZGqOj0gqnDhf8h7aJTO_dyEt4fLQpUD_TB3XYL2KImPA2MX4vZM5OZYLwCupRLqAhWDCA
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'invalid "x-hasura-allowed-roles"; should be a list of roles: parsing [] failed, expected Array, but encountered String'
+      extensions:
+        path: $
+        code: jwt-invalid-claims
+- description: User can only get his unpublished articles
+  url: /v1alpha1/graphql
+  status: 400
+  headers:
+    Authorization: Bearer eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsIngtaGFzdXJhLXVzZXItaWQiOiIxIiwieC1oYXN1cmEtYWxsb3dlZC1yb2xlcyI6InVzZXIiLCJ4LWhhc3VyYS1kZWZhdWx0LXJvbGUiOiJ1c2VyIn0.4AIIpI5z4-TTGGOolZGqOj0gqnDhf8h7aJTO_dyEt4fLQpUD_TB3XYL2KImPA2MX4vZM5OZYLwCupRLqAhWDCA
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'invalid "x-hasura-allowed-roles"; should be a list of roles: parsing [] failed, expected Array, but encountered String'
+      extensions:
+        path: $
+        code: jwt-invalid-claims

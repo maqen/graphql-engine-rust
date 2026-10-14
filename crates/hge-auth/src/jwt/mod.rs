@@ -243,14 +243,14 @@ fn verify(ctx: &JwtContext, token: &Token<'_>) -> Result<(), AuthError> {
         .ok_or_else(|| invalid_jwt("JWSError NoUsableKeys"))?;
     let message = token.signing_input.as_bytes();
     let result = ctx.with_keys(|keys| {
-        let mut usable = keys
+        let mut selected = keys
             .iter()
-            .filter(|k| k.usable_for(alg, token.kid.as_deref()))
+            .filter(|k| k.selected_by(token.kid.as_deref()))
             .peekable();
-        if usable.peek().is_none() {
+        if selected.peek().is_none() {
             return Err("JWSError NoUsableKeys");
         }
-        if usable.any(|k| k.verify(alg, message, &token.signature)) {
+        if selected.any(|k| k.usable_for(alg) && k.verify(alg, message, &token.signature)) {
             Ok(())
         } else {
             Err("JWSError JWSInvalidSignature")

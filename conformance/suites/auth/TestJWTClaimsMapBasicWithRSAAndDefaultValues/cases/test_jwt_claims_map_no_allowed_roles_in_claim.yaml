@@ -1,0 +1,73 @@
+upstream:
+  by_hand: true
+  file: test_jwt_claims_map.py
+  class: TestJWTClaimsMapBasicWithRSAAndDefaultValues
+  method: test_jwt_claims_map_no_allowed_roles_in_claim
+admin_secret_header: false
+steps:
+- description: User can only get his unpublished articles
+  url: /v1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vbXlhcHAuY29tL2p3dC9jbGFpbXMiOnsidXNlciI6eyJpZCI6IjEifSwicm9sZSI6eyJkZWZhdWx0IjoidXNlciJ9fX0.Iwm55z2sl3tlMWfzO8LrVouhjQmQQd7fvlRbVC6p2OvHVlsfa6mKH-CAUqd_qwNrn3m7PmOn6jlhkYZto3Sr0Q-Zm2hnRIyOk8pzVucV_PnbJVrOoP5Skpo26oEZvlpjCtB0a4NXgSILoaeiHzgJk0Nd30r_t07ZxJacQUbZiViUxRLnwHdJjMBbjyQYksnQGzQBhCQRNbnNJGtXJOQUQ6Pz5xaoyGyEpJPAyfbS-FthBNmztoETIbLMSklsfnjivhiAkmB1iNToe_fegqu76shmB7vK1gE7vMdoJqql6rd6sh5M5sLPjmhLeHyEnrCtCAeXW0uB7s89sCcLPPdzIA
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    data:
+      article:
+      - id: 1
+        title: Article 1
+        content: Sample article content 1
+        is_published: false
+        author:
+          id: 1
+          name: Author 1
+- description: User can only get his unpublished articles
+  url: /v1alpha1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vbXlhcHAuY29tL2p3dC9jbGFpbXMiOnsidXNlciI6eyJpZCI6IjEifSwicm9sZSI6eyJkZWZhdWx0IjoidXNlciJ9fX0.Iwm55z2sl3tlMWfzO8LrVouhjQmQQd7fvlRbVC6p2OvHVlsfa6mKH-CAUqd_qwNrn3m7PmOn6jlhkYZto3Sr0Q-Zm2hnRIyOk8pzVucV_PnbJVrOoP5Skpo26oEZvlpjCtB0a4NXgSILoaeiHzgJk0Nd30r_t07ZxJacQUbZiViUxRLnwHdJjMBbjyQYksnQGzQBhCQRNbnNJGtXJOQUQ6Pz5xaoyGyEpJPAyfbS-FthBNmztoETIbLMSklsfnjivhiAkmB1iNToe_fegqu76shmB7vK1gE7vMdoJqql6rd6sh5M5sLPjmhLeHyEnrCtCAeXW0uB7s89sCcLPPdzIA
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    data:
+      article:
+      - id: 1
+        title: Article 1
+        content: Sample article content 1
+        is_published: false
+        author:
+          id: 1
+          name: Author 1

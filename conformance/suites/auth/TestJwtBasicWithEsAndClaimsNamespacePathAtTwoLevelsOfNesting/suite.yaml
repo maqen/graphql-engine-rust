@@ -1,0 +1,8 @@
+description: Ported by hand from hasura/graphql-engine server/tests-py/test_jwt.py::TestJwtBasicWithEsAndClaimsNamespacePathAtTwoLevelsOfNesting
+  by conformance/tools/gen_jwt_suites.py
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_JWT_SECRET: '{"type": "ES256", "key": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEPZphzJMlpN0RLsLH6l7qrLj09xbb\njzRgMCBY++A4dPZzkFO+1RhBOSMx5/+dRHUEKIE2SOKm10/u7aNhpRxqwg==\n-----END
+    PUBLIC KEY-----\n", "claims_namespace_path": "$.hasura.claims"}'
+isolation: none

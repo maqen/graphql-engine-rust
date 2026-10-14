@@ -1,0 +1,65 @@
+upstream:
+  by_hand: true
+  file: test_jwt.py
+  class: TestJwtBasicWithEd25519AndStringifiedJsonClaims
+  method: test_jwt_expired
+admin_secret_header: false
+steps:
+- description: User can only get his unpublished articles
+  url: /v1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDAwNjAsImh0dHBzOi8vaGFzdXJhLmlvL2p3dC9jbGFpbXMiOiJ7XCJ4LWhhc3VyYS11c2VyLWlkXCI6IFwiMVwiLCBcIngtaGFzdXJhLWRlZmF1bHQtcm9sZVwiOiBcInVzZXJcIiwgXCJ4LWhhc3VyYS1hbGxvd2VkLXJvbGVzXCI6IFtcInVzZXJcIl19In0._tpbkgZroQBzKZZptDYj5gkgesiMN0AALNN2cO5w453-k7Fmf-YhFqX4G3p0gRAMxadGdGM-DuC-AV861xnRAQ
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'Could not verify JWT: JWTExpired'
+      extensions:
+        path: $
+        code: invalid-jwt
+- description: User can only get his unpublished articles
+  url: /v1alpha1/graphql
+  status: 400
+  headers:
+    Authorization: Bearer eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDAwNjAsImh0dHBzOi8vaGFzdXJhLmlvL2p3dC9jbGFpbXMiOiJ7XCJ4LWhhc3VyYS11c2VyLWlkXCI6IFwiMVwiLCBcIngtaGFzdXJhLWRlZmF1bHQtcm9sZVwiOiBcInVzZXJcIiwgXCJ4LWhhc3VyYS1hbGxvd2VkLXJvbGVzXCI6IFtcInVzZXJcIl19In0._tpbkgZroQBzKZZptDYj5gkgesiMN0AALNN2cO5w453-k7Fmf-YhFqX4G3p0gRAMxadGdGM-DuC-AV861xnRAQ
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'Could not verify JWT: JWTExpired'
+      extensions:
+        path: $
+        code: invalid-jwt

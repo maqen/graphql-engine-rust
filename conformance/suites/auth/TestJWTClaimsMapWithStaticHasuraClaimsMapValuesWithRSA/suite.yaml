@@ -1,0 +1,10 @@
+description: Ported by hand from hasura/graphql-engine server/tests-py/test_jwt_claims_map.py::TestJWTClaimsMapWithStaticHasuraClaimsMapValuesWithRSA
+  by conformance/tools/gen_jwt_suites.py
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_JWT_SECRET: '{"type": "RS512", "key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAhz9E60H3njsobIsqmVJD\nl4jmp1ItPFBUVN0HN0D7m2Ob5HSDmvl4JpRd78gK1IVlGbjCpDYBc0ZeKj2qCYyt\nuSV86EsJ4T+lcl4crLqYPUJEKAea6ft5/QWgBFp/7ILl6nePeJRpxQOoCymF0yQl\nvDDGD6Y+SQaD75e9Xa6cbTgqfpVwjyj1EkQCs7y/kpYSqw8EAOP+ymJQo/9RdL9Z\nDHsviL9jxAArrZJlr9EM8OyG01CcS1Umou5DdtA+wKsw5gV0VEu69679n3NOEeHC\nOJmcNwPgoPaNtnDDe60yJo9Gm+93YhR6CBeSmV88PnSXd/tA8iDqphypWcMI9U+2\nFQIDAQAB\n-----END
+    PUBLIC KEY-----\n", "claims_map": {"x-hasura-user-id": {"path": "$.[''https://myapp.com/jwt/claims''].user.id"},
+    "x-hasura-allowed-roles": ["user", "editor"], "x-hasura-default-role": "user", "x-hasura-custom-header":
+    "custom-value"}}'
+isolation: none

@@ -1,0 +1,65 @@
+upstream:
+  by_hand: true
+  file: test_jwt_claims_map.py
+  class: TestJWTClaimsMapWithStaticHasuraClaimsMapValuesWithRSA
+  method: test_jwt_claims_map_invalid_role_in_request_header
+admin_secret_header: false
+steps:
+- description: User can only get his unpublished articles
+  url: /v1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vbXlhcHAuY29tL2p3dC9jbGFpbXMiOnsidXNlciI6eyJpZCI6IjEifX19.HZcAQKu5hRi68gyBhtnS1P649kjCMiWyFj_15Gw9pcuNDPqj0KGkw1lJHnXkr9HMcwt4Vz4Jq7OZVqhjn746NCUqMCNmDQgiR9-54wZUGDJ_eABluYxZ6QkluF00sOEKujR89w97zfU8XQqa_1sOL2xR1M9Vr8FRjETCBatmsFSI2_nQaptGokUmIGkBC8sYfg_ilXuuXSd3GlscmJoXerehKe_5iS4v5MtDWWzfHYG3kD0Eeoo-eDB0_coRrlstHPbaun-ddlI9n6vlOgjKsmvsaN-mjAEO4vgr5xhAViMkni51I-1h_WFT49Dtkp56hoBzzeOLrQ19sWA4GKIktw
+    X-Hasura-Role: random_string
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: Your requested role is not in allowed roles
+      extensions:
+        path: $
+        code: access-denied
+- description: User can only get his unpublished articles
+  url: /v1alpha1/graphql
+  status: 400
+  headers:
+    Authorization: Bearer eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vbXlhcHAuY29tL2p3dC9jbGFpbXMiOnsidXNlciI6eyJpZCI6IjEifX19.HZcAQKu5hRi68gyBhtnS1P649kjCMiWyFj_15Gw9pcuNDPqj0KGkw1lJHnXkr9HMcwt4Vz4Jq7OZVqhjn746NCUqMCNmDQgiR9-54wZUGDJ_eABluYxZ6QkluF00sOEKujR89w97zfU8XQqa_1sOL2xR1M9Vr8FRjETCBatmsFSI2_nQaptGokUmIGkBC8sYfg_ilXuuXSd3GlscmJoXerehKe_5iS4v5MtDWWzfHYG3kD0Eeoo-eDB0_coRrlstHPbaun-ddlI9n6vlOgjKsmvsaN-mjAEO4vgr5xhAViMkni51I-1h_WFT49Dtkp56hoBzzeOLrQ19sWA4GKIktw
+    X-Hasura-Role: random_string
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: Your requested role is not in allowed roles
+      extensions:
+        path: $
+        code: access-denied

@@ -1,0 +1,8 @@
+description: Ported by hand from hasura/graphql-engine server/tests-py/test_jwt.py::TestJwtBasicWithRsaAndClaimsNamespacePathAtTwoLevelsOfNesting
+  by conformance/tools/gen_jwt_suites.py
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_JWT_SECRET: '{"type": "RS512", "key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtSz4sleQxmxjfP8CNK5I\nFbPQS9ZJKkBNcnhGu4FS+1IxtNrGKCv4JIODxaLmewNcef5WQz+QnycA9gLy8H3V\nwgM7rk0QMitSuJs32cPvK6YbLYBWAzGrYXAJ7h2VMiwdqUFrN1mOHrqLZa00z+9M\nRoJ9NxLZfAwW2C2+NuAEkTuf/zo0Kc9DwutQWTlmEPdLkehTdU59OvM9EaZoG8wG\nmD77YKy2bBHRlHQY/j1djZBOb0MH9tKIHtmoNEWHuF9S/LKDmnfRV2xkrBvzSVQc\n/w2gqvF6O74tI0Zh030olv3HQmNV4ZXcDvdZ+tNDEFpajSu+1OzJyPz2/V9dpYW8\nzQIDAQAB\n-----END
+    PUBLIC KEY-----\n", "claims_namespace_path": "$.hasura.claims"}'
+isolation: none

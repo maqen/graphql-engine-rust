@@ -1,0 +1,1 @@
+../../permissions/TestGraphqlQueryPermissions/setup.sql

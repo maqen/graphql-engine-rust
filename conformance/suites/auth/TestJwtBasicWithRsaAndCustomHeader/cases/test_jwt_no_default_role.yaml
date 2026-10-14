@@ -1,0 +1,65 @@
+upstream:
+  by_hand: true
+  file: test_jwt.py
+  class: TestJwtBasicWithRsaAndCustomHeader
+  method: test_jwt_no_default_role
+admin_secret_header: false
+steps:
+- description: User can only get his unpublished articles
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+    hasura_user: eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vaGFzdXJhLmlvL2p3dC9jbGFpbXMiOnsieC1oYXN1cmEtdXNlci1pZCI6IjEiLCJ4LWhhc3VyYS1hbGxvd2VkLXJvbGVzIjpbInVzZXIiXX19.MXUiX8pjSSxO2y6eqdlcsxDXRZKaUnwe5WTUvxEh1QyFExwzD_uGoODnAPTd6ZVy-ssq5yA-ApEjjwgT3ExcBgD0pp2MrQReYogdwS6o2zqbsiZb-S-80DpDNv8qvzRw9LlYrlFv6HauugvqV9L6Swfaz315wuDH-llKDa9kOGTmyK8xAo6vRMvNE64lMGAREn7-TKmu_Urmgfivm5nRV1qAcMV-ZhZNcrCh-3iNOylzu0bXZgKXJDTUylFJBQ1nuzduoWa9vbRuidEaTKnJN1VX8K-6SZydInTtfGujmoeomlMkWI3Kohg0OTSg45sLCLplF5BHRPrTXZNnCHMZCw
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: JWT claim does not contain "x-hasura-default-role"
+      extensions:
+        path: $
+        code: jwt-missing-role-claims
+- description: User can only get his unpublished articles
+  url: /v1alpha1/graphql
+  status: 400
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+    hasura_user: eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vaGFzdXJhLmlvL2p3dC9jbGFpbXMiOnsieC1oYXN1cmEtdXNlci1pZCI6IjEiLCJ4LWhhc3VyYS1hbGxvd2VkLXJvbGVzIjpbInVzZXIiXX19.MXUiX8pjSSxO2y6eqdlcsxDXRZKaUnwe5WTUvxEh1QyFExwzD_uGoODnAPTd6ZVy-ssq5yA-ApEjjwgT3ExcBgD0pp2MrQReYogdwS6o2zqbsiZb-S-80DpDNv8qvzRw9LlYrlFv6HauugvqV9L6Swfaz315wuDH-llKDa9kOGTmyK8xAo6vRMvNE64lMGAREn7-TKmu_Urmgfivm5nRV1qAcMV-ZhZNcrCh-3iNOylzu0bXZgKXJDTUylFJBQ1nuzduoWa9vbRuidEaTKnJN1VX8K-6SZydInTtfGujmoeomlMkWI3Kohg0OTSg45sLCLplF5BHRPrTXZNnCHMZCw
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: JWT claim does not contain "x-hasura-default-role"
+      extensions:
+        path: $
+        code: jwt-missing-role-claims

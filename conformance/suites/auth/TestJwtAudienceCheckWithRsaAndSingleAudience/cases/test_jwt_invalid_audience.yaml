@@ -1,0 +1,65 @@
+upstream:
+  by_hand: true
+  file: test_jwt.py
+  class: TestJwtAudienceCheckWithRsaAndSingleAudience
+  method: test_jwt_invalid_audience
+admin_secret_header: false
+steps:
+- description: User can only get his unpublished articles
+  url: /v1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vaGFzdXJhLmlvL2p3dC9jbGFpbXMiOnsieC1oYXN1cmEtdXNlci1pZCI6IjEiLCJ4LWhhc3VyYS1kZWZhdWx0LXJvbGUiOiJ1c2VyIiwieC1oYXN1cmEtYWxsb3dlZC1yb2xlcyI6WyJ1c2VyIl19LCJhdWQiOiJydWJiaXNoX2F1ZGllbmNlIn0.KcLyaXH_IeVpD3EdMGIVgKKW5U_x4SAsLeztundeE1yB8hps0mB4XCCir6R9tgB2UB8kV0PNW_2TJaEV1LV1YZ6mO6-WWg5gjEAA8MnjqJOz8ahWWdHb22j37sifrnKQecOe7xkJ8fllMJ5YlE7bVOPI8tLNCVn9W7Rq4HZ42QzNniNy9Xplo1AFnOKFfT1N6huYIk1x_zRZkX2Tv_R4i1-2DNzPHohIjh3W3uHaSWW0JoqfaaHo-1VdbGjhmWH9HE6ZcRVK9fhzP_4D_dhQ61RuqQquGgZ_fEvtEUD_DfXr-tPVHS5UMgeo6Ps2hcj77UIRg5HTx-g6wyo8dGV0AA
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'Could not verify JWT: JWTNotInAudience'
+      extensions:
+        path: $
+        code: invalid-jwt
+- description: User can only get his unpublished articles
+  url: /v1alpha1/graphql
+  status: 400
+  headers:
+    Authorization: Bearer eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vaGFzdXJhLmlvL2p3dC9jbGFpbXMiOnsieC1oYXN1cmEtdXNlci1pZCI6IjEiLCJ4LWhhc3VyYS1kZWZhdWx0LXJvbGUiOiJ1c2VyIiwieC1oYXN1cmEtYWxsb3dlZC1yb2xlcyI6WyJ1c2VyIl19LCJhdWQiOiJydWJiaXNoX2F1ZGllbmNlIn0.KcLyaXH_IeVpD3EdMGIVgKKW5U_x4SAsLeztundeE1yB8hps0mB4XCCir6R9tgB2UB8kV0PNW_2TJaEV1LV1YZ6mO6-WWg5gjEAA8MnjqJOz8ahWWdHb22j37sifrnKQecOe7xkJ8fllMJ5YlE7bVOPI8tLNCVn9W7Rq4HZ42QzNniNy9Xplo1AFnOKFfT1N6huYIk1x_zRZkX2Tv_R4i1-2DNzPHohIjh3W3uHaSWW0JoqfaaHo-1VdbGjhmWH9HE6ZcRVK9fhzP_4D_dhQ61RuqQquGgZ_fEvtEUD_DfXr-tPVHS5UMgeo6Ps2hcj77UIRg5HTx-g6wyo8dGV0AA
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'Could not verify JWT: JWTNotInAudience'
+      extensions:
+        path: $
+        code: invalid-jwt

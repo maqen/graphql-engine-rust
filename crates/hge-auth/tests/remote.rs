@@ -358,3 +358,56 @@ async fn webhook_cache() {
         "V2 calls the webhook every time"
     );
 }
+
+/// A key the token's `kid` selects but whose JWK `alg` differs from the token's is never
+/// used; a key without a `kid` next to a key of the wrong type still verifies.
+#[tokio::test]
+async fn jwk_alg_and_type_mismatch() {
+    let state = Jwks::default();
+    let mut wrong_alg = rsa_jwk("k1");
+    wrong_alg["alg"] = json!("RS512");
+    let mut no_kid = rsa_jwk("k2");
+    no_kid.as_object_mut().unwrap().remove("kid");
+    *state.keys.lock().unwrap() = json!({"keys": [
+        wrong_alg,
+        {"kty": "oct", "k": "c2VjcmV0LXNlY3JldC1zZWNyZXQtc2VjcmV0LXNlY3JldA"},
+        no_kid
+    ]});
+    let url = jwks_server(state.clone()).await;
+    let a = Authenticator::new(AuthConfig {
+        admin_secrets: vec!["secret".into()],
+        jwt_secret: Some(json!({"jwk_url": format!("{url}/jwks")}).to_string()),
+        ..AuthConfig::default()
+    })
+    .await
+    .unwrap();
+    let c = claims(&["user"], "user", json!({}));
+
+    // `kid: k1` selects the RS512-only key, and also the two keys without a kid; the
+    // RSA one of those verifies.
+    let token = sign(Signer::Rs256, json!({"kid": "k1"}), &c);
+    assert!(run(&a, &[("authorization", &bearer(&token))]).await.is_ok());
+    let token = sign(Signer::Rs256, json!({}), &c);
+    assert!(run(&a, &[("authorization", &bearer(&token))]).await.is_ok());
+
+    // With only the RS512-only key, an RS256 token is a bad signature, not a skipped key.
+    let mut only = rsa_jwk("k1");
+    only["alg"] = json!("RS512");
+    *state.keys.lock().unwrap() = json!({"keys": [only]});
+    let url = jwks_server(state).await;
+    let a = Authenticator::new(AuthConfig {
+        admin_secrets: vec!["secret".into()],
+        jwt_secret: Some(json!({"jwk_url": format!("{url}/jwks")}).to_string()),
+        ..AuthConfig::default()
+    })
+    .await
+    .unwrap();
+    let token = sign(Signer::Rs256, json!({"kid": "k1"}), &c);
+    let e = run(&a, &[("authorization", &bearer(&token))])
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err(e).2,
+        "Could not verify JWT: JWSError JWSInvalidSignature"
+    );
+}

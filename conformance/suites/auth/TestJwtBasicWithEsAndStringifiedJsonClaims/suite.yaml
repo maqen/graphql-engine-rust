@@ -1,0 +1,8 @@
+description: Ported by hand from hasura/graphql-engine server/tests-py/test_jwt.py::TestJwtBasicWithEsAndStringifiedJsonClaims
+  by conformance/tools/gen_jwt_suites.py
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_JWT_SECRET: '{"type": "ES256", "key": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAESeMCXNk/rqhe1h5IOi2TgvydDlRi\nHDR+RZoICAwEM/tWlZkElRzMjKfqvG7lSgS4hN0uZZ+ZAw2WBne20BPKFQ==\n-----END
+    PUBLIC KEY-----\n", "claims_format": "stringified_json"}'
+isolation: none

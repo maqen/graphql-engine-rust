@@ -22,7 +22,12 @@ impl JsonPath {
         let mut rest = source.strip_prefix('$').unwrap_or(source);
         let mut elements = vec![];
         while !rest.is_empty() {
-            if let Some(r) = rest.strip_prefix('.') {
+            if let Some(r) = rest.strip_prefix(".[") {
+                // `$.['key']`, which V2 (and Auth0's docs) accept.
+                let (element, r) = parse_bracket(r)?;
+                elements.push(element);
+                rest = r;
+            } else if let Some(r) = rest.strip_prefix('.') {
                 let end = r.find(['.', '[']).unwrap_or(r.len());
                 if end == 0 {
                     return Err(format!("invalid property name at: {r}"));
@@ -103,6 +108,8 @@ mod tests {
         assert_eq!(get("$.hasura.claims.x"), Some(json!(1)));
         assert_eq!(get("$.roles[1]"), Some(json!("b")));
         assert_eq!(get("$['a.b'].c"), Some(json!(2)));
+        assert_eq!(get("$.['a.b'].c"), Some(json!(2)));
+        assert_eq!(get("$.roles.[0]"), Some(json!("a")));
         assert_eq!(get("$[\"hasura\"]['claims']"), Some(json!({"x": 1})));
         assert_eq!(get("$"), Some(v.clone()));
         assert_eq!(get("hasura.claims.x"), Some(json!(1)));

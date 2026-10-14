@@ -236,7 +236,11 @@ async fn verification_errors() {
     let e = run(&a, &[("authorization", &bearer(&rs))])
         .await
         .unwrap_err();
-    assert_eq!(err(e).2, "Could not verify JWT: JWSError NoUsableKeys");
+    // A key of the wrong type is tried and fails, as in V2 (recorded in conformance/auth).
+    assert_eq!(
+        err(e).2,
+        "Could not verify JWT: JWSError JWSInvalidSignature"
+    );
 
     let e = run(&a, &[("authorization", "Bearer notatoken")])
         .await
@@ -554,7 +558,7 @@ async fn asymmetric_keys() {
         .unwrap_err();
         assert_eq!(
             err(e).2,
-            "Could not verify JWT: JWSError NoUsableKeys",
+            "Could not verify JWT: JWSError JWSInvalidSignature",
             "{ty}"
         );
     }

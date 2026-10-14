@@ -1,0 +1,8 @@
+description: Ported by hand from hasura/graphql-engine server/tests-py/test_jwt.py::TestJwtBasicWithRsaAndCookie
+  by conformance/tools/gen_jwt_suites.py
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_JWT_SECRET: '{"type": "RS512", "key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyCNsA0+MHcx1YiPx7czV\nkXu0hbH1pkS0C3Q5DUdjAEvwoXXpF8tZjrwn7mQ7Mm/gHBv0T31c845gU+Nw3hFJ\nXIVP6fj3aZLia0BkArmAoaJXUGumc9yNxErfWlCP2/4SZ4CniEwOAzmms7Io8e7K\ny9fErUacgA+0stV1GHdelWpaao+6vYjX3JB9PnDZM7h+kH0fmxz/Az7tn2LbFTv0\nP8AW6B6FJzsACwuy2ArORgJSGY7+aGOUwz0Vy0Cp5tUKpP6gW/WRpr3ek/MgR8Ui\nsPa+ET5Z6HfjXmb/W49g12j05OZ3RRbu+bVB8OFOnFZA7V6a9l5ldGcH5HPCujiZ\nJQIDAQAB\n-----END
+    PUBLIC KEY-----\n", "header": {"type": "Cookie", "name": "hasura_user"}}'
+isolation: none
