@@ -283,6 +283,19 @@ fn wrap_parse_error(mut e: ApiError, command: &str) -> ApiError {
     e
 }
 
+/// Undoes [`wrap_parse_error`] for `/v1/query`, which decodes legacy commands' arguments
+/// itself and reports the bare message.
+pub fn unwrap_parse_error(mut e: ApiError) -> ApiError {
+    const MARKER: &str = "Internal error message: ";
+    if e.error.code == Code::ParseFailed
+        && e.error.message.starts_with("Error when parsing command")
+        && let Some(at) = e.error.message.find(MARKER)
+    {
+        e.error.message = e.error.message[at + MARKER.len()..].to_owned();
+    }
+    e
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
