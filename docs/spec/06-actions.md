@@ -850,9 +850,12 @@ project(fields, obj) = ordered object, in selection order, keyed by alias:
   scalar/enum field -> obj[originalFieldName] or null if missing
   nested object fld -> obj[ALIAS] (sic) then:
                          object -> project(sub, o)
-                         array  -> elements mapped (non-object elements dropped)
+                         array  -> elements mapped the same way (objects projected,
+                                   arrays recursed, nulls kept, scalars dropped)
                          null   -> null
-                         other scalar -> KEY OMITTED from the response
+                         other scalar, or key missing -> KEY OMITTED from the response
+                         (async actions with relationships read the output through
+                         jsonb_to_record instead: a missing key is null)
   relationship fld  -> placeholder string "remote relationship placeholder", replaced by the remote join (§8.7)
 ```
 

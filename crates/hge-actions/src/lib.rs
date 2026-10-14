@@ -88,7 +88,13 @@ pub async fn execute(
                 fetch_joins(&joins, ctx.session, sources).await?
             };
             Ok(ActionResult {
-                value: project::project(output, selection, resp.body, &joined),
+                value: project::project(
+                    output,
+                    selection,
+                    resp.body,
+                    &joined,
+                    project::Missing::Omit,
+                ),
                 set_cookies: resp.set_cookies,
             })
         }

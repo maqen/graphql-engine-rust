@@ -26,6 +26,14 @@ cases:
         - extensions: { foo: bar, code: x }
           message: m
 
+  - description: a 4xx error that decodes has no internal details, even for admin
+    query:
+      query: '{ respond(status: 400, body: {message: "nope"}) { label } }'
+    response:
+      errors:
+        - extensions: { path: '$', code: unexpected }
+          message: nope
+
   - description: 4xx without a message
     headers: { x-hasura-role: user }
     query:
@@ -132,3 +140,11 @@ cases:
       errors:
         - extensions: { path: '$', code: invalid-credentials }
           message: invalid credentials
+
+  - description: a nested object array keeps nulls and drops scalars (V2's mkValue)
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ respond(status: 200, body: {label: "x", address: [{city: "a"}, null, "s", [{city: "b"}]]}) { address { city } } }'
+    response:
+      data:
+        respond: { address: [{ city: a }, null, [{ city: b }]] }

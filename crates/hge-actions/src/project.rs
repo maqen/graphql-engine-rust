@@ -99,28 +99,41 @@ fn collect_object<'a>(
                     joins.add(rel, key);
                 }
             }
-            ActionField::Object { name, fields } => match obj.get(name) {
-                Some(Value::Object(o)) => collect_object(fields, o, joins),
-                Some(Value::Array(items)) => {
-                    for item in items {
-                        if let Value::Object(o) = item {
-                            collect_object(fields, o, joins);
-                        }
-                    }
+            ActionField::Object { name, fields } => {
+                if let Some(v) = obj.get(name) {
+                    collect_nested(fields, v, joins);
                 }
-                _ => {}
-            },
+            }
             ActionField::Typename(_) | ActionField::Scalar { .. } => {}
         }
     }
 }
 
-/// Build the response value of a synchronous action.
+fn collect_nested<'a>(fields: &'a [(String, ActionField)], v: &Value, joins: &mut Joins<'a>) {
+    match v {
+        Value::Object(o) => collect_object(fields, o, joins),
+        Value::Array(items) => items.iter().for_each(|i| collect_nested(fields, i, joins)),
+        _ => {}
+    }
+}
+
+/// How a nested object field missing from the response comes out.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Missing {
+    /// Left out, as in V2's `makeActionResponseNoRelations` (sync actions, async actions
+    /// without relationships).
+    Omit,
+    /// `null`: V2 reads async outputs with relationships through `jsonb_to_record`.
+    Null,
+}
+
+/// Build the response value of an action.
 pub fn project(
     output: &ActionOutput,
     selection: &ActionSelection,
     v: Value,
     joined: &Joined,
+    missing: Missing,
 ) -> Value {
     if passthrough(output) {
         return v;
@@ -133,13 +146,34 @@ pub fn project(
             items
                 .into_iter()
                 .map(|item| match item {
-                    Value::Object(o) => project_object(fields, &o, joined),
+                    Value::Object(o) => project_object(fields, &o, joined, missing),
                     other => other,
                 })
                 .collect(),
         ),
-        Value::Object(o) => project_object(fields, &o, joined),
+        Value::Object(o) => project_object(fields, &o, joined, missing),
         other => other,
+    }
+}
+
+/// A nested object field's value, as V2's `mkValue`: an object is projected, an array mapped
+/// (dropping scalars, keeping nulls), null kept; `None` (key omitted) for a scalar.
+fn nested_value(
+    fields: &[(String, ActionField)],
+    v: &Value,
+    joined: &Joined,
+    missing: Missing,
+) -> Option<Value> {
+    match v {
+        Value::Object(o) => Some(project_object(fields, o, joined, missing)),
+        Value::Array(items) => Some(Value::Array(
+            items
+                .iter()
+                .filter_map(|i| nested_value(fields, i, joined, missing))
+                .collect(),
+        )),
+        Value::Null => Some(Value::Null),
+        _ => None,
     }
 }
 
@@ -147,6 +181,7 @@ fn project_object(
     fields: &[(String, ActionField)],
     obj: &Map<String, Value>,
     joined: &Joined,
+    missing: Missing,
 ) -> Value {
     let mut out = Map::with_capacity(fields.len());
     for (alias, f) in fields {
@@ -158,25 +193,17 @@ fn project_object(
                 out.insert(alias.clone(), obj.get(name).cloned().unwrap_or(Value::Null));
             }
             // V2 reads nested objects by alias (quirk Q1); we read them by field name.
-            ActionField::Object { name, fields } => match obj.get(name) {
-                Some(Value::Object(o)) => {
-                    out.insert(alias.clone(), project_object(fields, o, joined));
+            ActionField::Object { name, fields } => {
+                let v = match obj.get(name) {
+                    Some(v) => nested_value(fields, v, joined, missing),
+                    None => (missing == Missing::Null).then_some(Value::Null),
+                };
+                // A missing key (unless read through SQL), or a scalar where an object is
+                // expected: V2 omits the key (quirk Q2).
+                if let Some(v) = v {
+                    out.insert(alias.clone(), v);
                 }
-                Some(Value::Array(items)) => {
-                    let items = items
-                        .iter()
-                        .filter_map(|i| i.as_object())
-                        .map(|o| project_object(fields, o, joined))
-                        .collect();
-                    out.insert(alias.clone(), Value::Array(items));
-                }
-                Some(Value::Null) => {
-                    out.insert(alias.clone(), Value::Null);
-                }
-                // A missing key, or a scalar where an object is expected: V2 omits the key
-                // (quirk Q2).
-                _ => {}
-            },
+            }
             ActionField::Relationship(rel) => {
                 // A null or missing join field gives null whatever the relationship kind, as in V2.
                 let value = match join_key(rel, obj) {
