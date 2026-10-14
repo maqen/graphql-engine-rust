@@ -78,6 +78,7 @@ async fn dropping_trigger_objects_does_not_hang() {
     assert_eq!(status, 200, "{r}");
     let trigger = |name: &str, columns: Value| {
         json!({"name": name, "webhook": "http://127.0.0.1:1",
+               "retry_conf": {"num_retries": 0, "interval_sec": 10, "timeout_sec": 60},
                "definition": {"update": {"columns": columns}}})
     };
     let metadata = json!({"version": 3, "sources": [{
