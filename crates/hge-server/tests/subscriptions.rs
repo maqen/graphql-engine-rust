@@ -1090,7 +1090,7 @@ async fn explain(server: &Server) {
     assert!(!body["plan"].as_array().unwrap().is_empty());
     assert_eq!(body["variables"]["session"], session);
     assert_eq!(body["variables"]["query"], json!({"id": 2}));
-    assert_eq!(body["variables"]["synthetic"], json!(["7", "2", "1"]));
+    assert_eq!(body["variables"]["synthetic"], json!(["7", "2"]));
 
     let (status, body) = post(
         json!({"query": {"query": "mutation { delete_message(where: {id: {_eq: 0}}) { affected_rows } }"}}),

@@ -353,6 +353,6 @@ mod tests {
         let nodes_only = select(vec![("nodes".to_owned(), nodes)], Some(2));
         let sql_nodes = sql(&nodes_only);
         assert!(sql_nodes.contains("coalesce(json_agg("));
-        assert!(sql_nodes.contains(r#" LIMIT ($1)::"pg_catalog"."int8""#));
+        assert!(sql_nodes.contains(" LIMIT 2"));
     }
 }
