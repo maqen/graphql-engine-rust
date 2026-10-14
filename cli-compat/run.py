@@ -10,7 +10,7 @@ modified). The CLI talks to the engine through a recording proxy, so every step 
 
 Steps are listed in SCENARIOS below. A step whose outcome differs between the engines fails the
 run unless its id is in `expected-failures.txt`; a listed step that now matches also fails the
-run, so the list only shrinks. Stdlib only.
+run, so the list only shrinks. Stdlib only, except the console scenario (console.py).
 
     cli-compat/run.py --hasura-cli /path/to/hasura --rust-bin target/debug/graphql-engine \
         --pg postgres://postgres:postgres@localhost:5432/postgres
@@ -58,6 +58,7 @@ class Exchange:
     request: object
     status: int
     response: object
+    response_type: str | None = None  # content-type, plus content-encoding when set
 
 
 class Recorder:
@@ -112,7 +113,9 @@ def start_proxy(recorder: Recorder) -> tuple[http.server.ThreadingHTTPServer, in
                 status, resp_headers = 599, [("content-type", "application/json")]
             finally:
                 conn.close()
-            ctype = dict((k.lower(), v) for k, v in resp_headers).get("content-type")
+            lower = dict((k.lower(), v) for k, v in resp_headers)
+            ctype = lower.get("content-type")
+            rtype = " ".join(filter(None, [ctype, lower.get("content-encoding")])) or None
             with recorder.lock:
                 recorder.exchanges.append(
                     Exchange(
@@ -122,6 +125,7 @@ def start_proxy(recorder: Recorder) -> tuple[http.server.ThreadingHTTPServer, in
                         parse_body(body, self.headers.get("content-type")),
                         status,
                         parse_body(data, ctype),
+                        rtype,
                     )
                 )
             self.send_response(status)
@@ -608,7 +612,9 @@ def main() -> int:
         "CLI_COMPAT_PG_URL", "postgres://postgres:postgres@localhost:5432/postgres"),
         help="Postgres superuser URL; reachable from containers with --network host")
     ap.add_argument("--filter", help="only steps whose id contains this")
-    ap.add_argument("--scenario", choices=["cli", "boot", "all"], default="all")
+    ap.add_argument("--scenario", choices=["cli", "boot", "console", "all"], default="all")
+    ap.add_argument("--chromium", help="Chromium for the console scenario (default: Playwright's)")
+    ap.add_argument("--screenshots", action="store_true", help="save console page screenshots")
     ap.add_argument("--hasura-results", help="reuse a hasura results JSON instead of running V2")
     ap.add_argument("--out", default="cli-compat-results", help="directory for results/report")
     ap.add_argument("--write-expected-failures", action="store_true")
@@ -629,6 +635,10 @@ def main() -> int:
                 r.update(run_cli_scenario(engine, args, work))
             if args.scenario in ("boot", "all"):
                 r.update(run_boot_scenario(engine, args, work))
+            if args.scenario in ("console", "all"):
+                import console  # needs playwright
+
+                r.update(console.run_console_scenario(engine, args, work))
         except Exception as e:  # an engine that fails to boot fails every step
             print(f"{engine.name}: {e}; log: {engine.log_path}", file=sys.stderr)
             if engine.log_path:
@@ -649,7 +659,10 @@ def main() -> int:
     rows = []
     for sid in step_ids:
         diff = compare(results["hasura"].get(sid, {}), results["rust"].get(sid, {}))
-        ok = not diff
+        # A scenario that could not start fails even when it failed the same way on both.
+        # So does a step the harness could not drive (e.g. a console page that never loaded).
+        ok = (not diff and sid != "engine-start"
+              and not any("harness_error" in results[e].get(sid, {}) for e in ("hasura", "rust")))
         if not ok:
             failing.append(sid)
         rows.append((sid, ok))

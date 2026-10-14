@@ -205,7 +205,7 @@ fn config_json(engine: &Engine) -> Value {
         "is_allow_list_enabled": c.enable_allowlist,
         "live_queries": poller(&c.websocket.live_queries),
         "streaming_queries": poller(&c.websocket.streaming),
-        "console_assets_dir": null,
+        "console_assets_dir": c.console_assets_dir,
         "experimental_features": c.experimental_features,
         "is_prometheus_metrics_enabled": c.api_enabled("metrics"),
         "default_naming_convention": c.default_naming_convention,

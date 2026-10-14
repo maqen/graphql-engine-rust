@@ -46,7 +46,11 @@ jobs:
           docker cp "$id:/bin/hasura-cli" ./hasura
           docker rm "$id"
           ./hasura version --skip-update-check
-      - name: Run the CLI against both engines
+      - name: Install Playwright and Chromium (console scenario)
+        run: |
+          python3 -m pip install --quiet playwright==1.63.0
+          python3 -m playwright install --with-deps chromium
+      - name: Run the CLI and the console against both engines
         run: >-
           python3 cli-compat/run.py --hasura-cli ./hasura
           --rust-bin target/debug/graphql-engine

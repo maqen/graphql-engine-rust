@@ -31,7 +31,8 @@ pub const VERSION: &str = "v2.51.0-ce";
 pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn router(engine: Arc<Engine>) -> Router {
-    let mut router = crate::telemetry::endpoints::register(Router::new(), &engine)
+    let router = crate::telemetry::endpoints::register(Router::new(), &engine);
+    let mut router = crate::console::register(router, &engine)
         .route("/api/rest", axum::routing::any(crate::rest::handler))
         .route("/api/rest/", axum::routing::any(crate::rest::handler))
         .route(

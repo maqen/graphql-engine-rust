@@ -225,9 +225,17 @@ struct ServeArgs {
     #[arg(long, env = "HASURA_GRAPHQL_REMOTE_SCHEMA_PRIORITIZE_DATA", value_parser = parse_bool, default_value = "false")]
     remote_schema_prioritize_data: bool,
 
-    /// Accepted for compatibility; the console is not served.
+    /// Serve the console at `/console` (needs the `metadata` API).
     #[arg(long, env = "HASURA_GRAPHQL_ENABLE_CONSOLE", value_parser = parse_bool, default_value = "false")]
     enable_console: bool,
+
+    /// Serve `/console/assets/*` from this directory instead of the CDN.
+    #[arg(long, env = "HASURA_GRAPHQL_CONSOLE_ASSETS_DIR")]
+    console_assets_dir: Option<String>,
+
+    /// Passed to the console page only; the engine never sends telemetry.
+    #[arg(long, env = "HASURA_GRAPHQL_ENABLE_TELEMETRY", value_parser = parse_bool, default_value = "true")]
+    enable_telemetry: bool,
 
     /// Only allowlisted queries for non-admin roles (CE: global collections only).
     #[arg(long, env = "HASURA_GRAPHQL_ENABLE_ALLOWLIST", value_parser = parse_bool, default_value = "false")]
@@ -458,9 +466,9 @@ fn server_configuration(
             "allowed_origins": allowed_origins,
         },
         "enable_console": args.enable_console,
-        "console_assets_dir": null,
+        "console_assets_dir": args.console_assets_dir,
         "console_sentry_dsn": null,
-        "enable_telemetry": false,
+        "enable_telemetry": args.enable_telemetry,
         "use_prepared_statements": config.use_prepared_statements,
         "stringify_numeric_types": config.stringify_numeric_types,
         "v1-boolean-null-collapse": config.v1_boolean_null_collapse,
@@ -628,6 +636,9 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
         },
         default_naming_convention: args.default_naming_convention.clone(),
         apollo_federation: args.enable_apollo_federation,
+        enable_console: args.enable_console,
+        console_assets_dir: args.console_assets_dir.clone(),
+        enable_telemetry: args.enable_telemetry,
         ..ServerConfig::default()
     })
 }

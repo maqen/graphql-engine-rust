@@ -2,6 +2,7 @@
 
 pub mod action_log;
 pub mod config;
+pub mod console;
 pub mod events;
 pub mod explain;
 pub mod graphql;

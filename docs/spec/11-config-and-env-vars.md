@@ -416,6 +416,11 @@ The precise error shapes belong to the HTTP API/errors doc.
 | `--enable-console` (switch) | `HASURA_GRAPHQL_ENABLE_CONSOLE` | Bool | `false` | Serve console at `/console` (and redirect `/` -> `/console`). Requires `metadata` API enabled too. | should |
 | `--console-assets-dir` | `HASURA_GRAPHQL_CONSOLE_ASSETS_DIR` | path | none (upstream Docker image sets `/srv/console-assets`) | Serve `/console/assets/*` from this dir instead of the CDN. | may |
 
+Implemented in `hge-server/src/console.rs` with V2's template unchanged; the Docker image
+ships V2's console build at `/srv/console-assets`, like V2's image (where it is likewise only
+used when `CONSOLE_ASSETS_DIR` points at it). `HASURA_GRAPHQL_ENABLE_TELEMETRY` (default
+`true`) only sets the page's `enableTelemetry`; the engine itself sends nothing.
+
 Console implementation for the Rust engine: the console HTML is a template
 (`server/src-rsr/console.html`) referencing assets at a CDN (`https://graphql-engine-cdn.hasura.io/...`)
 or `/console/assets` if `CONSOLE_ASSETS_DIR` set, with `window.__env` containing

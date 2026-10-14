@@ -94,6 +94,13 @@ pub struct ServerConfig {
     pub default_naming_convention: String,
     /// `HASURA_GRAPHQL_ENABLE_APOLLO_FEDERATION`
     pub apollo_federation: bool,
+    /// `HASURA_GRAPHQL_ENABLE_CONSOLE`: serve the console at `/console`.
+    pub enable_console: bool,
+    /// `HASURA_GRAPHQL_CONSOLE_ASSETS_DIR`: serve `/console/assets/*` from here, not the CDN.
+    pub console_assets_dir: Option<String>,
+    /// `HASURA_GRAPHQL_ENABLE_TELEMETRY`: only passed to the console page (the engine itself
+    /// never sends telemetry).
+    pub enable_telemetry: bool,
 }
 
 impl Default for ServerConfig {
@@ -144,6 +151,9 @@ impl Default for ServerConfig {
             experimental_features: vec![],
             default_naming_convention: "hasura-default".to_owned(),
             apollo_federation: false,
+            enable_console: false,
+            console_assets_dir: None,
+            enable_telemetry: true,
         }
     }
 }
