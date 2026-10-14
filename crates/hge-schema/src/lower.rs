@@ -384,7 +384,10 @@ impl Lowerer<'_> {
         let mut inputs = vec![];
         for (i, gql_name, arg) in cf.input_args() {
             if let Some(v) = user_args.and_then(|a| a.get(&gql_name)) {
-                inputs.push((i, to_value(v, &arg.ty, &format!("{path}.{gql_name}"))?));
+                inputs.push((
+                    i,
+                    argument_value(v, &arg.ty, &format!("{path}.{gql_name}"))?,
+                ));
             }
         }
         cf.call(&table.name, inputs)
@@ -455,7 +458,7 @@ impl Lowerer<'_> {
                         Error::unexpected(format!("undeclared native query argument {name}"))
                     })?;
                     let value = args.and_then(|a| a.get(name)).unwrap_or(&Json::Null);
-                    NativeQueryPart::Arg(to_value(value, &arg.ty, &format!("{path}.{name}"))?)
+                    NativeQueryPart::Arg(argument_value(value, &arg.ty, &format!("{path}.{name}"))?)
                 }
             });
         }
@@ -498,7 +501,10 @@ impl Lowerer<'_> {
         let mut inputs = vec![];
         for (i, gql_name, arg) in f.input_args() {
             if let Some(v) = user_args.and_then(|a| a.get(&gql_name)) {
-                inputs.push((i, to_value(v, &arg.ty, &format!("{path}.{gql_name}"))?));
+                inputs.push((
+                    i,
+                    argument_value(v, &arg.ty, &format!("{path}.{gql_name}"))?,
+                ));
             }
         }
         f.call(inputs)
@@ -985,6 +991,24 @@ pub fn to_value(v: &Json, ty: &ColumnType, path: &str) -> Result<Value, Error> {
         text: to_text(v, ty, path)?,
         ty: ty.clone(),
     })
+}
+
+/// A tracked function or native query argument. V2 binds these in Postgres' binary format,
+/// which gives a JSON number passed to a `numeric` a different scale than [`to_value`]'s text.
+/// Known gap: numbers are parsed as `f64`, so the written form of a float is lost where its
+/// shortest text differs (`1.5e2` arrives as `150.0`, V2 binds `150`).
+fn argument_value(v: &Json, ty: &ColumnType, path: &str) -> Result<Value, Error> {
+    if let Json::Number(n) = v
+        && ty.schema == "pg_catalog"
+        && ty.name == "numeric"
+        && let Some(text) = hge_core::scientific_binary_numeric(&n.to_string())
+    {
+        return Ok(Value::Literal {
+            text: Some(text),
+            ty: ty.clone(),
+        });
+    }
+    to_value(v, ty, path)
 }
 
 fn to_text(v: &Json, ty: &ColumnType, path: &str) -> Result<Option<String>, Error> {

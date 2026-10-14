@@ -21,5 +21,5 @@ pub use error::{Code, Error, Result};
 pub use hash_order::sort_v2_hash_order;
 pub use inconsistency::InconsistentObject;
 pub use names::{QualifiedFunction, QualifiedTable};
-pub use scientific::scientific_show;
+pub use scientific::{scientific_binary_numeric, scientific_show};
 pub use session::{ADMIN_ROLE, RoleName, Session, SessionVariables};
