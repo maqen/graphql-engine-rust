@@ -164,64 +164,78 @@ fn resolve_function(
     let def = &meta.definition;
     let name = &meta.name;
     if !is_valid_name(name) {
-        return Err(format!("\"{name}\" is not a valid GraphQL name"));
+        return Err(format!(
+            "the computed field \"{name}\" cannot be added to table \"{}\" because \"{name}\" is not valid GraphQL name",
+            table.v2_text()
+        ));
     }
     let f = lookup(catalog, &def.function)?;
     let fname = def.function.v2_text();
-    let cannot = |why: String| {
+    // V2 collects the problems in this order and stops at an unknown table argument; one
+    // problem reads "because …", several are listed.
+    let mut reasons = vec![];
+    let report = |reasons: Vec<String>| {
+        let why = match reasons.as_slice() {
+            [one] => format!("because {one}"),
+            _ => {
+                let mut list = "for the following reasons:".to_owned();
+                for r in &reasons {
+                    list.push_str("\n  • ");
+                    list.push_str(r);
+                }
+                list.push('\n');
+                list
+            }
+        };
         format!(
             "the computed field \"{name}\" cannot be added to table \"{}\" {why}",
             table.v2_text()
         )
     };
     if f.volatility == Volatility::Volatile {
-        return Err(cannot(format!(
-            "because the function \"{fname}\" is of type VOLATILE; cannot be added as a computed field"
-        )));
+        reasons.push(format!(
+            "the function \"{fname}\" is of type VOLATILE; cannot be added as a computed field"
+        ));
     }
 
-    let table_arg = match &def.table_argument {
-        Some(arg) => f
-            .args
-            .iter()
-            .position(|a| a.name.as_deref() == Some(arg))
-            .ok_or_else(|| {
-                cannot(format!(
-                    "because \"{arg}\" is not an input argument of the function \"{fname}\""
-                ))
-            })?,
-        None => 0,
-    };
-    let session_arg = match &def.session_argument {
-        Some(arg) => {
-            let i = f
-                .args
-                .iter()
-                .position(|a| a.name.as_deref() == Some(arg))
-                .ok_or_else(|| {
-                    cannot(format!(
-                        "because \"{arg}\" is not an input argument of the function \"{fname}\""
-                    ))
-                })?;
-            if !is_json(&f.args[i]) {
-                return Err(cannot(format!(
-                    "because \"{arg}\" argument of the function \"{fname}\" is not of type JSON"
-                )));
-            }
-            Some(i)
+    let ret = &f.return_type;
+    let returns = if ret.kind == TypeKind::Composite && ret.dimensions == 0 {
+        let target = QualifiedTable::new(ret.schema.clone(), ret.name.clone());
+        if !tracked.contains(&target) {
+            reasons.push(format!(
+                "the function \"{fname}\" returning set of table \"{}\" is not tracked or not found in database",
+                target.v2_text()
+            ));
         }
-        None => None,
+        Some(ComputedReturn::Table(target))
+    } else if matches!(ret.kind, TypeKind::Base | TypeKind::Enum | TypeKind::Range) {
+        Some(ComputedReturn::Scalar(ret.clone()))
+    } else {
+        reasons.push(format!(
+            "the function \"{fname}\" returning type {} is not a BASE type",
+            ret.name
+        ));
+        None
     };
 
-    let which = match &def.table_argument {
-        Some(arg) => format!("\"{arg}\" argument"),
-        None => "first argument".to_owned(),
+    let arg_index = |arg: &str| f.args.iter().position(|a| a.name.as_deref() == Some(arg));
+    let (table_arg, which) = match &def.table_argument {
+        Some(arg) => match arg_index(arg) {
+            Some(i) => (i, format!("\"{arg}\" argument")),
+            None => {
+                reasons.push(format!(
+                    "\"{arg}\" is not an input argument of the function \"{fname}\""
+                ));
+                return Err(report(reasons));
+            }
+        },
+        None => (0, "first argument".to_owned()),
     };
-    let mut reasons = vec![];
     match f.args.get(table_arg) {
-        None => reasons.push(format!(
-            "the function \"{fname}\" has no input arguments of the table type"
-        )),
+        None => {
+            reasons.push(format!("the function \"{fname}\" has no input arguments"));
+            return Err(report(reasons));
+        }
         Some(a) => {
             if a.ty.kind != TypeKind::Composite || a.ty.dimensions > 0 {
                 reasons.push(format!(
@@ -236,33 +250,30 @@ fn resolve_function(
             }
         }
     }
-    if !reasons.is_empty() {
-        let mut msg = cannot("for the following reasons:".to_owned());
-        for r in reasons {
-            msg.push_str("\n  • ");
-            msg.push_str(&r);
-        }
-        msg.push('\n');
-        return Err(msg);
-    }
 
-    let ret = &f.return_type;
-    let returns = if ret.kind == TypeKind::Composite && ret.dimensions == 0 {
-        let target = QualifiedTable::new(ret.schema.clone(), ret.name.clone());
-        if !tracked.contains(&target) {
-            return Err(cannot(format!(
-                "because the function \"{fname}\" returning set of table \"{}\" is not tracked or not found in database",
-                target.v2_text()
-            )));
-        }
-        ComputedReturn::Table(target)
-    } else if matches!(ret.kind, TypeKind::Base | TypeKind::Enum | TypeKind::Range) {
-        ComputedReturn::Scalar(ret.clone())
-    } else {
-        return Err(cannot(format!(
-            "because the function \"{fname}\" returning type {} is not a BASE type",
-            ret.name
-        )));
+    let session_arg = match &def.session_argument {
+        Some(arg) => match arg_index(arg) {
+            Some(i) => {
+                if !is_json(&f.args[i]) {
+                    reasons.push(format!(
+                        "\"{arg}\" argument of the function \"{fname}\" is not of type JSON"
+                    ));
+                }
+                Some(i)
+            }
+            None => {
+                reasons.push(format!(
+                    "\"{arg}\" is not an input argument of the function \"{fname}\""
+                ));
+                None
+            }
+        },
+        None => None,
+    };
+
+    let returns = match returns {
+        Some(returns) if reasons.is_empty() => returns,
+        _ => return Err(report(reasons)),
     };
 
     Ok(ComputedFieldInfo {

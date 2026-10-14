@@ -495,6 +495,7 @@ pub fn resolve(
     for m in &models {
         register(tables, logical_model_name(&m.name), m);
     }
+    check_inner_models(source, &models, issues);
 
     let mut resolved = vec![];
     for nq in native_queries(source) {
@@ -515,6 +516,73 @@ pub fn resolve(
             tables.native_queries.push(Arc::new(info));
         }
     }
+}
+
+/// V2's `inner_logical_model_<name>` objects: a logical model field (or array element)
+/// that is another logical model, which must be tracked.
+fn check_inner_models(
+    source: &Source,
+    models: &[LogicalModelMeta],
+    issues: &mut Vec<InconsistentObject>,
+) {
+    fn inner<'v>(ty: &'v Value, out: &mut Vec<&'v str>) {
+        if let Some(name) = ty.get("logical_model").and_then(Value::as_str) {
+            out.push(name);
+        }
+        if let Some(element) = ty.get("array") {
+            inner(element, out);
+        }
+    }
+    let raw = source.extra.get("logical_models").and_then(Value::as_array);
+    for m in models {
+        let mut referenced = vec![];
+        for f in &m.fields {
+            inner(&f.ty, &mut referenced);
+        }
+        let mut seen = HashSet::new();
+        for name in referenced {
+            if models.iter().any(|other| other.name == name) || !seen.insert(name) {
+                continue;
+            }
+            let definition = raw
+                .into_iter()
+                .flatten()
+                .find(|v| v.get("name").and_then(Value::as_str) == Some(m.name.as_str()))
+                .map_or(Value::Null, logical_model_definition);
+            issues.push(InconsistentObject::new(
+                format!("inner_logical_model_{name}"),
+                format!(
+                    "inner_logical_model_{name} {name} in logical_model {} in source {}",
+                    m.name, source.name
+                ),
+                format!("logical model \"{name}\" is not tracked"),
+                definition,
+            ));
+        }
+    }
+}
+
+/// A logical model's metadata as V2 reports it, with field types' `nullable` filled in.
+fn logical_model_definition(raw: &Value) -> Value {
+    fn with_nullable(ty: &Value) -> Value {
+        let mut ty = ty.clone();
+        if let Value::Object(obj) = &mut ty {
+            obj.entry("nullable").or_insert(Value::Bool(false));
+            if let Some(element) = obj.get("array").map(with_nullable) {
+                obj.insert("array".into(), element);
+            }
+        }
+        ty
+    }
+    let mut def = raw.clone();
+    if let Some(Value::Array(fields)) = def.get_mut("fields") {
+        for f in fields {
+            if let Some(ty) = f.get("type").map(with_nullable) {
+                f["type"] = ty;
+            }
+        }
+    }
+    def
 }
 
 /// What a relationship's column refers to.
@@ -806,15 +874,34 @@ fn resolve_native_query(
         )));
     };
     let code = parse_code(&nq.code);
-    let undeclared: Vec<String> = used_arguments(&code)
-        .into_iter()
+    let used: BTreeSet<&str> = used_arguments(&code).into_iter().collect();
+    // V2 lists the names sorted, like Python lists.
+    let listed = |names: Vec<&str>| {
+        let quoted: Vec<String> = names.iter().map(|a| format!("'{a}'")).collect();
+        format!("[{}]", quoted.join(", "))
+    };
+    let undeclared: Vec<&str> = used
+        .iter()
+        .copied()
         .filter(|a| !nq.arguments.contains_key(*a))
-        .map(|a| format!("'{a}'"))
         .collect();
     if !undeclared.is_empty() {
         return Err(Failure::Reason(format!(
-            "The following columns are used in the query, but are not declared as arguments: [{}]",
-            undeclared.join(",")
+            "The following columns are used in the query, but are not declared as arguments: {}",
+            listed(undeclared)
+        )));
+    }
+    let mut unused: Vec<&str> = nq
+        .arguments
+        .keys()
+        .map(String::as_str)
+        .filter(|a| !used.contains(a))
+        .collect();
+    unused.sort_unstable();
+    if !unused.is_empty() {
+        return Err(Failure::Reason(format!(
+            "The following columns are declared as arguments, but are not used in the query: {}",
+            listed(unused)
         )));
     }
     let check = check_for(nq, models).expect("model and arguments checked");

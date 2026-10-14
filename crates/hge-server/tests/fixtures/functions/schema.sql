@@ -83,3 +83,19 @@ $$;
 CREATE FUNCTION author_id2(a author) RETURNS integer LANGUAGE sql STABLE AS $$ SELECT a.id * 2 $$;
 CREATE FUNCTION author_idn(a author) RETURNS numeric LANGUAGE sql STABLE AS $$ SELECT a.id / 3.0 $$;
 CREATE FUNCTION author_idarg(a author, k integer DEFAULT 1) RETURNS integer LANGUAGE sql STABLE AS $$ SELECT a.id * k $$;
+
+-- Functions that cannot be computed fields, for V2's error messages.
+CREATE TABLE cf_untracked (id int);
+CREATE FUNCTION cfe_vol(a author) RETURNS text LANGUAGE sql VOLATILE AS $$ SELECT 'x' $$;
+CREATE FUNCTION cfe_vol_text(t text) RETURNS text LANGUAGE sql VOLATILE AS $$ SELECT 'x' $$;
+CREATE FUNCTION cfe_vol_untracked(a author) RETURNS SETOF cf_untracked LANGUAGE sql VOLATILE AS $$ SELECT * FROM cf_untracked $$;
+CREATE FUNCTION cfe_text_untracked(t text) RETURNS SETOF cf_untracked LANGUAGE sql STABLE AS $$ SELECT * FROM cf_untracked $$;
+CREATE FUNCTION cfe_untracked(a author) RETURNS SETOF cf_untracked LANGUAGE sql STABLE AS $$ SELECT * FROM cf_untracked $$;
+CREATE FUNCTION cfe_noargs() RETURNS text LANGUAGE sql STABLE AS $$ SELECT 'x' $$;
+CREATE FUNCTION cfe_vol_noargs() RETURNS text LANGUAGE sql VOLATILE AS $$ SELECT 'x' $$;
+CREATE FUNCTION cfe_text(t text) RETURNS text LANGUAGE sql STABLE AS $$ SELECT 'x' $$;
+CREATE FUNCTION cfe_sess(a author, s text) RETURNS text LANGUAGE sql STABLE AS $$ SELECT 'x' $$;
+CREATE FUNCTION cfe_vol_sess(a author, s text) RETURNS text LANGUAGE sql VOLATILE AS $$ SELECT 'x' $$;
+CREATE FUNCTION cfe_text_sess(t text, s text) RETURNS text LANGUAGE sql STABLE AS $$ SELECT 'x' $$;
+CREATE FUNCTION cfe_rec(a author) RETURNS record LANGUAGE sql STABLE AS $$ SELECT 1, 2 $$;
+CREATE FUNCTION cfe_vol_rec(t text) RETURNS record LANGUAGE sql VOLATILE AS $$ SELECT 1, 2 $$;

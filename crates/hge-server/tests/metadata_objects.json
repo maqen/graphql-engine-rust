@@ -6220,8 +6220,7 @@
       "type": "function"
      }
     ]
-   },
-   "todo": "needs resolver validation (Mutations thread)"
+   }
   },
   {
    "url": "/v1/metadata",
@@ -6858,8 +6857,7 @@
       "type": "computed_field"
      }
     ]
-   },
-   "todo": "needs resolver validation (Mutations thread)"
+   }
   },
   {
    "url": "/v1/metadata",
@@ -6999,8 +6997,7 @@
       "type": "computed_field"
      }
     ]
-   },
-   "todo": "needs resolver validation (Mutations thread)"
+   }
   },
   {
    "url": "/v1/metadata",
@@ -7142,8 +7139,7 @@
       "type": "computed_field"
      }
     ]
-   },
-   "todo": "needs resolver validation (Mutations thread)"
+   }
   },
   {
    "url": "/v1/metadata",
@@ -7851,8 +7847,7 @@
       "type": "inner_logical_model_nope"
      }
     ]
-   },
-   "todo": "needs resolver validation (Mutations thread)"
+   }
   },
   {
    "url": "/v1/metadata",
@@ -8415,8 +8410,7 @@
       "type": "select_permission"
      }
     ]
-   },
-   "todo": "needs resolver validation (Mutations thread)"
+   }
   },
   {
    "url": "/v1/metadata",
@@ -9313,8 +9307,7 @@
       "type": "native_query"
      }
     ]
-   },
-   "todo": "needs resolver validation (Mutations thread)"
+   }
   },
   {
    "url": "/v1/metadata",
@@ -10188,8 +10181,7 @@
       "type": "native_query"
      }
     ]
-   },
-   "todo": "needs resolver validation (Mutations thread)"
+   }
   },
   {
    "url": "/v1/metadata",

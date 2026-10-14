@@ -91,6 +91,32 @@ pub fn resolve_permissions(
     }
 }
 
+/// A logical model's permission as V2 reports it: named after the logical model, with its
+/// `name` and `source` in the definition.
+fn logical_model_permission(
+    kind: &str,
+    perm: &dyn erased::Definition,
+    table: &TableInfo,
+    reason: String,
+) -> InconsistentObject {
+    let mut definition = perm.definition(kind);
+    if let serde_json::Value::Object(obj) = &mut definition {
+        obj.insert("name".into(), table.name.name.clone().into());
+        obj.insert("source".into(), table.source.to_string().into());
+    }
+    InconsistentObject::new(
+        format!("{kind}_permission"),
+        format!(
+            "{kind}_permission {} in logical_model {} in source {}",
+            perm.role(),
+            table.name.name,
+            table.source
+        ),
+        reason,
+        definition,
+    )
+}
+
 fn resolve_table<'m>(
     parser: &Parser<'_>,
     table: &'m TableInfo,
@@ -98,8 +124,40 @@ fn resolve_table<'m>(
 ) -> IndexMap<&'m str, TablePermissions> {
     let entry = &table.entry;
     let mut by_role: IndexMap<&str, TablePermissions> = IndexMap::new();
+    // V2 reports each unknown column of a logical model's select permission on its own,
+    // last listed first, and skips the permission.
+    let mut unknown_columns = HashSet::new();
+    if table.logical_model {
+        for (i, p) in entry.select_permissions.iter().enumerate() {
+            let Columns::List(columns) = &p.permission.columns else {
+                continue;
+            };
+            let missing: Vec<&String> = columns
+                .iter()
+                .filter(|c| !table.columns.contains_key(c.as_str()))
+                .collect();
+            for c in missing.iter().rev() {
+                let reason = format!(
+                    "Could not find column \"{c}\" in \"logical model \"{}\"\"",
+                    table.name.name
+                );
+                inconsistencies.push(logical_model_permission("select", p, table, reason));
+            }
+            if !missing.is_empty() {
+                unknown_columns.insert(i);
+            }
+        }
+    }
     let mut report = |kind: &str, perm: &dyn erased::Definition, e: PermError| {
         let role = perm.role();
+        if table.logical_model {
+            let reason = format!(
+                "in logical model \"{}\": in permission for role \"{role}\": {e}",
+                table.name.name
+            );
+            inconsistencies.push(logical_model_permission(kind, perm, table, reason));
+            return;
+        }
         inconsistencies.push(InconsistentObject::table_object(
             &format!("{kind}_permission"),
             role,
@@ -113,7 +171,10 @@ fn resolve_table<'m>(
         ));
     };
 
-    for p in &entry.select_permissions {
+    for (i, p) in entry.select_permissions.iter().enumerate() {
+        if unknown_columns.contains(&i) {
+            continue;
+        }
         if p.role == ADMIN_ROLE {
             report(
                 "select",
