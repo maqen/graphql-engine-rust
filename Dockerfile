@@ -17,8 +17,13 @@ RUN mkdir -p /pg/usr/local/bin \
     | grep -vE '/(libc|libm|libdl|libpthread|librt|libresolv)\.so' \
     | while read -r lib; do mkdir -p "/pg$(dirname "$lib")" && cp -L "$lib" "/pg$lib"; done
 
+# V2's console build, at the path the hasura/graphql-engine image keeps it, for
+# HASURA_GRAPHQL_CONSOLE_ASSETS_DIR=/srv/console-assets (Apache-2.0, like V2).
+FROM hasura/graphql-engine:v2.51.0-ce AS console
+
 FROM gcr.io/distroless/cc-debian12:nonroot
 COPY --from=pgdump /pg/ /
+COPY --from=console /srv/console-assets /srv/console-assets
 COPY --from=build /graphql-engine /usr/local/bin/graphql-engine
 # Cloud Run sets $PORT; HASURA_GRAPHQL_SERVER_PORT wins when given.
 ENV HASURA_GRAPHQL_SERVER_HOST="*"
