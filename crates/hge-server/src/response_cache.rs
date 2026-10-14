@@ -135,7 +135,7 @@ mod tests {
     #[test]
     fn caches_static_queries_only() {
         let cache = ResponseCache::default();
-        let schema = Some((RoleName::admin(), false));
+        let schema = (Some((RoleName::admin(), false)), false);
         let key = Key {
             schema: &schema,
             query: "{ __typename }",
@@ -165,14 +165,20 @@ mod tests {
         assert_eq!(cache.get(&long_key), None);
 
         // Any part of the key differing is a miss.
-        let other_role = Some((RoleName::new("user"), false));
+        let other_role = (Some((RoleName::new("user"), false)), false);
+        let unknown_role = (None, false);
+        let relay = (Some((RoleName::admin(), false)), true);
         for other in [
             Key {
                 schema: &other_role,
                 ..key
             },
             Key {
-                schema: &None,
+                schema: &unknown_role,
+                ..key
+            },
+            Key {
+                schema: &relay,
                 ..key
             },
             Key {
@@ -191,7 +197,7 @@ mod tests {
     #[test]
     fn starts_over_when_full() {
         let cache = ResponseCache::default();
-        let schema = None;
+        let schema = (None, false);
         let query = op(vec![], OperationKind::Query);
         let texts: Vec<String> = (0..=MAX_ENTRIES).map(|i| format!("q{i}")).collect();
         for t in &texts {
