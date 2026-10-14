@@ -1,18 +1,26 @@
-//! Apply a Hasura CLI migrations directory on boot, like V2's `cli-migrations` image.
+//! Apply a Hasura CLI migrations directory on boot, like V2's `cli-migrations-v3` image.
 //!
-//! Layout (config v3): `<dir>/<source name>/<version>_<name>/up.sql`. Each pending
-//! migration runs in its own transaction and is recorded in the source database's
-//! `hdb_catalog.schema_migrations`. Versions that the CLI recorded as applied in the metadata
-//! database's `hdb_catalog.hdb_version.cli_state` are skipped too. A session advisory lock
-//! keeps concurrently booting replicas from applying the same migration twice.
+//! Layout (config v3): `<dir>/<source name>/<version>_<name>/up.sql`. The image runs
+//! `hasura migrate apply --all-databases`, so state is kept exactly where the CLI keeps it:
+//! `cli_state` in the metadata database's `hdb_catalog.hdb_version`
+//! (`{"migrations": {"<source>": {"<version>": <dirty>}}, "settings": …,
+//! "isStateCopyCompleted": true}`). A later `hasura migrate status` therefore agrees with what
+//! booting applied, and booting skips what the CLI applied.
+//!
+//! Each pending migration runs in its own transaction on its source and is recorded right
+//! after it commits, as the CLI does (it never writes a dirty flag first, so neither do we:
+//! `hasura migrate status` must read the same state either way). Projects that predate the catalog state API kept their
+//! state in each source's `hdb_catalog.schema_migrations`; like the CLI, the first run copies
+//! it into `cli_state`. A session advisory lock on the metadata database keeps concurrently
+//! booting replicas from applying the same migration twice.
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use hge_core::{Code, Error};
 use hge_metadata::Metadata;
+use hge_metadata::store::{CatalogStateKind, MetadataStore};
 use hge_postgres::{PgSource, PoolConfig};
-use serde_json::Value;
+use serde_json::{Map, Value, json};
 use tracing::{info, warn};
 
 use crate::config::ServerConfig;
@@ -21,6 +29,7 @@ use crate::load::source_url;
 /// Arbitrary constant shared by every replica (`pg_advisory_lock` key).
 const LOCK_KEY: i64 = 0x0068_6765_5f6d_6967; // "hge_mig"
 
+#[derive(Debug)]
 struct Migration {
     version: u64,
     name: String,
@@ -28,16 +37,49 @@ struct Migration {
 }
 
 /// Apply pending migrations for every source that has a directory under `dir`.
-pub async fn apply(dir: &Path, metadata: &Metadata, config: &ServerConfig) -> Result<(), Error> {
+pub async fn apply(
+    dir: &Path,
+    metadata: &Metadata,
+    config: &ServerConfig,
+    store: &dyn MetadataStore,
+) -> Result<(), Error> {
     let entries = std::fs::read_dir(dir).map_err(|e| config_error(dir, e))?;
     let mut source_dirs: Vec<PathBuf> = entries
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.is_dir())
         .collect();
     source_dirs.sort();
-    let cli_state = read_cli_state(config).await?;
+    // State lives in the metadata database; without one every boot would re-apply.
+    let Some(url) = config.catalog_url() else {
+        return Err(Error::new(
+            Code::InvalidConfiguration,
+            "HASURA_GRAPHQL_MIGRATIONS_DIR needs a metadata database \
+             (HASURA_GRAPHQL_METADATA_DATABASE_URL or HASURA_GRAPHQL_DATABASE_URL)",
+        ));
+    };
+    // Held (on its own connection) until every source is done.
+    let lock = lock(url).await?;
+    let result = apply_locked(&source_dirs, metadata, config, store).await;
+    let _ = lock
+        .batch_execute(&format!("SELECT pg_advisory_unlock({LOCK_KEY})"))
+        .await;
+    result
+}
+
+async fn apply_locked(
+    source_dirs: &[PathBuf],
+    metadata: &Metadata,
+    config: &ServerConfig,
+    store: &dyn MetadataStore,
+) -> Result<(), Error> {
+    let mut state = CliState::new(store.catalog_state().await?.cli_state);
+    let mut sources = vec![];
     for source_dir in source_dirs {
-        let name = source_dir.file_name().unwrap_or_default().to_string_lossy();
+        let name = source_dir
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
         let Some(source) = metadata.sources.iter().find(|s| s.name == name) else {
             warn!(target: "migrations", source = %name, "no source with this name in metadata; skipping");
             continue;
@@ -48,64 +90,186 @@ pub async fn apply(dir: &Path, metadata: &Metadata, config: &ServerConfig) -> Re
                 format!("source \"{name}\": {e}"),
             )
         })?;
-        // Versions the Hasura CLI recorded as applied (and not dirty) for this source.
-        let cli_applied: HashSet<u64> = cli_state
-            .get("migrations")
-            .and_then(|m| m.get(name.as_ref()))
-            .and_then(|m| m.as_object())
-            .map(|versions| {
-                versions
-                    .iter()
-                    .filter(|(_, dirty)| **dirty == Value::Bool(false))
-                    .filter_map(|(v, _)| v.parse().ok())
-                    .collect()
-            })
-            .unwrap_or_default();
-        let migrations: Vec<Migration> = read_migrations(&source_dir)?
-            .into_iter()
-            .filter(|m| !cli_applied.contains(&m.version))
-            .collect();
-        if !migrations.is_empty() {
-            apply_source(&name, &url, &migrations).await?;
+        sources.push((name, url, source_dir));
+    }
+    if !state.copy_completed() {
+        for (name, url, _) in &sources {
+            let legacy = legacy_versions(name, url).await?;
+            state.import_legacy(name, &legacy);
         }
+        state.mark_copy_completed();
+        store
+            .set_catalog_state(CatalogStateKind::Cli, &state.value)
+            .await?;
+    }
+    for (name, url, source_dir) in &sources {
+        if let Some(v) = state.dirty(name) {
+            return Err(Error::new(
+                Code::InvalidConfiguration,
+                format!(
+                    "migrations of source \"{name}\": Dirty database version {v}. \
+                     Fix and force version."
+                ),
+            ));
+        }
+        let pending: Vec<Migration> = read_migrations(source_dir)?
+            .into_iter()
+            .filter(|m| !state.applied(name, m.version))
+            .collect();
+        if pending.is_empty() {
+            continue;
+        }
+        let pg = connect(name, url)?;
+        for m in &pending {
+            let sql = std::fs::read_to_string(&m.up_sql).map_err(|e| config_error(&m.up_sql, e))?;
+            info!(target: "migrations", source = %name, migration = %m.name, "applying migration");
+            // The CLI skips an empty up.sql but still records it as applied.
+            if !sql.trim().is_empty()
+                && let Err(mut e) = pg
+                    .batch_execute(&format!("BEGIN;\n{sql}\n;\nCOMMIT;"))
+                    .await
+            {
+                let _ = pg.batch_execute("ROLLBACK").await;
+                e.message = format!("migration {} failed: {}", m.name, e.message);
+                return Err(e);
+            }
+            state.record(name, m.version);
+            store
+                .set_catalog_state(CatalogStateKind::Cli, &state.value)
+                .await?;
+        }
+        info!(target: "migrations", source = %name, applied = pending.len(), "migrations up to date");
     }
     Ok(())
 }
 
-/// `hdb_catalog.hdb_version.cli_state` from the metadata database (where V2's CLI records
-/// applied migrations per source), or `null` when there is none.
-async fn read_cli_state(config: &ServerConfig) -> Result<Value, Error> {
-    let Some(url) = config.catalog_url() else {
-        return Ok(Value::Null);
-    };
-    let catalog = PgSource::connect(
-        "hdb_catalog",
+/// The CLI's `cli_state` document.
+struct CliState {
+    value: Value,
+}
+
+impl CliState {
+    fn new(value: Value) -> Self {
+        let value = match value {
+            Value::Object(_) => value,
+            _ => json!({}),
+        };
+        CliState { value }
+    }
+
+    fn versions(&self, source: &str) -> Option<&Map<String, Value>> {
+        self.value.get("migrations")?.get(source)?.as_object()
+    }
+
+    fn applied(&self, source: &str, version: u64) -> bool {
+        self.versions(source)
+            .is_some_and(|v| v.get(&version.to_string()) == Some(&Value::Bool(false)))
+    }
+
+    /// A version a failed migration left dirty.
+    fn dirty(&self, source: &str) -> Option<String> {
+        self.versions(source)?
+            .iter()
+            .find(|(_, dirty)| **dirty == Value::Bool(true))
+            .map(|(v, _)| v.clone())
+    }
+
+    fn record(&mut self, source: &str, version: u64) {
+        let obj = self.value.as_object_mut().expect("cli_state is an object");
+        let migrations = obj.entry("migrations").or_insert_with(|| json!({}));
+        if !migrations.is_object() {
+            *migrations = json!({});
+        }
+        let versions = migrations
+            .as_object_mut()
+            .expect("an object")
+            .entry(source)
+            .or_insert_with(|| json!({}));
+        if !versions.is_object() {
+            *versions = json!({});
+        }
+        if let Some(versions) = versions.as_object_mut() {
+            versions.insert(version.to_string(), Value::Bool(false));
+        }
+    }
+
+    fn copy_completed(&self) -> bool {
+        self.value.get("isStateCopyCompleted") == Some(&Value::Bool(true))
+    }
+
+    fn import_legacy(&mut self, source: &str, versions: &[(u64, bool)]) {
+        for (version, dirty) in versions {
+            self.record(source, *version);
+            if *dirty
+                && let Some(v) = self
+                    .value
+                    .pointer_mut(&format!("/migrations/{}/{version}", escape(source)))
+            {
+                *v = Value::Bool(true);
+            }
+        }
+    }
+
+    /// What the CLI writes on its first run against a server.
+    fn mark_copy_completed(&mut self) {
+        let obj = self.value.as_object_mut().expect("cli_state is an object");
+        obj.entry("settings")
+            .or_insert_with(|| json!({"migration_mode": "true"}));
+        obj.insert("isStateCopyCompleted".into(), Value::Bool(true));
+    }
+}
+
+/// JSON pointer escaping of one path segment.
+fn escape(segment: &str) -> String {
+    segment.replace('~', "~0").replace('/', "~1")
+}
+
+/// `hdb_catalog.schema_migrations` of a source (pre-catalog-state CLI versions, and this
+/// engine before it kept `cli_state`).
+async fn legacy_versions(name: &str, url: &str) -> Result<Vec<(u64, bool)>, Error> {
+    let pg = connect(name, url)?;
+    let exists = pg
+        .query_text(
+            "SELECT (to_regclass('hdb_catalog.schema_migrations') IS NOT NULL)::text",
+            &[],
+        )
+        .await?;
+    if exists.as_deref() != Some("true") {
+        return Ok(vec![]);
+    }
+    let rows = pg
+        .query_rows(
+            "SELECT version::text, dirty::text FROM hdb_catalog.schema_migrations ORDER BY version",
+            &[],
+        )
+        .await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|r| {
+            let version = r.first()?.as_deref()?.parse().ok()?;
+            Some((version, r.get(1)?.as_deref() == Some("true")))
+        })
+        .collect())
+}
+
+fn connect(name: &str, url: &str) -> Result<PgSource, Error> {
+    // One connection, so a transaction and its statements share it.
+    PgSource::connect(
+        name,
         url,
         &PoolConfig {
             max_connections: 1,
             use_prepared_statements: false,
             ..PoolConfig::default()
         },
-    )?;
-    // A missing table fails at parse time, so check for it first.
-    let exists = catalog
-        .query_text(
-            "SELECT (to_regclass('hdb_catalog.hdb_version') IS NOT NULL)::text",
-            &[],
-        )
+    )
+}
+
+async fn lock(catalog_url: &str) -> Result<PgSource, Error> {
+    let pg = connect("hdb_catalog", catalog_url)?;
+    pg.batch_execute(&format!("SELECT pg_advisory_lock({LOCK_KEY})"))
         .await?;
-    if exists.as_deref() != Some("true") {
-        return Ok(Value::Null);
-    }
-    let text = catalog
-        .query_text(
-            "SELECT cli_state::text FROM hdb_catalog.hdb_version LIMIT 1",
-            &[],
-        )
-        .await?;
-    Ok(text
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or(Value::Null))
+    Ok(pg)
 }
 
 fn config_error(path: &Path, e: std::io::Error) -> Error {
@@ -146,62 +310,32 @@ fn read_migrations(dir: &Path) -> Result<Vec<Migration>, Error> {
     Ok(out)
 }
 
-async fn apply_source(name: &str, url: &str, migrations: &[Migration]) -> Result<(), Error> {
-    // One connection, so the session lock and every statement share it.
-    let pg = PgSource::connect(
-        name,
-        url,
-        &PoolConfig {
-            max_connections: 1,
-            use_prepared_statements: false,
-            ..PoolConfig::default()
-        },
-    )?;
-    pg.batch_execute(&format!(
-        "SELECT pg_advisory_lock({LOCK_KEY}); \
-         CREATE SCHEMA IF NOT EXISTS hdb_catalog; \
-         CREATE TABLE IF NOT EXISTS hdb_catalog.schema_migrations \
-           (version bigint NOT NULL PRIMARY KEY, dirty boolean NOT NULL);"
-    ))
-    .await?;
-    let result = apply_locked(&pg, name, migrations).await;
-    if result.is_err() {
-        let _ = pg.batch_execute("ROLLBACK").await;
-    }
-    let _ = pg
-        .batch_execute(&format!("SELECT pg_advisory_unlock({LOCK_KEY})"))
-        .await;
-    result
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-async fn apply_locked(pg: &PgSource, source: &str, migrations: &[Migration]) -> Result<(), Error> {
-    let mut applied = 0;
-    for m in migrations {
-        let version = m.version.to_string();
-        let done = pg
-            .query_text(
-                "SELECT 'yes' FROM hdb_catalog.schema_migrations \
-                 WHERE version = ($1)::bigint AND NOT dirty",
-                &[Some(&version)],
-            )
-            .await?;
-        if done.as_deref() == Some("yes") {
-            continue;
-        }
-        let sql = std::fs::read_to_string(&m.up_sql).map_err(|e| config_error(&m.up_sql, e))?;
-        info!(target: "migrations", source, migration = %m.name, "applying migration");
-        pg.batch_execute(&format!(
-            "BEGIN;\n{sql}\n;\nINSERT INTO hdb_catalog.schema_migrations (version, dirty) \
-             VALUES ({version}, false) ON CONFLICT (version) DO UPDATE SET dirty = false;\nCOMMIT;"
-        ))
-        .await
-        .map_err(|e| {
-            let mut e = e;
-            e.message = format!("migration {} failed: {}", m.name, e.message);
-            e
-        })?;
-        applied += 1;
+    #[test]
+    fn records_like_the_cli() {
+        let mut s = CliState::new(Value::Null);
+        assert!(!s.copy_completed());
+        s.import_legacy("default", &[(1, false), (2, true)]);
+        s.mark_copy_completed();
+        assert_eq!(s.dirty("default").as_deref(), Some("2"));
+        s.record("default", 2);
+        s.record("other/db", 3);
+        assert_eq!(
+            s.value,
+            json!({"migrations": {"default": {"1": false, "2": false}, "other/db": {"3": false}},
+                   "settings": {"migration_mode": "true"}, "isStateCopyCompleted": true})
+        );
+        assert!(s.applied("default", 1) && s.applied("other/db", 3) && !s.applied("default", 4));
+        assert_eq!(s.dirty("default"), None);
     }
-    info!(target: "migrations", source, applied, "migrations up to date");
-    Ok(())
+
+    #[test]
+    fn keeps_existing_settings() {
+        let mut s = CliState::new(json!({"settings": {"migration_mode": "false"}}));
+        s.mark_copy_completed();
+        assert_eq!(s.value["settings"], json!({"migration_mode": "false"}));
+    }
 }

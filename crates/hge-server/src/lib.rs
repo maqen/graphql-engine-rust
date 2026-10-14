@@ -12,6 +12,7 @@ pub mod remote;
 pub mod rest;
 pub mod routes;
 pub mod scheduled;
+pub mod server_api;
 pub mod state;
 pub mod sync;
 pub mod telemetry;
@@ -58,7 +59,7 @@ pub async fn build_engine(config: ServerConfig) -> Result<Arc<Engine>, hge_core:
     let (metadata, resource_version, origin) = load::load_metadata(&config, store.as_ref()).await?;
     tracing::info!(target: "startup", ?origin, resource_version, "metadata source selected");
     if let Some(dir) = &config.migrations_dir {
-        migrations::apply(dir, &metadata, &config).await?;
+        migrations::apply(dir, &metadata, &config, store.as_ref()).await?;
     }
     let prepared = load::prepare(
         &metadata,

@@ -21,9 +21,14 @@ use crate::state::Engine;
 use crate::telemetry::http::{self as http_log, HttpLogInfo, RequestMode};
 use crate::ws::{self, MaybeUpgrade};
 
-/// The version reported by `/v1/version` and in `User-Agent` headers: the V2 release we are
-/// compatible with, then ours (the CLI compares major versions).
-pub const VERSION: &str = concat!("v2.51.0-rs.", env!("CARGO_PKG_VERSION"));
+/// The version reported by `/v1/version`, `/v1alpha1/config` and in `User-Agent` headers:
+/// exactly the V2 release we are compatible with. The CLI derives the console's CDN asset
+/// path from it (`channel/versioned/v2.51.0-ce`); any suffix (`-rs.…`, `+rs.…`) points the
+/// console at a channel that has no assets for this release.
+pub const VERSION: &str = "v2.51.0-ce";
+
+/// This engine's own version (`graphql-engine version`).
+pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn router(engine: Arc<Engine>) -> Router {
     let mut router = crate::telemetry::endpoints::register(Router::new(), &engine)
@@ -44,6 +49,12 @@ pub fn router(engine: Arc<Engine>) -> Router {
                 "/v1alpha1/graphql",
                 get(graphql_ws_v1alpha1).post(graphql_post_v1alpha1),
             );
+    }
+    if engine.config.api_enabled("pgdump") {
+        router = router.route(
+            "/v1alpha1/pg_dump",
+            axum::routing::post(crate::server_api::pg_dump),
+        );
     }
     if engine.config.api_enabled("metadata") {
         router = router

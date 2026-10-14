@@ -329,9 +329,10 @@ without -> 200 `WARN: inconsistent objects in schema`; else 200 `OK`. Content-Ty
 `/v1/version` -> `{"version":"v2.x.y","server_type":"ce"}` (`server_type` from
 `getExtraDataForVersionAPI` in `server/src-lib/Hasura/App.hs`: "we always default to CE"). For tool
 compatibility (hasura CLI checks server version for feature flags) the Rust engine should report
-a v2-style semver (e.g. the upstream version it is compatible with, suffixed: `v2.48.0-rs.1`) -
-(inferred; the hasura CLI parses `version` with a semver library and enables features when
-`>= v2.0.0`; a non-semver string makes the CLI treat it as a dev build).
+exactly the upstream version it is compatible with (`v2.51.0-ce`). Checked with CLI v2.51.0:
+`hasura console` derives the console's CDN asset path from the server version, and only the
+exact string gives V2's `channel/versioned/v2.51.0-ce`; `v2.51.0-rs.1` gives `channel/rs/v2.51`
+and `v2.51.0+rs.1` gives `channel/stable/v2.51`.
 
 ### 3.3 Authentication (details in doc 05)
 

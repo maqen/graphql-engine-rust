@@ -151,7 +151,7 @@ async fn version() -> Response {
 }
 
 /// V2's `onlyAdmin`: the endpoint is for the admin role only.
-async fn only_admin(engine: &Engine, headers: &HeaderMap) -> Result<(), Response> {
+pub(crate) async fn only_admin(engine: &Engine, headers: &HeaderMap) -> Result<(), Response> {
     match engine.auth.authenticate(headers, None).await {
         Ok(auth) if auth.session.role.is_admin() => Ok(()),
         Ok(_) => {
@@ -186,7 +186,7 @@ fn config_json(engine: &Engine) -> Value {
     let poller = |o: &hge_subscriptions::poller::PollerOptions| {
         json!({
             "batch_size": o.batch_size,
-            "refetch_delay": o.refetch_interval.as_secs_f64(),
+            "refetch_delay": seconds(o.refetch_interval),
         })
     };
     let no_auth = c.admin_secrets.is_empty()
@@ -197,7 +197,7 @@ fn config_json(engine: &Engine) -> Value {
     json!({
         "version": VERSION,
         "is_function_permissions_inferred": c.infer_function_permissions,
-        "is_remote_schema_permissions_enabled": false,
+        "is_remote_schema_permissions_enabled": c.remote_schema_permissions,
         "is_admin_secret_set": !no_auth,
         "is_auth_hook_set": c.auth_hook.is_some(),
         "is_jwt_set": !jwt.is_empty(),
@@ -206,11 +206,21 @@ fn config_json(engine: &Engine) -> Value {
         "live_queries": poller(&c.websocket.live_queries),
         "streaming_queries": poller(&c.websocket.streaming),
         "console_assets_dir": null,
-        "experimental_features": [],
+        "experimental_features": c.experimental_features,
         "is_prometheus_metrics_enabled": c.api_enabled("metrics"),
-        "default_naming_convention": "hasura-default",
-        "is_apollo_federation_enabled": false,
+        "default_naming_convention": c.default_naming_convention,
+        "is_apollo_federation_enabled": c.apollo_federation,
     })
+}
+
+/// Seconds as V2 prints a `DiffTime` (`1`, `1.5`).
+fn seconds(d: std::time::Duration) -> Value {
+    let ms = d.as_millis();
+    if ms.is_multiple_of(1000) {
+        json!((ms / 1000) as u64)
+    } else {
+        json!(d.as_secs_f64())
+    }
 }
 
 /// The `jwt` entries of `/v1alpha1/config`: namespace (or namespace path), format and claims
