@@ -49,7 +49,15 @@ pub fn router(engine: Arc<Engine>) -> Router {
         router = router
             .route("/v1/metadata", axum::routing::post(metadata_post))
             .route("/v2/query", axum::routing::post(query_post))
-            .route("/v1/query", axum::routing::post(crate::v1_query::handler));
+            .route("/v1/query", axum::routing::post(crate::v1_query::handler))
+            .route(
+                "/v1/graphql/explain",
+                axum::routing::post(crate::explain::handler),
+            )
+            .route(
+                "/v1alpha1/graphql/explain",
+                axum::routing::post(crate::explain::handler),
+            );
     }
     let mut router = crate::telemetry::endpoints::fallbacks(router)
         .layer(axum::middleware::from_fn(ws::reject_other_paths))

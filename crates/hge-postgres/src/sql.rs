@@ -12,6 +12,8 @@ pub struct SqlBuilder {
     /// Multiplexed subscriptions: parameters are read from this JSON array expression (the
     /// cohort's variables) instead of being bound as `$n`.
     vars: Option<String>,
+    /// `/v1/graphql/explain`: parameters are written as literals (`('<text>')`) instead.
+    inline: bool,
 }
 
 impl SqlBuilder {
@@ -24,6 +26,15 @@ impl SqlBuilder {
     pub fn multiplexed(vars: &str) -> Self {
         SqlBuilder {
             vars: Some(vars.to_owned()),
+            ..Self::default()
+        }
+    }
+
+    /// A builder that writes every parameter as a literal, for `EXPLAIN` output that can be
+    /// read and run on its own (V2 inlines values the same way).
+    pub fn inline() -> Self {
+        SqlBuilder {
+            inline: true,
             ..Self::default()
         }
     }
@@ -54,12 +65,16 @@ impl SqlBuilder {
         self.ident(alias).push_char('.').ident(column)
     }
 
-    /// `'literal'` with quotes escaped.
+    /// `'literal'` with quotes escaped; `E'…'` with backslashes doubled when it has any, so
+    /// it reads the same whatever `standard_conforming_strings` is (like V2's `pgFmtLit`).
     pub fn string_literal(&mut self, s: &str) -> &mut Self {
+        if s.contains('\\') {
+            self.sql.push('E');
+        }
         self.sql.push('\'');
         for c in s.chars() {
-            if c == '\'' {
-                self.sql.push('\'');
+            if c == '\'' || c == '\\' {
+                self.sql.push(c);
             }
             self.sql.push(c);
         }
@@ -78,6 +93,17 @@ impl SqlBuilder {
     /// Bind `value` and write its untyped placeholder: `($n)`, or `(<vars>->>n-1)` when
     /// multiplexed.
     fn placeholder(&mut self, value: Option<String>) {
+        if self.inline {
+            match value {
+                None => self.sql.push_str("(NULL)"),
+                Some(v) => {
+                    self.sql.push('(');
+                    self.string_literal(&v);
+                    self.sql.push(')');
+                }
+            }
+            return;
+        }
         self.params.push(value);
         let n = self.params.len();
         match &self.vars {
@@ -125,6 +151,13 @@ pub fn push_type(out: &mut String, ty: &ColumnType) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn literals() {
+        let mut b = SqlBuilder::new();
+        b.string_literal("it's").push(" ").string_literal(r"a\b'");
+        assert_eq!(b.sql, r"'it''s' E'a\\b'''");
+    }
 
     #[test]
     fn quoting() {
