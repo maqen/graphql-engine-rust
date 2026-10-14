@@ -78,8 +78,8 @@ fn is_node(table: &TableInfo) -> bool {
 /// `node` and the connection root fields, on the query or subscription root.
 pub(crate) fn add_query_root_fields(
     b: &mut Builder<'_>,
-    _role: &RoleName,
-    _options: &SchemaOptions,
+    role: &RoleName,
+    options: &SchemaOptions,
     root: &mut ObjectDef,
 ) {
     b.ensure_node_interface();
@@ -111,6 +111,9 @@ pub(crate) fn add_query_root_fields(
     }
     for function in &tables.functions {
         if function.exposed_as != ExposedAs::Query {
+            continue;
+        }
+        if !function.permits(role, options.infer_function_permissions) {
             continue;
         }
         if let Some(field) = b.function_connection_field(function) {
