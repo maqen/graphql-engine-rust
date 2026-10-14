@@ -8,6 +8,15 @@ use clap::{Args, Parser, Subcommand};
 use hge_server::ServerConfig;
 use hge_server::telemetry::{Level, LogConfig, LogTypes};
 
+/// jemalloc instead of the system allocator. A request allocates and frees many small
+/// objects across worker threads, and glibc malloc spent about a quarter of the engine's CPU
+/// on that, much of it on its locks. jemalloc keeps memory use the same as glibc (mimalloc
+/// was as fast but used about 15 MB more under load). Linux only, where the server is
+/// deployed; other targets (macOS, Windows, wasm) keep the system allocator.
+#[cfg(target_os = "linux")]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 #[derive(Parser)]
 #[command(
     name = "graphql-engine",
