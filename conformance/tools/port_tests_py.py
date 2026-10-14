@@ -63,6 +63,9 @@ HAND_PORTED = {
     "test_subscriptions.py::TestStreamingSubscriptionWithTies",
     "test_subscriptions.py::TestSubscriptionUDFWithSessionArg",
     "test_subscriptions.py::TestSubscriptionCohortIsolationMSSQLPostgres",
+    # conformance/tools/hand/action_cases.py writes these classes' cases.
+    "test_actions.py::TestActionsAsync",
+    "test_actions.py::TestActionsSyncResponseHeaders",
     # Event triggers: conformance/tools/hand/event_cases.py writes their cases.
     "test_events.py::TestCreateEventQueryPostgresMSSQL",
     "test_events.py::TestCreateEventQueryPostgres",

@@ -258,7 +258,10 @@ fn replace_url(s: &str, url: &str, with: &str) -> String {
     out
 }
 
-fn map_strings<E>(v: &Value, f: &mut impl FnMut(&str) -> Result<String, E>) -> Result<Value, E> {
+pub fn map_strings<E>(
+    v: &Value,
+    f: &mut impl FnMut(&str) -> Result<String, E>,
+) -> Result<Value, E> {
     Ok(match v {
         Value::String(s) => Value::String(f(s)?),
         Value::Array(a) => Value::Array(

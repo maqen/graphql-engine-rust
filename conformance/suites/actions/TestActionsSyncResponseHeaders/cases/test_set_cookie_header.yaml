@@ -1,0 +1,23 @@
+upstream:
+  file: test_actions.py
+  class: TestActionsSyncResponseHeaders
+  method: test_set_cookie_header
+  by_hand: true
+steps:
+- url: /v1/graphql
+  status: 200
+  query:
+    query: |2
+
+        mutation {
+          create_user(email: "clarke@gmail.com", name: "Clarke"){
+            id
+          }
+        }
+    variables: {}
+  response:
+    data:
+      create_user:
+        id: 1
+  resp_headers:
+    Set-Cookie: abcd

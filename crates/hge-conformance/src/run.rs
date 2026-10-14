@@ -78,10 +78,11 @@ pub async fn run_suite(
 async fn run_case(slot: &Slot, case: &Case, record: bool) -> Result<(), String> {
     let mut file = case.file.clone();
     let mut conns = ws::Connections::default();
+    let mut vars = Vars::default();
     let mut outcome = Ok(());
     for (i, step) in file.steps.iter_mut().enumerate() {
         let r = match step {
-            Step::Http(step) => http_step(slot, case, step, record).await,
+            Step::Http(step) => var_step(slot, case, step, record, &mut vars).await,
             Step::Ws(step) => {
                 ws::run_step(
                     &mut conns,
@@ -115,22 +116,97 @@ async fn run_case(slot: &Slot, case: &Case, record: bool) -> Result<(), String> 
     outcome
 }
 
+/// Values captured from earlier responses of a case (`capture`), by name.
+#[derive(Default)]
+struct Vars(std::collections::BTreeMap<String, String>);
+
+impl Vars {
+    fn placeholder(name: &str) -> String {
+        format!("{{{{var:{name}}}}}")
+    }
+
+    fn expand(&self, v: &Value) -> Value {
+        crate::helpers::map_strings(v, &mut |s| {
+            let mut s = s.to_owned();
+            for (name, value) in &self.0 {
+                s = s.replace(&Self::placeholder(name), value);
+            }
+            Ok::<_, String>(s)
+        })
+        .expect("infallible")
+    }
+
+    fn unexpand(&self, v: &Value) -> Value {
+        crate::helpers::map_strings(v, &mut |s| {
+            let mut s = s.to_owned();
+            for (name, value) in &self.0 {
+                if !value.is_empty() {
+                    s = s.replace(value.as_str(), &Self::placeholder(name));
+                }
+            }
+            Ok::<_, String>(s)
+        })
+        .expect("infallible")
+    }
+}
+
+/// An HTTP step with `{{var:..}}` replaced by captured values; captures what the step lists.
+async fn var_step(
+    slot: &Slot,
+    case: &Case,
+    step: &mut HttpStep,
+    record: bool,
+    vars: &mut Vars,
+) -> Result<(), String> {
+    if vars.0.is_empty() && step.capture.is_empty() {
+        return http_step(slot, case, step, record).await.map(|_| ());
+    }
+    let v = serde_json::to_value(&*step).map_err(|e| e.to_string())?;
+    let mut sent: HttpStep = serde_json::from_value(vars.expand(&v)).map_err(|e| e.to_string())?;
+    let body = http_step(slot, case, &mut sent, record).await?;
+    for (name, pointer) in &step.capture {
+        let value = match body.pointer(pointer) {
+            Some(Value::String(s)) => s.clone(),
+            Some(other) => other.to_string(),
+            None => return Err(format!("capture {name}: no {pointer} in the response")),
+        };
+        vars.0.insert(name.clone(), value);
+    }
+    if record {
+        step.status = sent.status;
+        step.response = vars.unexpand(&sent.response);
+        step.resp_headers = sent.resp_headers;
+    }
+    Ok(())
+}
+
+/// Send a step and check its response; returns the response body.
 async fn http_step(
     slot: &Slot,
     case: &Case,
     step: &mut HttpStep,
     record: bool,
-) -> Result<(), String> {
-    let actual = send(slot, case, step).await?;
+) -> Result<Value, String> {
+    let deadline = step
+        .retry_for
+        .map(|s| std::time::Instant::now() + std::time::Duration::from_secs_f64(s));
+    let mut actual = send(slot, case, step).await?;
+    while let Some(deadline) = deadline {
+        if check(step, &actual).is_ok() || std::time::Instant::now() >= deadline {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        actual = send(slot, case, step).await?;
+    }
     match check(step, &actual) {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok(actual.body),
         Err(_) if record => {
             step.status = actual.status;
             step.response = compare::keep_any(&step.response, &actual.body);
             for (name, value) in step.resp_headers.iter_mut() {
                 *value = header_value(&actual.headers, name);
             }
-            Ok(())
+            Ok(actual.body)
         }
         Err(e) => Err(e),
     }

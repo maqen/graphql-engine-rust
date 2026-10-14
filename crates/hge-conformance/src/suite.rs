@@ -168,6 +168,14 @@ pub struct HttpStep {
     /// Response headers that must be present with these values.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub resp_headers: BTreeMap<String, Option<String>>,
+    /// Values of the response to use in later steps: name -> JSON pointer (`/data/f`). Later
+    /// steps write `{{var:name}}` for them, and recording writes it back in their place.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub capture: BTreeMap<String, String>,
+    /// Send the request again until the response is the expected one, for up to this many
+    /// seconds (tests-py's `check_query_timeout`, for results that arrive asynchronously).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_for: Option<f64>,
 }
 
 fn ok() -> u16 {

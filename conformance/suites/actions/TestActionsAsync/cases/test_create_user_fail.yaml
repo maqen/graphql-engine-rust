@@ -1,0 +1,40 @@
+upstream:
+  file: test_actions.py
+  class: TestActionsAsync
+  method: test_create_user_fail
+  by_hand: true
+steps:
+- url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        create_user(email: "random-email", name: "Clarke")
+      }
+    variables: {}
+  response:
+    data:
+      create_user: '{{any}}'
+  capture:
+    action_id: /data/create_user
+- url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query ($action_id: uuid!){
+        create_user(id: $action_id){
+          id
+          errors
+        }
+      }
+    variables:
+      action_id: '{{var:action_id}}'
+  response:
+    data:
+      create_user:
+        id: '{{var:action_id}}'
+        errors:
+          code: invalid-email
+          path: $
+          error: Given email address is not valid
+  retry_for: 10.0
