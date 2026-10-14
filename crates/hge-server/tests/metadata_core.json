@@ -2296,6 +2296,324 @@
     "path": "$",
     "code": "conflict"
    }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "DROP TABLE IF EXISTS dml_artist; CREATE TABLE dml_artist(artist_id serial primary key, name text); INSERT INTO dml_artist(name) VALUES ('A1'),('A2');"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_track_table",
+    "args": {
+     "source": "default",
+     "table": "dml_artist"
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "description": "the console's Browse Rows request",
+   "url": "/v2/query",
+   "query": {
+    "type": "concurrent_bulk",
+    "source": "default",
+    "args": [
+     {
+      "type": "select",
+      "args": {
+       "source": "default",
+       "table": {
+        "schema": "public",
+        "name": "dml_artist"
+       },
+       "columns": [
+        "artist_id",
+        "name"
+       ],
+       "where": {
+        "$and": []
+       },
+       "offset": 0,
+       "limit": 10,
+       "order_by": []
+      }
+     },
+     {
+      "type": "run_sql",
+      "args": {
+       "sql": "SELECT 1 AS n",
+       "read_only": true
+      }
+     }
+    ]
+   },
+   "status": 200,
+   "response": [
+    [
+     {
+      "artist_id": 1,
+      "name": "A1"
+     },
+     {
+      "artist_id": 2,
+      "name": "A2"
+     }
+    ],
+    {
+     "result_type": "TuplesOk",
+     "result": [
+      [
+       "n"
+      ],
+      [
+       "1"
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "bulk",
+    "args": [
+     {
+      "type": "insert",
+      "args": {
+       "source": "default",
+       "table": "dml_artist",
+       "objects": [
+        {
+         "name": "A3"
+        }
+       ],
+       "returning": [
+        "artist_id"
+       ]
+      }
+     },
+     {
+      "type": "count",
+      "args": {
+       "source": "default",
+       "table": "dml_artist"
+      }
+     },
+     {
+      "type": "update",
+      "args": {
+       "source": "default",
+       "table": "dml_artist",
+       "where": {
+        "artist_id": 1
+       },
+       "$set": {
+        "name": "X"
+       }
+      }
+     },
+     {
+      "type": "delete",
+      "args": {
+       "source": "default",
+       "table": "dml_artist",
+       "where": {
+        "artist_id": 2
+       }
+      }
+     }
+    ]
+   },
+   "status": 200,
+   "response": [
+    {
+     "returning": [
+      {
+       "artist_id": 3
+      }
+     ],
+     "affected_rows": 1
+    },
+    {
+     "count": 3
+    },
+    {
+     "affected_rows": 1
+    },
+    {
+     "affected_rows": 1
+    }
+   ]
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "bulk",
+    "args": [
+     {
+      "type": "count",
+      "args": {
+       "source": "default",
+       "table": "dml_artist"
+      }
+     },
+     {
+      "type": "select",
+      "args": {
+       "source": "default",
+       "table": "dml_artist",
+       "columns": [
+        "nope"
+       ]
+      }
+     }
+    ]
+   },
+   "status": 400,
+   "response": {
+    "error": "no such column exists: \"nope\"",
+    "path": "$[1].columns[0]",
+    "code": "permission-denied"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "concurrent_bulk",
+    "args": [
+     {
+      "type": "select",
+      "args": {
+       "source": "default",
+       "table": "dml_artist",
+       "columns": [
+        "artist_id"
+       ]
+      }
+     },
+     {
+      "type": "select",
+      "args": {
+       "source": "default",
+       "table": "dml_artist",
+       "columns": [
+        "nope"
+       ]
+      }
+     }
+    ]
+   },
+   "status": 400,
+   "response": {
+    "error": "no such column exists: \"nope\"",
+    "path": "$.columns[0]",
+    "code": "permission-denied"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "insert",
+    "args": {
+     "source": "default",
+     "table": "dml_artist",
+     "objects": [
+      {
+       "bad": 1
+      }
+     ]
+    }
+   },
+   "status": 400,
+   "response": {
+    "error": "column \"bad\" does not exist",
+    "path": "$.objects[0]",
+    "code": "not-exists"
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "list_source_kinds",
+    "args": {}
+   },
+   "status": 200,
+   "response": {
+    "sources": [
+     {
+      "available": true,
+      "builtin": true,
+      "display_name": "pg",
+      "kind": "pg"
+     },
+     {
+      "available": true,
+      "builtin": true,
+      "display_name": "citus",
+      "kind": "citus"
+     },
+     {
+      "available": true,
+      "builtin": true,
+      "display_name": "cockroach",
+      "kind": "cockroach"
+     },
+     {
+      "available": true,
+      "builtin": true,
+      "display_name": "mssql",
+      "kind": "mssql"
+     },
+     {
+      "available": true,
+      "builtin": true,
+      "display_name": "bigquery",
+      "kind": "bigquery"
+     }
+    ]
+   }
+  },
+  {
+   "url": "/v1/metadata",
+   "query": {
+    "type": "pg_untrack_table",
+    "args": {
+     "source": "default",
+     "table": "dml_artist"
+    }
+   },
+   "status": 200,
+   "response": {
+    "message": "success"
+   }
+  },
+  {
+   "url": "/v2/query",
+   "query": {
+    "type": "run_sql",
+    "args": {
+     "sql": "DROP TABLE dml_artist"
+    }
+   },
+   "status": 200,
+   "response": {
+    "result_type": "CommandOk",
+    "result": null
+   }
   }
  ]
 }

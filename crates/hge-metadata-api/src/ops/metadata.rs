@@ -488,8 +488,10 @@ pub async fn set_catalog_state<R: Runtime>(ctx: &mut Ctx<'_, R>, args: &Value) -
 }
 
 pub fn list_source_kinds() -> Value {
-    let kind = |k: &str| json!({"available": true, "builtin": true, "display_name": k, "kind": k, "release_name": "GA"});
-    json!({ "sources": [kind("pg")] })
+    // V2 CE lists its built-in kinds, connectable or not here.
+    let kind = |k: &str| json!({"available": true, "builtin": true, "display_name": k, "kind": k});
+    let sources = ["pg", "citus", "cockroach", "mssql", "bigquery"].map(kind);
+    json!({ "sources": sources })
 }
 
 #[cfg(test)]

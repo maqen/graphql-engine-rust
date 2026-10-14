@@ -169,7 +169,12 @@ async fn run_plain<R: Runtime>(
         }
         Query::ConcurrentBulk(items) => {
             let futures = items.iter().enumerate().map(|(i, item)| async move {
-                run_plain(rt, session, item, &format!("$[{i}]")).await
+                // V2 does not index DML errors inside a concurrent_bulk.
+                let path = match item {
+                    Query::Dml { .. } => "$".to_owned(),
+                    _ => format!("$[{i}]"),
+                };
+                run_plain(rt, session, item, &path).await
             });
             let results = futures::future::join_all(futures).await;
             results
@@ -177,11 +182,13 @@ async fn run_plain<R: Runtime>(
                 .collect::<ApiResult<Vec<_>>>()
                 .map(Value::Array)
         }
-        Query::Dml { kind, .. } => Err(ApiError::bad(
-            Code::NotSupported,
-            format!("the \"{kind}\" query is not supported yet"),
-        )
-        .with_path(path)),
+        // V2 reports DML errors relative to the query's args (`$[1].columns[0]` in a bulk).
+        Query::Dml { kind, args } => rt.run_dml(session, kind, args).await.map_err(|mut e| {
+            if let Some(rest) = e.error.path.strip_prefix("$.args") {
+                e.error.path = format!("${rest}");
+            }
+            e.under(path)
+        }),
     }
 }
 

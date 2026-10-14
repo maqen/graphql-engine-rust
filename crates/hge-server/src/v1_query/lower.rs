@@ -355,15 +355,17 @@ pub fn column_info<'t>(
     ))
 }
 
-/// V2's `mkDefaultMutFlds`: `affected_rows`, plus `returning` when requested.
+/// V2's `mkDefaultMutFlds`: `affected_rows`, plus `returning` when requested. V2 writes
+/// `returning` first.
 pub fn mutation_output(returning: Option<Vec<(String, Field)>>) -> MutationOutput {
-    let mut fields = vec![(
-        "affected_rows".to_owned(),
-        MutationResponseField::AffectedRows,
-    )];
+    let mut fields = Vec::with_capacity(2);
     if let Some(r) = returning {
         fields.push(("returning".to_owned(), MutationResponseField::Returning(r)));
     }
+    fields.push((
+        "affected_rows".to_owned(),
+        MutationResponseField::AffectedRows,
+    ));
     MutationOutput::Multi(fields)
 }
 
