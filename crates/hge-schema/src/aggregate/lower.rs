@@ -9,7 +9,7 @@ use hge_ir::{
 use serde_json::{Map, Value as Json};
 
 use super::AggregateFieldKind;
-use crate::lower::{Lowerer, order_type};
+use crate::lower::{HashKeyed, Lowerer, order_type};
 use crate::model::FieldKind;
 use crate::normalize::{Selected, SelectedField};
 use crate::scalars;
@@ -141,12 +141,13 @@ impl Lowerer<'_> {
                 nulls,
             });
         };
+        // V2 applies `count` first, then each function's columns in the hash order of their
+        // database names (see `Lowerer::order_by`); functions keep the order written.
+        if let Some(v) = obj.get("count").filter(|v| !v.is_null()) {
+            push(AggregateOrderBy::Count, v);
+        }
         for (key, v) in obj {
-            if v.is_null() {
-                continue;
-            }
-            if key == "count" {
-                push(AggregateOrderBy::Count, v);
+            if v.is_null() || key == "count" {
                 continue;
             }
             let function = AggregateFunction::from_name(key).ok_or_else(|| {
@@ -159,7 +160,21 @@ impl Lowerer<'_> {
             let Json::Object(columns) = v else {
                 continue;
             };
-            for (name, order) in columns {
+            let mut columns: Vec<HashKeyed<(&String, &Json)>> = columns
+                .iter()
+                .map(|item| HashKeyed {
+                    field: target
+                        .column_by_gql_name(item.0)
+                        .map_or_else(|| item.0.clone(), |c| c.name.clone()),
+                    item,
+                })
+                .collect();
+            hge_core::sort_v2_hash_order(&mut columns);
+            for HashKeyed {
+                item: (name, order),
+                ..
+            } in columns
+            {
                 if order.is_null() {
                     continue;
                 }

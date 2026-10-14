@@ -3,9 +3,7 @@
 # a case missing from this list that fails is a regression.
 # Regenerate with: hge-conformance ... --write-expected-failures
 allowlist/TestAllowlistQueries/test_update_query
-mutations/TestGraphQLInsert/test_inserts_various_postgres_types
 mutations/TestGraphqlInsertViews/test_nested_insert_article_author_complex_view_fail
-mutations/TestGraphqlUpdateBasic/test_column_in_multiple_operators
 permissions/TestCustomFunctionPermissionsInheritance/test_override_inherited_permission
 queries/TestGraphQLQueryBasicPostgres/test_select_query_with_extensions
 queries/TestGraphQLQueryFragmentsPostgresCitus/test_select_query_fragment_cycles

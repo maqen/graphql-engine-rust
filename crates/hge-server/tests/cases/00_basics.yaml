@@ -141,6 +141,32 @@ cases:
         - extensions: { path: "$.selectionSet.author.args.limit", code: validation-failed }
           message: "expected a 32-bit integer for type 'Int', but found a float"
 
+  # Article 2 is the unpublished one, so only 4 matches.
+  - description: a column value may be a string, which Postgres parses (V2's column parser)
+    query:
+      query: '{ article(where: {id: {_in: ["2", 4]}, is_published: {_eq: "true"}}) { id } }'
+    response:
+      data:
+        article: [{ id: 4 }]
+
+  - description: a non-column Int stays strict about strings
+    query:
+      query: '{ author(limit: "1") { id } }'
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.args.limit", code: validation-failed }
+          message: "expected a 32-bit integer for type 'Int', but found a string"
+
+  - description: a float for an Int column is V2's parse failure, not a type mismatch
+    query:
+      query: "{ article(where: {id: {_eq: 1.5}}) { id } }"
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.article.args.where.id._eq", code: parse-failed }
+          message: >-
+            The value 1.5 lies outside the bounds or is not an integer. Maybe it is a float,
+            or is there integer overflow?
+
   - description: an out-of-range Int is a parse failure, shown as Haskell's Scientific
     query:
       query: "query ($l: Int) { author(limit: $l) { id } }"
@@ -212,3 +238,58 @@ cases:
       errors:
         - extensions: { path: "$.selectionSet.author.args.order_by.id", code: validation-failed }
           message: "expected an enum value for type 'order_by', but found a string"
+
+  - description: an unused variable may be declared with an output type, as in V2
+    query:
+      query: "query ($x: article) { __typename }"
+    response:
+      data:
+        __typename: query_root
+
+  - description: a variable of an output type fails where it is used
+    query:
+      query: "query ($x: article) { author(limit: $x) { id } }"
+      variables: { x: 1 }
+    response:
+      errors:
+        - extensions: { path: "$.selectionSet.author.args.limit", code: validation-failed }
+          message: "variable 'x' is declared as 'article', but used where 'Int' is expected"
+
+  - description: provided variables the query doesn't use are rejected, in V2's hash order
+    query:
+      query: "query ($x: Int) { __typename }"
+      variables: { x: 1, y: 2, z: 3 }
+    response:
+      errors:
+        - extensions: { path: "$", code: validation-failed }
+          message: "unexpected variables in variableValues: y, z, x"
+
+  # V2 applies one order_by object's keys in the hash order of the field names, verified on
+  # v2.51.0-ce: author_id before title, and title before author.
+  - description: a multi-key order_by object sorts in V2's field hash order
+    query:
+      query: "{ article(order_by: {title: desc, author_id: asc}) { id } }"
+    response:
+      data:
+        article: [{ id: 1 }, { id: 2 }, { id: 4 }, { id: 3 }]
+
+  - description: a relationship key in a multi-key order_by object sorts in V2's hash order too
+    query:
+      query: "{ article(order_by: {author: {name: desc}, title: asc}) { id } }"
+    response:
+      data:
+        article: [{ id: 2 }, { id: 3 }, { id: 4 }, { id: 1 }]
+
+  - description: aggregate order_by applies count first, as V2 does
+    query:
+      query: "{ author(order_by: {articles_aggregate: {max: {score: asc}, count: asc}}) { id } }"
+    response:
+      data:
+        author: [{ id: 3 }, { id: 2 }, { id: 1 }]
+
+  - description: an aggregate function's columns apply in V2's hash order
+    query:
+      query: "{ author(order_by: {articles_aggregate: {max: {title: asc, author_id: desc}}}) { id } }"
+    response:
+      data:
+        author: [{ id: 3 }, { id: 2 }, { id: 1 }]

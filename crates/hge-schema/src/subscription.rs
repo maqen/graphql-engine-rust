@@ -103,7 +103,9 @@ impl Builder<'_> {
             let ty = self.column_value_type(col, true);
             values.insert(
                 col.gql_name.clone(),
-                InputValueDef::new(col.gql_name.clone(), ty).describe_opt(col.description.clone()),
+                InputValueDef::new(col.gql_name.clone(), ty)
+                    .describe_opt(col.description.clone())
+                    .for_column(),
             );
         }
         self.schema.add(TypeDef::InputObject(InputObjectDef {

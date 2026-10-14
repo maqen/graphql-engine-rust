@@ -256,7 +256,7 @@ impl Builder<'_> {
                 for col in table.primary_key.iter().flatten() {
                     let col = &table.columns[col];
                     let ty = self.column_value_type(col, false);
-                    f = f.arg(InputValueDef::new(col.gql_name.clone(), ty));
+                    f = f.arg(InputValueDef::new(col.gql_name.clone(), ty).for_column());
                 }
                 root.fields.insert(f.name.clone(), f);
             }
@@ -336,7 +336,9 @@ impl Builder<'_> {
         for col in ia.input_columns(table) {
             let ty = self.column_value_type(col, true);
             fields.push(
-                InputValueDef::new(col.gql_name.clone(), ty).describe_opt(col.description.clone()),
+                InputValueDef::new(col.gql_name.clone(), ty)
+                    .describe_opt(col.description.clone())
+                    .for_column(),
             );
         }
         let rels: Vec<_> = table
@@ -543,14 +545,17 @@ impl Builder<'_> {
                 let fields = applicable
                     .iter()
                     .map(|c| {
-                        let ty = match *arg {
-                            "_delete_key" => TypeRef::named("String"),
-                            "_delete_elem" => TypeRef::named("Int"),
-                            "_delete_at_path" => TypeRef::nn("String").list(),
-                            _ => self.column_value_type(c, true),
+                        let (ty, column) = match *arg {
+                            "_delete_key" => (TypeRef::named("String"), false),
+                            "_delete_elem" => (TypeRef::named("Int"), false),
+                            "_delete_at_path" => (TypeRef::nn("String").list(), false),
+                            _ => (self.column_value_type(c, true), true),
                         };
-                        InputValueDef::new(c.gql_name.clone(), ty)
-                            .describe_opt(c.description.clone())
+                        InputValueDef {
+                            column,
+                            ..InputValueDef::new(c.gql_name.clone(), ty)
+                                .describe_opt(c.description.clone())
+                        }
                     })
                     .collect();
                 let description = match *arg {
@@ -579,7 +584,9 @@ impl Builder<'_> {
             let col = &table.columns[col];
             let ty = self.column_value_type(col, false);
             fields.push(
-                InputValueDef::new(col.gql_name.clone(), ty).describe_opt(col.description.clone()),
+                InputValueDef::new(col.gql_name.clone(), ty)
+                    .describe_opt(col.description.clone())
+                    .for_column(),
             );
         }
         self.schema.add(input_object(

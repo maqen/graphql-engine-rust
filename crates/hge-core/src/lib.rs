@@ -6,6 +6,7 @@
 
 pub mod catalog;
 pub mod error;
+pub mod hash_order;
 pub mod inconsistency;
 pub mod names;
 pub mod scientific;
@@ -17,6 +18,7 @@ pub use catalog::{
     TypeKind, UniqueConstraint, Volatility,
 };
 pub use error::{Code, Error, Result};
+pub use hash_order::sort_v2_hash_order;
 pub use inconsistency::InconsistentObject;
 pub use names::{QualifiedFunction, QualifiedTable};
 pub use scientific::scientific_show;

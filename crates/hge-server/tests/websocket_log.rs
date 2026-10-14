@@ -165,7 +165,7 @@ async fn websocket_log() {
     recv(&mut socket, "error").await;
     send(&mut socket, json!({"type": "connection_init", "payload": {"headers": {"x-hasura-admin-secret": SECRET, "x-request-id": "rid-7"}}})).await;
     recv(&mut socket, "connection_ack").await;
-    send(&mut socket, json!({"type": "start", "id": "1", "payload": {"query": "query Q { __typename }", "operationName": "Q", "variables": {"a": 1}}})).await;
+    send(&mut socket, json!({"type": "start", "id": "1", "payload": {"query": "query Q($a: Boolean!) { __typename @include(if: $a) }", "operationName": "Q", "variables": {"a": true}}})).await;
     recv(&mut socket, "complete").await;
     send(
         &mut socket,
@@ -218,7 +218,7 @@ async fn websocket_log() {
             "request_id": "rid-7",
             "operation_name": "Q",
             "operation_type": {"type": "completed"},
-            "query": {"operationName": "Q", "query": "query Q { __typename }"},
+            "query": {"operationName": "Q", "query": "query Q($a: Boolean!) { __typename @include(if: $a) }"},
             "parameterized_query_hash": null,
         })
     );

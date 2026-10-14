@@ -10,8 +10,8 @@ use std::sync::OnceLock;
 
 use async_graphql_parser::Positioned;
 use async_graphql_parser::types::{
-    DocumentOperations, ExecutableDocument, FragmentDefinition, OperationDefinition, OperationType,
-    Selection, SelectionSet,
+    Directive, DocumentOperations, ExecutableDocument, FragmentDefinition, OperationDefinition,
+    OperationType, Selection, SelectionSet,
 };
 use async_graphql_value::{Name, Value as GqlValue};
 use hge_core::{Code, Error};
@@ -93,7 +93,8 @@ pub fn normalize<'s>(
         },
     };
     let multiple_top_level_fields = operation_directives(op)?;
-    let vars = coerce_variables(schema, op, variables)?;
+    let vars = coerce_variables(op, variables)?;
+    check_unexpected_variables(doc, op, variables)?;
     let cx = Context {
         schema,
         fragments: &doc.fragments,
@@ -166,7 +167,6 @@ fn select_operation<'d>(
 pub type Variables = HashMap<String, (TypeRef, Option<Json>, bool)>;
 
 fn coerce_variables(
-    schema: &Schema,
     op: &OperationDefinition,
     provided: &Map<String, Json>,
 ) -> Result<Variables, Error> {
@@ -176,23 +176,8 @@ fn coerce_variables(
         let name = def.name.node.to_string();
         let ty = TypeRef::from_ast(&def.var_type.node);
         let path = format!("$.variableValues.{name}");
-        match schema.get(ty.base()) {
-            Some(t) if t.is_input() => {}
-            Some(_) => {
-                return Err(Error::validation(format!(
-                    "variable '{name}' is declared as '{ty}', but '{}' is not an input type",
-                    ty.base()
-                ))
-                .with_path(path));
-            }
-            None => {
-                return Err(Error::validation(format!(
-                    "unknown type '{}' for variable '{name}'",
-                    ty.base()
-                ))
-                .with_path(path));
-            }
-        }
+        // V2 only type-checks a variable where it is used (against the expected type), so an
+        // unused variable may name an output type or a type the schema doesn't have.
         let value = match provided.get(&name) {
             Some(v) => Some(v.clone()),
             None => match &def.default_value {
@@ -214,6 +199,100 @@ fn coerce_variables(
         out.insert(name, (ty, value, def.default_value.is_some()));
     }
     Ok(out)
+}
+
+/// V2 rejects provided variables the operation doesn't use (syntactically, in its directives
+/// and the fragments it reaches), declared or not, before it parses any field.
+fn check_unexpected_variables(
+    doc: &ExecutableDocument,
+    op: &OperationDefinition,
+    provided: &Map<String, Json>,
+) -> Result<(), Error> {
+    if provided.is_empty() {
+        return Ok(());
+    }
+    let mut used = HashSet::new();
+    let mut fragments = HashSet::new();
+    for d in &op.directives {
+        directive_variables(&d.node, &mut used);
+    }
+    selection_variables(doc, &op.selection_set.node, &mut used, &mut fragments);
+    let mut unexpected: Vec<&str> = provided
+        .keys()
+        .map(String::as_str)
+        .filter(|k| !used.contains(k))
+        .collect();
+    if unexpected.is_empty() {
+        return Ok(());
+    }
+    // V2 lists them from a `HashSet`.
+    hge_core::sort_v2_hash_order(&mut unexpected);
+    Err(Error::validation(format!(
+        "unexpected variables in variableValues: {}",
+        unexpected.join(", ")
+    ))
+    .with_path("$"))
+}
+
+fn selection_variables<'d>(
+    doc: &'d ExecutableDocument,
+    set: &'d SelectionSet,
+    used: &mut HashSet<&'d str>,
+    fragments: &mut HashSet<&'d str>,
+) {
+    for item in &set.items {
+        match &item.node {
+            Selection::Field(f) => {
+                let f = &f.node;
+                for (_, v) in &f.arguments {
+                    value_variables(&v.node, used);
+                }
+                for d in &f.directives {
+                    directive_variables(&d.node, used);
+                }
+                selection_variables(doc, &f.selection_set.node, used, fragments);
+            }
+            Selection::FragmentSpread(spread) => {
+                let spread = &spread.node;
+                for d in &spread.directives {
+                    directive_variables(&d.node, used);
+                }
+                let name = spread.fragment_name.node.as_str();
+                if fragments.insert(name)
+                    && let Some(fragment) = doc.fragments.get(&spread.fragment_name.node)
+                {
+                    for d in &fragment.node.directives {
+                        directive_variables(&d.node, used);
+                    }
+                    selection_variables(doc, &fragment.node.selection_set.node, used, fragments);
+                }
+            }
+            Selection::InlineFragment(inline) => {
+                let inline = &inline.node;
+                for d in &inline.directives {
+                    directive_variables(&d.node, used);
+                }
+                selection_variables(doc, &inline.selection_set.node, used, fragments);
+            }
+        }
+    }
+}
+
+fn directive_variables<'d>(d: &'d Directive, used: &mut HashSet<&'d str>) {
+    for (_, v) in &d.arguments {
+        value_variables(&v.node, used);
+    }
+}
+
+fn value_variables<'d>(v: &'d GqlValue, used: &mut HashSet<&'d str>) {
+    match v {
+        GqlValue::Variable(name) => {
+            used.insert(name.as_str());
+        }
+        GqlValue::List(items) => items.iter().for_each(|i| value_variables(i, used)),
+        GqlValue::Object(fields) => fields.values().for_each(|i| value_variables(i, used)),
+        _ => {}
+    }
 }
 
 /// Deepest selection set nesting accepted (fragments can nest deeper than the parser
@@ -554,7 +633,7 @@ impl<'s, 'd> Context<'s, 'd> {
                 ))
                 .with_path(path.to_owned())
             })?;
-            let value = self.resolve(&arg.node, &TypeRef::nn("Boolean"), path)?;
+            let value = self.resolve(&arg.node, &TypeRef::nn("Boolean"), false, path)?;
             let cond = value.and_then(|v| v.as_bool()).unwrap_or(false);
             if cond == skip {
                 return Ok(false);
@@ -588,7 +667,7 @@ impl<'s, 'd> Context<'s, 'd> {
                 .find(|(n, _)| n.node.as_str() == arg_name)
                 .map(|(_, v)| &v.node);
             let value = match given {
-                Some(v) => self.resolve(v, &arg_def.ty, &arg_path)?,
+                Some(v) => self.resolve(v, &arg_def.ty, arg_def.column, &arg_path)?,
                 None => None,
             };
             match value {
@@ -608,8 +687,14 @@ impl<'s, 'd> Context<'s, 'd> {
     }
 
     /// Coerce a literal (possibly containing variables) to `ty`. `None` = absent (an
-    /// unprovided variable).
-    fn resolve(&self, value: &GqlValue, ty: &TypeRef, path: &str) -> Result<Option<Json>, Error> {
+    /// unprovided variable). `column`: the position is column-typed ([`InputValueDef::column`]).
+    fn resolve(
+        &self,
+        value: &GqlValue,
+        ty: &TypeRef,
+        column: bool,
+        path: &str,
+    ) -> Result<Option<Json>, Error> {
         match value {
             GqlValue::Variable(name) => {
                 let (var_ty, var_value, has_default) =
@@ -634,7 +719,7 @@ impl<'s, 'd> Context<'s, 'd> {
                 }
                 var_value
                     .as_ref()
-                    .map(|v| coerce_json(self.schema, v, var_ty, path))
+                    .map(|v| coerce_json(self.schema, v, var_ty, column, path))
                     .transpose()
             }
             GqlValue::Null => {
@@ -649,7 +734,7 @@ impl<'s, 'd> Context<'s, 'd> {
                     let mut out = Vec::with_capacity(items.len());
                     for (i, item) in items.iter().enumerate() {
                         let item_path = format!("{path}[{i}]");
-                        match self.resolve(item, inner, &item_path)? {
+                        match self.resolve(item, inner, column, &item_path)? {
                             Some(v) => out.push(v),
                             None if inner.is_non_null() => {
                                 return Err(null_error(inner, &item_path));
@@ -659,22 +744,28 @@ impl<'s, 'd> Context<'s, 'd> {
                     }
                     Ok(Some(Json::Array(out)))
                 }
-                TypeRef::Named(_) => self.resolve_named(value, ty, path).map(Some),
+                TypeRef::Named(_) => self.resolve_named(value, ty, column, path).map(Some),
                 TypeRef::NonNull(_) => unreachable!("nullable() strips NonNull"),
             },
             _ => match ty.nullable() {
                 TypeRef::List(inner) => {
                     // Input coercion: a single value is a list of one.
                     Ok(self
-                        .resolve(value, inner, path)?
+                        .resolve(value, inner, column, path)?
                         .map(|v| Json::Array(vec![v])))
                 }
-                _ => self.resolve_named(value, ty, path).map(Some),
+                _ => self.resolve_named(value, ty, column, path).map(Some),
             },
         }
     }
 
-    fn resolve_named(&self, value: &GqlValue, ty: &TypeRef, path: &str) -> Result<Json, Error> {
+    fn resolve_named(
+        &self,
+        value: &GqlValue,
+        ty: &TypeRef,
+        column: bool,
+        path: &str,
+    ) -> Result<Json, Error> {
         let name = ty.base();
         match self.schema.get(name) {
             Some(TypeDef::InputObject(obj)) => {
@@ -694,7 +785,7 @@ impl<'s, 'd> Context<'s, 'd> {
                     })?;
                     // An unprovided variable inside an input object is null (as in V2):
                     // dropping the field would turn `{id: {_eq: $x}}` into "every row".
-                    match self.resolve(v, &fdef.ty, &field_path)? {
+                    match self.resolve(v, &fdef.ty, fdef.column, &field_path)? {
                         Some(v) => {
                             out.insert(k.to_string(), v);
                         }
@@ -725,9 +816,11 @@ impl<'s, 'd> Context<'s, 'd> {
                 .with_path(path.to_owned())),
             },
             // A float literal is a type mismatch for Int in V2; out-of-range integer literals
-            // and variables get the parse error from `coerce_scalar`.
+            // and variables, and floats for Int columns, get the parse error from
+            // `coerce_scalar`.
             Some(TypeDef::Scalar(_))
-                if matches!(value, GqlValue::Number(n) if n.is_f64())
+                if !column
+                    && matches!(value, GqlValue::Number(n) if n.is_f64())
                     && scalars::builtin_kind(name) == Some(BuiltinScalar::Int) =>
             {
                 Err(Error::validation(format!(
@@ -744,7 +837,7 @@ impl<'s, 'd> Context<'s, 'd> {
                         Error::validation(format!("unexpected value for type '{name}'"))
                             .with_path(path.to_owned())
                     })?;
-                coerce_scalar(name, json, path)
+                coerce_scalar(name, json, column, path)
             }
             _ => Err(Error::unexpected(format!("'{name}' is not an input type"))),
         }
@@ -837,23 +930,24 @@ pub(crate) fn coerce_json(
     schema: &Schema,
     value: &Json,
     ty: &TypeRef,
+    column: bool,
     path: &str,
 ) -> Result<Json, Error> {
     match (value, ty) {
         (Json::Null, TypeRef::NonNull(_)) => Err(null_error(ty, path)),
         (Json::Null, _) => Ok(Json::Null),
-        (_, TypeRef::NonNull(inner)) => coerce_json(schema, value, inner, path),
+        (_, TypeRef::NonNull(inner)) => coerce_json(schema, value, inner, column, path),
         (Json::Array(items), TypeRef::List(inner)) => items
             .iter()
             .enumerate()
-            .map(|(i, v)| coerce_json(schema, v, inner, &format!("{path}[{i}]")))
+            .map(|(i, v)| coerce_json(schema, v, inner, column, &format!("{path}[{i}]")))
             .collect::<Result<Vec<_>, _>>()
             .map(Json::Array),
-        (_, TypeRef::List(inner)) => {
-            Ok(Json::Array(vec![coerce_json(schema, value, inner, path)?]))
-        }
+        (_, TypeRef::List(inner)) => Ok(Json::Array(vec![coerce_json(
+            schema, value, inner, column, path,
+        )?])),
         (_, TypeRef::Named(name)) => match schema.get(name) {
-            Some(TypeDef::Scalar(_)) => coerce_scalar(name, value.clone(), path),
+            Some(TypeDef::Scalar(_)) => coerce_scalar(name, value.clone(), column, path),
             Some(TypeDef::Enum(e)) => match value {
                 Json::String(s) if e.values.contains_key(s) => Ok(value.clone()),
                 Json::String(v) if crate::tables::is_valid_name(v) => {
@@ -884,7 +978,10 @@ pub(crate) fn coerce_json(
                         Error::validation(format!("field '{k}' not found in type: '{name}'"))
                             .with_path(field_path.clone())
                     })?;
-                    out.insert(k.clone(), coerce_json(schema, v, &fdef.ty, &field_path)?);
+                    out.insert(
+                        k.clone(),
+                        coerce_json(schema, v, &fdef.ty, fdef.column, &field_path)?,
+                    );
                 }
                 check_required_fields(obj, &out, path)?;
                 Ok(Json::Object(out))
@@ -895,7 +992,9 @@ pub(crate) fn coerce_json(
     }
 }
 
-fn coerce_scalar(name: &str, value: Json, path: &str) -> Result<Json, Error> {
+/// `column`: a column-typed position, where V2 (`parsePGValue`) also accepts a string for a
+/// number or boolean and passes it to Postgres as text.
+fn coerce_scalar(name: &str, value: Json, column: bool, path: &str) -> Result<Json, Error> {
     let err = |expected: &str| {
         Error::validation(format!(
             "expected {expected} for type '{name}', but found {}",
@@ -903,7 +1002,17 @@ fn coerce_scalar(name: &str, value: Json, path: &str) -> Result<Json, Error> {
         ))
         .with_path(path.to_owned())
     };
-    match scalars::builtin_kind(name) {
+    let kind = scalars::builtin_kind(name);
+    if column
+        && value.is_string()
+        && matches!(
+            kind,
+            Some(BuiltinScalar::Int | BuiltinScalar::Float | BuiltinScalar::Boolean)
+        )
+    {
+        return Ok(value);
+    }
+    match kind {
         Some(BuiltinScalar::Int) => match &value {
             Json::Number(n) if n.as_i64().is_some_and(|i| i32::try_from(i).is_ok()) => Ok(value),
             Json::Number(n)

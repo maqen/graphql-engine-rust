@@ -16,6 +16,7 @@ fn include_deprecated() -> InputValueDef {
         description: None,
         ty: TypeRef::named("Boolean"),
         default_value: Some("false".to_owned()),
+        column: false,
     }
 }
 
@@ -132,6 +133,7 @@ pub fn standard_directives() -> Vec<DirectiveDef> {
             description: Some("measured in seconds".to_owned()),
             ty: TypeRef::nn("Int"),
             default_value: Some("60".to_owned()),
+            column: false,
         },
     );
     cached_args.insert(
@@ -141,6 +143,7 @@ pub fn standard_directives() -> Vec<DirectiveDef> {
             description: Some("refresh the cache entry".to_owned()),
             ty: TypeRef::nn("Boolean"),
             default_value: Some("false".to_owned()),
+            column: false,
         },
     );
     vec![

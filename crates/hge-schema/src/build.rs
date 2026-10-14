@@ -340,7 +340,7 @@ impl Builder<'_> {
             for col in pk {
                 let col = &table.columns[col];
                 let ty = self.column_value_type(col, false);
-                by_pk = by_pk.arg(InputValueDef::new(col.gql_name.clone(), ty));
+                by_pk = by_pk.arg(InputValueDef::new(col.gql_name.clone(), ty).for_column());
             }
             root.fields.insert(by_pk.name.clone(), by_pk);
         }
@@ -703,7 +703,8 @@ impl Builder<'_> {
                             arg_name.clone(),
                             scalars::column_type_ref(&arg.ty, arg.nullable),
                         )
-                        .describe(description),
+                        .describe(description)
+                        .for_column(),
                     );
                 }
                 self.schema.add(TypeDef::InputObject(InputObjectDef {
@@ -732,7 +733,8 @@ impl Builder<'_> {
                 self.note_scalar(&arg.ty);
                 fields.insert(
                     gql_name.clone(),
-                    InputValueDef::new(gql_name, scalars::column_type_ref(&arg.ty, true)),
+                    InputValueDef::new(gql_name, scalars::column_type_ref(&arg.ty, true))
+                        .for_column(),
                 );
             }
             self.schema.add(TypeDef::InputObject(InputObjectDef {
@@ -761,7 +763,7 @@ impl Builder<'_> {
             self.note_scalar(&arg.ty);
             fields.insert(
                 gql_name.clone(),
-                InputValueDef::new(gql_name, scalars::column_type_ref(&arg.ty, true)),
+                InputValueDef::new(gql_name, scalars::column_type_ref(&arg.ty, true)).for_column(),
             );
         }
         self.schema.add(TypeDef::InputObject(InputObjectDef {
@@ -844,15 +846,15 @@ impl Builder<'_> {
         for t in crate::operators::ltree_scalars(ty) {
             self.note_scalar(&t);
         }
-        fields.push(InputValueDef::new("_eq", value_ty.clone()));
-        fields.push(InputValueDef::new("_gt", value_ty.clone()));
-        fields.push(InputValueDef::new("_gte", value_ty.clone()));
-        fields.push(InputValueDef::new("_in", value_list_ty.clone()));
+        fields.push(InputValueDef::new("_eq", value_ty.clone()).for_column());
+        fields.push(InputValueDef::new("_gt", value_ty.clone()).for_column());
+        fields.push(InputValueDef::new("_gte", value_ty.clone()).for_column());
+        fields.push(InputValueDef::new("_in", value_list_ty.clone()).for_column());
         fields.push(InputValueDef::new("_is_null", TypeRef::named("Boolean")));
-        fields.push(InputValueDef::new("_lt", value_ty.clone()));
-        fields.push(InputValueDef::new("_lte", value_ty.clone()));
-        fields.push(InputValueDef::new("_neq", value_ty.clone()));
-        fields.push(InputValueDef::new("_nin", value_list_ty));
+        fields.push(InputValueDef::new("_lt", value_ty.clone()).for_column());
+        fields.push(InputValueDef::new("_lte", value_ty.clone()).for_column());
+        fields.push(InputValueDef::new("_neq", value_ty.clone()).for_column());
+        fields.push(InputValueDef::new("_nin", value_list_ty).for_column());
 
         if scalars::is_string_type(ty) {
             let ops = [
@@ -898,11 +900,13 @@ impl Builder<'_> {
         if ty.is_array() {
             fields.push(
                 InputValueDef::new("_contained_in", value_ty.clone())
-                    .describe("is the array contained in the given array value"),
+                    .describe("is the array contained in the given array value")
+                    .for_column(),
             );
             fields.push(
                 InputValueDef::new("_contains", value_ty.clone())
-                    .describe("does the array contain the given value"),
+                    .describe("does the array contain the given value")
+                    .for_column(),
             );
         }
         if scalars::is_jsonb(ty) {

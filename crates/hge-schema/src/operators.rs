@@ -126,13 +126,11 @@ fn ensure_d_within_input(schema: &mut Schema, ty: &ColumnType) -> String {
         let mut add = |f: InputValueDef| {
             fields.insert(f.name.clone(), f);
         };
-        add(InputValueDef::new("distance", TypeRef::nn("Float")));
-        add(InputValueDef::new(
-            "from",
-            scalars::column_type_ref(ty, false),
-        ));
+        // V2 parses all three as column values (float8, the column's type, boolean).
+        add(InputValueDef::new("distance", TypeRef::nn("Float")).for_column());
+        add(InputValueDef::new("from", scalars::column_type_ref(ty, false)).for_column());
         if geography {
-            let mut f = InputValueDef::new("use_spheroid", TypeRef::named("Boolean"));
+            let mut f = InputValueDef::new("use_spheroid", TypeRef::named("Boolean")).for_column();
             f.default_value = Some("true".to_owned());
             add(f);
         }
