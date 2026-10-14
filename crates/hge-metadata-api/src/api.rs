@@ -283,10 +283,39 @@ fn wrap_parse_error(mut e: ApiError, command: &str) -> ApiError {
     e
 }
 
+/// Undoes [`wrap_parse_error`] for `/v1/query`, which decodes legacy commands' arguments
+/// itself and reports the bare message. Matches the wrapper's text: keep the two in step
+/// (`parse_error_round_trip`).
+pub fn unwrap_parse_error(mut e: ApiError) -> ApiError {
+    const MARKER: &str = "Internal error message: ";
+    if e.error.code == Code::ParseFailed
+        && e.error.message.starts_with("Error when parsing command")
+        && let Some(at) = e.error.message.find(MARKER)
+    {
+        e.error.message = e.error.message[at + MARKER.len()..].to_owned();
+    }
+    e
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn parse_error_round_trip() {
+        let bare = || parse_failed("$.args", "only alphanumeric");
+        let wrapped = wrap_parse_error(bare(), "create_event_trigger");
+        assert_ne!(wrapped.error.message, bare().error.message);
+        assert_eq!(
+            unwrap_parse_error(wrapped).error.message,
+            "only alphanumeric"
+        );
+        assert_eq!(
+            unwrap_parse_error(bare()).error.message,
+            "only alphanumeric"
+        );
+    }
 
     #[test]
     fn envelope_rules() {
