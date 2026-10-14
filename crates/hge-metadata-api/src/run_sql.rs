@@ -211,15 +211,27 @@ pub async fn run_plain<R: Runtime>(rt: &R, session: &Session, args: &RunSql) -> 
         })?;
     let sql = &args.sql;
     if args.no_transaction {
-        let mut result = json!({ "result_type": "CommandOk", "result": null });
-        for stmt in split_statements(sql) {
-            let msgs = client
-                .simple_query(&stmt)
+        // V2 runs read-only no-transaction SQL unguarded, which lets writes past read-only
+        // mode; there the connection refuses them for the duration of the request.
+        let guard = args.read_only && rt.settings().read_only;
+        if guard {
+            const SET: &str = "SET default_transaction_read_only = on";
+            client
+                .simple_query(SET)
                 .await
-                .map_err(|e| sql_error(e, &stmt))?;
-            result = result_json(&msgs);
+                .map_err(|e| sql_error(e, SET))?;
         }
-        return Ok(result);
+        let result = run_statements(&client, sql).await;
+        if guard
+            && client
+                .simple_query("RESET default_transaction_read_only")
+                .await
+                .is_err()
+        {
+            // Never hand a read-only connection back to the pool.
+            drop(deadpool_postgres::Object::take(client));
+        }
+        return result;
     }
     let mut client = client;
     let tx = client
@@ -233,6 +245,19 @@ pub async fn run_plain<R: Runtime>(rt: &R, session: &Session, args: &RunSql) -> 
     let msgs = tx.simple_query(sql).await.map_err(|e| sql_error(e, sql))?;
     tx.commit().await.map_err(|e| sql_error(e, "COMMIT"))?;
     Ok(result_json(&msgs))
+}
+
+/// `no_transaction`: each statement on its own; the result is the last one's.
+async fn run_statements(client: &tokio_postgres::Client, sql: &str) -> ApiResult<Value> {
+    let mut result = json!({ "result_type": "CommandOk", "result": null });
+    for stmt in split_statements(sql) {
+        let msgs = client
+            .simple_query(&stmt)
+            .await
+            .map_err(|e| sql_error(e, &stmt))?;
+        result = result_json(&msgs);
+    }
+    Ok(result)
 }
 
 /// Like V2, record the caller's session and a trace context for event triggers fired by the

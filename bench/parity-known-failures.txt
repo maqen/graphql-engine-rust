@@ -1,4 +1,3 @@
 # Cases the Rust engine is known not to match yet (rust-engine-parity CI job).
 # The job fails when a case NOT listed here fails (a regression) or when a listed
 # case starts passing: delete its line in the PR that fixes it.
-18_introspection   # __schema.types order and an extra ID scalar (227 vs 225 types)
