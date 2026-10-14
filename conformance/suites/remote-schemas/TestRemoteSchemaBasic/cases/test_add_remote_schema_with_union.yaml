@@ -1,0 +1,92 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestRemoteSchemaBasic
+  method: test_add_remote_schema_with_union
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: add_remote_schema
+    args:
+      name: simple 1
+      comment: testing simple 1
+      definition:
+        url: '{{helper:graphql_server}}/hello-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: null
+        customization: null
+  response:
+    message: success
+- url: /v1/query
+  status: 200
+  query:
+    type: add_remote_schema
+    args:
+      name: my remote union one
+      comment: testing my remote union one
+      definition:
+        url: '{{helper:graphql_server}}/union-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: null
+        customization: null
+  response:
+    message: success
+- description: Query from the remote schema with union
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query unionSearch {
+        hero3: search (episode: 3) {
+          __typename
+          ... on Droid {
+          id
+          }
+        }
+
+        hero2: search (episode: 2) {
+          __typename
+          ... on Human {
+            id
+            name
+            homePlanet
+          }
+        }
+
+        hero1: search (episode: 1) {
+          __typename
+          ... on Droid {
+            id
+            name
+            primaryFunction
+          }
+          ... on Human {
+            id
+            homePlanet
+          }
+        }
+      }
+  response:
+    data:
+      hero3: null
+      hero2:
+        __typename: Human
+        id: '7'
+        name: Luke Skywalker
+        homePlanet: Tatooine
+      hero1:
+        __typename: Droid
+        id: '6'
+        name: R2-D2
+        primaryFunction: Astromech
+- url: /v1/query
+  status: 200
+  query:
+    type: remove_remote_schema
+    args:
+      name: my remote union one
+  response:
+    message: success

@@ -1621,59 +1621,129 @@
   skipped: needs fixture actions_fixture
 - file: test_schema_stitching.py
   class: TestAddRemoteSchemaCompareRootQueryFields
-  skipped: no database state fixture
+  area: remote-schemas
+  tests:
+    test_schema_check_arg_default_values_and_field_and_arg_types: ported by hand
 - file: test_schema_stitching.py
   class: TestAddRemoteSchemaTbls
-  skipped: no database state fixture
+  area: remote-schemas
+  tests:
+    test_add_conflicting_table: ported by hand
+    test_add_schema: ported by hand
+    test_add_schema_conflicts_with_tables: ported by hand
+    test_add_schema_duplicate_name: ported by hand
+    test_add_schema_same_type_containing_same_scalar: ported by hand
+    test_add_second_remote_schema: ported by hand
+    test_bulk_track_tables_conflicting_with_remote_schema: ported by hand
+    test_introspection: ported by hand
+    test_remote_mutation: ported by hand
+    test_remote_query: ported by hand
+    test_remote_schema_forward_headers: ported by hand
 - file: test_schema_stitching.py
   class: TestRemoteSchemaBasic
-  skipped: no database state fixture
+  area: remote-schemas
+  tests:
+    test_add_remote_schema_err_unknown_interface: ported by hand
+    test_add_remote_schema_with_interface_err_empty_fields_list: ported by hand
+    test_add_remote_schema_with_interface_err_extra_non_null_arg: ported by hand
+    test_add_remote_schema_with_interface_err_missing_arg: ported by hand
+    test_add_remote_schema_with_interface_err_missing_field: ported by hand
+    test_add_remote_schema_with_interface_err_wrong_arg_type: ported by hand
+    test_add_remote_schema_with_interface_err_wrong_field_type: ported by hand
+    test_add_remote_schema_with_interfaces: ported by hand
+    test_add_remote_schema_with_union: ported by hand
+    test_add_remote_schema_with_union_err_no_member_types: ported by hand
+    test_add_remote_schema_with_union_err_subtype_iface: ported by hand
+    test_add_remote_schema_with_union_err_unkown_types: ported by hand
+    test_add_remote_schema_with_union_err_wrapped_type: ported by hand
+    test_add_schema: ported by hand
+    test_add_schema_conflicts: ported by hand
+    test_add_second_remote_schema: ported by hand
+    test_bulk_remove_add_remote_schema: ported by hand
+    test_introspection: ported by hand
+    test_introspection_as_user: ported by hand
+    test_json_scalar_dict: ported by hand
+    test_reload_remote_schema: ported by hand
+    test_remote_query: ported by hand
+    test_remote_subscription: ported by hand
+    test_remove_schema_error: ported by hand
+    test_update_schema_with_customization_change: ported by hand
+    test_update_schema_with_customization_change_invalid: ported by hand
+    test_update_schema_with_no_url_change: ported by hand
+    test_update_schema_with_url_change: ported by hand
 - file: test_schema_stitching.py
   class: TestRemoteSchemaBasicExtensions
-  skipped: no database state fixture
+  area: remote-schemas
+  tests:
+    test_remote_query: ported by hand
 - file: test_schema_stitching.py
   class: TestRemoteSchemaIntrospectionHeaders
-  skipped: no database state fixture
+  area: remote-schemas
+  tests:
+    test_introspection_and_runtime_headers: ported by hand
 - file: test_schema_stitching.py
   class: TestRemoteSchemaQueriesOverWebsocket
-  skipped: no database state fixture
+  area: remote-schemas
+  tests:
+    test_remote_mutation: ported by hand
+    test_remote_query: ported by hand
+    test_remote_query_error: ported by hand
 - file: test_schema_stitching.py
   class: TestRemoteSchemaReload
-  skipped: no database state fixture
+  skipped: stops and restarts the remote GraphQL server mid-test
 - file: test_schema_stitching.py
   class: TestRemoteSchemaRequestPayload
-  skipped: no database state fixture
+  area: remote-schemas
+  tests:
+    test_remote_schema_operation_name_in_response: ported by hand
 - file: test_schema_stitching.py
   class: TestRemoteSchemaResponseHeaders
-  skipped: no database state fixture
+  area: remote-schemas
+  tests:
+    test_response_headers_from_remote: ported by hand
 - file: test_schema_stitching.py
   class: TestRemoteSchemaTimeout
-  skipped: no database state fixture
+  area: remote-schemas
+  tests:
+    test_remote_query_timeout: ported by hand
 - file: test_schema_stitching.py
   class: TestRemoteSchemaTypePrefix
-  skipped: no database state fixture
+  area: remote-schemas
+  tests:
+    test_add_schema: ported by hand
+    test_introspection: ported by hand
 - file: test_schema_stitching.py
   class: TestValidateRemoteSchemaCustomization
-  skipped: no database state fixture
+  area: remote-schemas
+  tests:
+    test_remote_schema_interface_field_validation: ported by hand
 - file: test_schema_stitching.py
   class: TestValidateRemoteSchemaCustomizeAllTheThings
-  skipped: no database state fixture
+  area: remote-schemas
+  tests:
+    test_remote_schema_customize_all_the_things: ported by hand
 - file: test_schema_stitching.py
   class: TestValidateRemoteSchemaFieldPrefixQuery
-  skipped: no database state fixture
+  area: remote-schemas
+  tests:
+    test_remote_schema_field_prefix_validation: ported by hand
 - file: test_schema_stitching.py
   class: TestValidateRemoteSchemaNamespaceQuery
-  skipped: no database state fixture
+  area: remote-schemas
+  tests:
+    test_multiple_remote_schema_with_namespace: ported by hand
+    test_remote_schema_namespace_validation: ported by hand
 - file: test_schema_stitching.py
   class: TestValidateRemoteSchemaQuery
   area: remote-schemas
-  tests: {}
-  skipped: 'setup failed upstream: /v1/query {"type": "bulk", "args": [{"type": "add_remote_schema", "args":
-    {"name": "user", "definition": {"url": "{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/user-graphql"}}}, {"type":
-    "add_remote_schema", "args": {"name": "character-iface", "definition": {"url": "{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/character-i'
+  tests:
+    test_remote_schema_argument_validation: ported by hand
+    test_remote_schema_field_validation: ported by hand
 - file: test_schema_stitching.py
   class: TestValidateRemoteSchemaTypePrefixQuery
-  skipped: no database state fixture
+  area: remote-schemas
+  tests:
+    test_remote_schema_type_prefix_validation: ported by hand
 - file: test_subscriptions.py
   class: TestStreamingSubscription
   area: subscriptions

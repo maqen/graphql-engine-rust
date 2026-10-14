@@ -1,0 +1,104 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestValidateRemoteSchemaFieldPrefixQuery
+  method: test_remote_schema_field_prefix_validation
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: add_remote_schema
+    args:
+      name: character-foo
+      comment: testing character-foo
+      definition:
+        url: '{{helper:graphql_server}}/character-iface-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: null
+        customization:
+          field_names:
+          - parent_type: Character
+            prefix: foo_
+          - parent_type: Human
+            prefix: foo_
+          - parent_type: Droid
+            prefix: foo_
+  response:
+    message: success
+- description: query with prefix field name in inline fragment
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      {
+        hero(episode: 4) {
+          foo_id
+          foo_name
+          ... on Droid {
+            foo_id
+            foo_name
+            foo_primaryFunction
+          }
+        }
+      }
+  response:
+    data:
+      hero:
+        foo_id: '1'
+        foo_name: R2-D2
+        foo_primaryFunction: Astromech
+- description: query with prefix field name and non-existing (renamed) field
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      {
+        hero(episode: 4) {
+          id
+        }
+      }
+  response:
+    errors:
+    - message: 'field ''id'' not found in type: ''Human'''
+      extensions:
+        path: $.selectionSet.hero.selectionSet.id
+        code: validation-failed
+- description: query aliases
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      {
+        hero(episode: 4) {
+          name: foo_id
+          id: foo_name
+          ... on Droid {
+            foo_name: foo_primaryFunction
+          }
+        }
+      }
+  response:
+    data:
+      hero:
+        name: '1'
+        id: R2-D2
+        foo_name: Astromech
+- description: query with __typename (__typename should _not_ be affected by field prefix/suffix customization)
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      {
+        hero(episode: 4) {
+          foo_id
+          foo_name
+          __typename
+        }
+      }
+  response:
+    data:
+      hero:
+        foo_id: '1'
+        foo_name: R2-D2
+        __typename: Droid

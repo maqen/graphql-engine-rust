@@ -79,7 +79,14 @@ fn response_diff(expected: &Value, actual: &Value, path: &str) -> Option<String>
     })
 }
 
+/// An expected value that matches anything: for parts of a response that upstream does not
+/// check because Hasura does not produce them deterministically.
+pub const ANY: &str = "{{any}}";
+
 fn value_diff(expected: &Value, actual: &Value, path: &str, ordered: bool) -> Option<String> {
+    if expected == ANY {
+        return None;
+    }
     match (expected, actual) {
         (Value::Object(e), Value::Object(a)) => {
             if ordered {
@@ -226,6 +233,22 @@ mod tests {
         assert!(ws_message_diff(&e, &a).is_none());
         let a = json!({"type": "connection_error", "payload": {"message": "parse error"}});
         assert!(ws_message_diff(&e, &a).is_some());
+    }
+
+    #[test]
+    fn any_matches_every_value() {
+        let e = json!({"code": "unexpected", "internal": ANY});
+        assert!(
+            diff(
+                &e,
+                &json!({"code": "unexpected", "internal": [{"a": 1}]}),
+                false
+            )
+            .is_none()
+        );
+        assert!(diff(&e, &json!({"code": "other", "internal": 1}), false).is_some());
+        // The key itself must still be there.
+        assert!(diff(&e, &json!({"code": "unexpected"}), false).is_some());
     }
 
     #[test]

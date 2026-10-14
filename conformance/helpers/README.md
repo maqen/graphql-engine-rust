@@ -6,3 +6,5 @@ Helper servers for the conformance suite, vendored from hasura/graphql-engine
 - `cookie_auth.py`: the cookie auth webhook of `test_auth_webhook_cookie.py`
   (`auth_webhook_server.py`), echoing `response-set-cookie*` request headers as Set-Cookie.
 - `query_echo.py`: the POST-mode webhook of `test_webhook_request_context.py`.
+- `graphql_server.py` (with `webserver.py`): upstream's remote GraphQL server, without TLS.
+  Needs `pip install -r requirements.txt` (graphene 2).

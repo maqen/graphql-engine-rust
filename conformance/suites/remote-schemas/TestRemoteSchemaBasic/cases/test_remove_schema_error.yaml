@@ -1,0 +1,31 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestRemoteSchemaBasic
+  method: test_remove_schema_error
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: add_remote_schema
+    args:
+      name: simple 1
+      comment: testing simple 1
+      definition:
+        url: '{{helper:graphql_server}}/hello-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: null
+        customization: null
+  response:
+    message: success
+- url: /v1/query
+  status: 400
+  query:
+    type: remove_remote_schema
+    args:
+      name: random name
+  response:
+    error: no such remote schema
+    path: $.args
+    code: not-exists

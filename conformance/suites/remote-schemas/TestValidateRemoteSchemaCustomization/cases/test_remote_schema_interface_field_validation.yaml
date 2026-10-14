@@ -1,0 +1,79 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestValidateRemoteSchemaCustomization
+  method: test_remote_schema_interface_field_validation
+  by_hand: true
+steps:
+- description: Schema customization with field mapping inconsistency between interface and object type
+  url: /v1/metadata
+  status: 400
+  query:
+    type: add_remote_schema
+    args:
+      name: character-foo
+      definition:
+        url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/character-iface-graphql'
+        customization:
+          field_names:
+          - parent_type: Droid
+            mapping:
+              primaryFunction: name
+              name: primaryFunction
+  response:
+    error: 'Remote schema customization inconsistency: field name mapping for field "name" of interface "Character" is inconsistent with mapping for type "Droid". Interface field name maps to "name". Type field name maps to "primaryFunction".'
+    path: $.args
+    code: remote-schema-error
+- description: Schema customization with two types mapping to same name
+  url: /v1/metadata
+  status: 400
+  query:
+    type: add_remote_schema
+    args:
+      name: character-foo
+      definition:
+        url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/character-iface-graphql'
+        customization:
+          type_names:
+            mapping:
+              Droid: Foo
+              Human: Foo
+  response:
+    error: 'Type name mappings are not distinct; the following types appear more than once: "Foo"'
+    path: $.args
+    code: remote-schema-error
+- description: Schema customization with two fields mapping to same name
+  url: /v1/metadata
+  status: 400
+  query:
+    type: add_remote_schema
+    args:
+      name: character-foo
+      definition:
+        url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/character-iface-graphql'
+        customization:
+          field_names:
+          - parent_type: Droid
+            mapping:
+              primaryFunction: name
+  response:
+    error: 'Field name mappings for object type "Droid" are not distinct; the following fields appear more than once: "name"'
+    path: $.args
+    code: remote-schema-error
+- description: Attempt to customize __typename field
+  url: /v1/metadata
+  status: 400
+  query:
+    type: add_remote_schema
+    args:
+      name: character-foo
+      definition:
+        url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/character-iface-graphql'
+        customization:
+          field_names:
+          - parent_type: Droid
+            mapping:
+              __typename: my_typename
+  response:
+    error: attempt to customize reserved field name "__typename"
+    path: $.args
+    code: invalid-params

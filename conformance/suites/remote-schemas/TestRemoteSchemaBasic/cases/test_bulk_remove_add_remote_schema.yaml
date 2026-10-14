@@ -1,0 +1,39 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestRemoteSchemaBasic
+  method: test_bulk_remove_add_remote_schema
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: add_remote_schema
+    args:
+      name: simple 1
+      comment: testing simple 1
+      definition:
+        url: '{{helper:graphql_server}}/hello-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: null
+        customization: null
+  response:
+    message: success
+- url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: remove_remote_schema
+      args:
+        name: simple 1
+    - type: add_remote_schema
+      args:
+        name: simple 2
+        comment: testing
+        definition:
+          url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/hello-graphql'
+          forward_client_headers: false
+  response:
+  - message: success
+  - message: success

@@ -1,0 +1,10 @@
+description: Hand-ported from hasura/graphql-engine server/tests-py/test_schema_stitching.py::TestRemoteSchemaTypePrefix
+upstream:
+  file: test_schema_stitching.py
+  class: TestRemoteSchemaTypePrefix
+  dir: queries/remote_schemas
+env:
+  REMOTE_SCHEMAS_WEBHOOK_DOMAIN: '{{helper:graphql_server}}'
+isolation: database
+helpers:
+- graphql_server

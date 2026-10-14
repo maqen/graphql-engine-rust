@@ -1,0 +1,63 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestAddRemoteSchemaTbls
+  method: test_remote_mutation
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: run_sql
+      args:
+        sql: |
+          CREATE TABLE hello (
+            id SERIAL PRIMARY KEY,
+            code TEXT,
+            name TEXT
+          );
+          CREATE TABLE authors (
+            id SERIAL PRIMARY KEY,
+            name TEXT
+          );
+    - type: track_table
+      args:
+        schema: public
+        name: hello
+    - type: track_table
+      args:
+        schema: public
+        name: authors
+    - type: add_remote_schema
+      args:
+        name: simple2-graphql
+        comment: testing
+        definition:
+          url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/user-graphql'
+          forward_client_headers: false
+  response:
+  - result_type: CommandOk
+    result: null
+  - message: success
+  - message: success
+  - message: success
+- description: Simple2 GraphQL mutation
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      mutation {
+        createUser(id: 123, username: "foobar") {
+          user {
+            id
+            username
+          }
+        }
+      }
+  response:
+    data:
+      createUser:
+        user:
+          id: 123
+          username: foobar

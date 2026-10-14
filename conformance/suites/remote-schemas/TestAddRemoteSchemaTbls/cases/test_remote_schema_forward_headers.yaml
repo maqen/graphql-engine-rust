@@ -1,0 +1,87 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestAddRemoteSchemaTbls
+  method: test_remote_schema_forward_headers
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: run_sql
+      args:
+        sql: |
+          CREATE TABLE hello (
+            id SERIAL PRIMARY KEY,
+            code TEXT,
+            name TEXT
+          );
+          CREATE TABLE authors (
+            id SERIAL PRIMARY KEY,
+            name TEXT
+          );
+    - type: track_table
+      args:
+        schema: public
+        name: hello
+    - type: track_table
+      args:
+        schema: public
+        name: authors
+    - type: add_remote_schema
+      args:
+        name: simple2-graphql
+        comment: testing
+        definition:
+          url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/user-graphql'
+          forward_client_headers: false
+  response:
+  - result_type: CommandOk
+    result: null
+  - message: success
+  - message: success
+  - message: success
+- url: /v1/query
+  status: 200
+  query:
+    type: add_remote_schema
+    args:
+      name: header-graphql
+      comment: testing header-graphql
+      definition:
+        url: '{{helper:graphql_server}}/header-graphql'
+        headers:
+        - name: x-hasura-test
+          value: abcd
+        forward_client_headers: true
+        timeout_seconds: null
+        customization: null
+  response:
+    message: success
+- url: /v1alpha1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer abcdef
+    x-hasura-role: user
+    x-hasura-test: xyzz
+    x-hasura-user-id: abcd1234
+  query:
+    query: '{ wassup }'
+  response:
+    data: null
+    errors:
+    - locations:
+      - column: 10
+        line: 1
+      message: '''NoneType'' object is not iterable'
+      path:
+      - wassup
+- url: /v1/query
+  status: 200
+  query:
+    type: remove_remote_schema
+    args:
+      name: header-graphql
+  response:
+    message: success

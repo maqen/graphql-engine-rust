@@ -1,0 +1,35 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestRemoteSchemaRequestPayload
+  method: test_remote_schema_operation_name_in_response
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: add_remote_schema
+    args:
+      name: echo request
+      comment: testing echo request
+      definition:
+        url: '{{helper:graphql_server}}/hello-echo-request-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: null
+        customization: null
+  response:
+    message: success
+- description: Simple GraphQL query with Operation Name
+  url: /v1/graphql
+  status: 200
+  query:
+    query: |
+      query HelloMe {
+        hello
+      }
+    operationName: HelloMe
+  response:
+    data:
+      hello:
+        operationName: HelloMe
+        query: 'query HelloMe { hello(arg: "world")  }'

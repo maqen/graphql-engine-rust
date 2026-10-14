@@ -1,0 +1,36 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestRemoteSchemaBasic
+  method: test_add_remote_schema_err_unknown_interface
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: add_remote_schema
+    args:
+      name: simple 1
+      comment: testing simple 1
+      definition:
+        url: '{{helper:graphql_server}}/hello-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: null
+        customization: null
+  response:
+    message: success
+- description: Add a remote schema with an object implementing unknown interface
+  url: /v1/query
+  status: 400
+  query:
+    type: add_remote_schema
+    args:
+      name: err-unknown-iface
+      definition:
+        url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/iface-graphql-err-unknown-iface'
+        headers: []
+        forward_client_headers: true
+  response:
+    error: Could not find interface 'UnknownIFace' implemented by Object type 'Droid'
+    path: $.args
+    code: remote-schema-error

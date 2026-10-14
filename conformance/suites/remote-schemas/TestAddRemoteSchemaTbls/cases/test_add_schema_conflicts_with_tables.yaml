@@ -1,0 +1,73 @@
+upstream:
+  file: test_schema_stitching.py
+  class: TestAddRemoteSchemaTbls
+  method: test_add_schema_conflicts_with_tables
+  by_hand: true
+steps:
+- url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: run_sql
+      args:
+        sql: |
+          CREATE TABLE hello (
+            id SERIAL PRIMARY KEY,
+            code TEXT,
+            name TEXT
+          );
+          CREATE TABLE authors (
+            id SERIAL PRIMARY KEY,
+            name TEXT
+          );
+    - type: track_table
+      args:
+        schema: public
+        name: hello
+    - type: track_table
+      args:
+        schema: public
+        name: authors
+    - type: add_remote_schema
+      args:
+        name: simple2-graphql
+        comment: testing
+        definition:
+          url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/user-graphql'
+          forward_client_headers: false
+  response:
+  - result_type: CommandOk
+    result: null
+  - message: success
+  - message: success
+  - message: success
+- url: /v1/query
+  status: 400
+  query:
+    type: add_remote_schema
+    args:
+      name: simple2
+      comment: testing simple2
+      definition:
+        url: '{{helper:graphql_server}}/hello-graphql'
+        headers: null
+        forward_client_headers: false
+        timeout_seconds: null
+        customization: null
+  response:
+    error: 'Inconsistent object: Field cannot be overwritten by remote field ''hello'''
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: testing simple2
+        definition:
+          forward_client_headers: false
+          url: '{{helper:graphql_server}}/hello-graphql'
+        name: simple2
+        permissions: []
+        remote_relationships: []
+      name: remote_schema simple2
+      reason: 'Inconsistent object: Field cannot be overwritten by remote field ''hello'''
+      type: remote_schema
