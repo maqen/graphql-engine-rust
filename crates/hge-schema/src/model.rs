@@ -282,6 +282,10 @@ pub struct InputValueDef {
     pub ty: TypeRef,
     /// Default value as GraphQL source text (as introspection returns it).
     pub default_value: Option<String>,
+    /// A column-typed value (a column, comparison operand or SQL function argument). V2 parses
+    /// these with its column parser, which also accepts strings for numbers and booleans and
+    /// hands them to Postgres as text; other `Int`, `Float` and `Boolean` inputs are strict.
+    pub column: bool,
 }
 
 impl InputValueDef {
@@ -291,7 +295,14 @@ impl InputValueDef {
             description: None,
             ty,
             default_value: None,
+            column: false,
         }
+    }
+
+    /// Mark this as a column-typed value (see [`InputValueDef::column`]).
+    pub fn for_column(mut self) -> Self {
+        self.column = true;
+        self
     }
 
     pub fn describe(mut self, description: impl Into<String>) -> Self {

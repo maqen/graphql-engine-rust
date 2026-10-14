@@ -550,7 +550,7 @@ impl<'s, 'd> Context<'s, 'd> {
                 ))
                 .with_path(path.to_owned())
             })?;
-            let value = self.resolve(&arg.node, &TypeRef::nn("Boolean"), path)?;
+            let value = self.resolve(&arg.node, &TypeRef::nn("Boolean"), false, path)?;
             let cond = value.and_then(|v| v.as_bool()).unwrap_or(false);
             if cond == skip {
                 return Ok(false);
@@ -584,7 +584,7 @@ impl<'s, 'd> Context<'s, 'd> {
                 .find(|(n, _)| n.node.as_str() == arg_name)
                 .map(|(_, v)| &v.node);
             let value = match given {
-                Some(v) => self.resolve(v, &arg_def.ty, &arg_path)?,
+                Some(v) => self.resolve(v, &arg_def.ty, arg_def.column, &arg_path)?,
                 None => None,
             };
             match value {
@@ -604,8 +604,14 @@ impl<'s, 'd> Context<'s, 'd> {
     }
 
     /// Coerce a literal (possibly containing variables) to `ty`. `None` = absent (an
-    /// unprovided variable).
-    fn resolve(&self, value: &GqlValue, ty: &TypeRef, path: &str) -> Result<Option<Json>, Error> {
+    /// unprovided variable). `column`: the position is column-typed ([`InputValueDef::column`]).
+    fn resolve(
+        &self,
+        value: &GqlValue,
+        ty: &TypeRef,
+        column: bool,
+        path: &str,
+    ) -> Result<Option<Json>, Error> {
         match value {
             GqlValue::Variable(name) => {
                 let (var_ty, var_value, has_default) =
@@ -630,7 +636,7 @@ impl<'s, 'd> Context<'s, 'd> {
                 }
                 var_value
                     .as_ref()
-                    .map(|v| coerce_json(self.schema, v, var_ty, path))
+                    .map(|v| coerce_json(self.schema, v, var_ty, column, path))
                     .transpose()
             }
             GqlValue::Null => {
@@ -645,7 +651,7 @@ impl<'s, 'd> Context<'s, 'd> {
                     let mut out = Vec::with_capacity(items.len());
                     for (i, item) in items.iter().enumerate() {
                         let item_path = format!("{path}[{i}]");
-                        match self.resolve(item, inner, &item_path)? {
+                        match self.resolve(item, inner, column, &item_path)? {
                             Some(v) => out.push(v),
                             None if inner.is_non_null() => {
                                 return Err(null_error(inner, &item_path));
@@ -655,22 +661,28 @@ impl<'s, 'd> Context<'s, 'd> {
                     }
                     Ok(Some(Json::Array(out)))
                 }
-                TypeRef::Named(_) => self.resolve_named(value, ty, path).map(Some),
+                TypeRef::Named(_) => self.resolve_named(value, ty, column, path).map(Some),
                 TypeRef::NonNull(_) => unreachable!("nullable() strips NonNull"),
             },
             _ => match ty.nullable() {
                 TypeRef::List(inner) => {
                     // Input coercion: a single value is a list of one.
                     Ok(self
-                        .resolve(value, inner, path)?
+                        .resolve(value, inner, column, path)?
                         .map(|v| Json::Array(vec![v])))
                 }
-                _ => self.resolve_named(value, ty, path).map(Some),
+                _ => self.resolve_named(value, ty, column, path).map(Some),
             },
         }
     }
 
-    fn resolve_named(&self, value: &GqlValue, ty: &TypeRef, path: &str) -> Result<Json, Error> {
+    fn resolve_named(
+        &self,
+        value: &GqlValue,
+        ty: &TypeRef,
+        column: bool,
+        path: &str,
+    ) -> Result<Json, Error> {
         let name = ty.base();
         match self.schema.get(name) {
             Some(TypeDef::InputObject(obj)) => {
@@ -690,7 +702,7 @@ impl<'s, 'd> Context<'s, 'd> {
                     })?;
                     // An unprovided variable inside an input object is null (as in V2):
                     // dropping the field would turn `{id: {_eq: $x}}` into "every row".
-                    match self.resolve(v, &fdef.ty, &field_path)? {
+                    match self.resolve(v, &fdef.ty, fdef.column, &field_path)? {
                         Some(v) => {
                             out.insert(k.to_string(), v);
                         }
@@ -721,9 +733,11 @@ impl<'s, 'd> Context<'s, 'd> {
                 .with_path(path.to_owned())),
             },
             // A float literal is a type mismatch for Int in V2; out-of-range integer literals
-            // and variables get the parse error from `coerce_scalar`.
+            // and variables, and floats for Int columns, get the parse error from
+            // `coerce_scalar`.
             Some(TypeDef::Scalar(_))
-                if matches!(value, GqlValue::Number(n) if n.is_f64())
+                if !column
+                    && matches!(value, GqlValue::Number(n) if n.is_f64())
                     && scalars::builtin_kind(name) == Some(BuiltinScalar::Int) =>
             {
                 Err(Error::validation(format!(
@@ -740,7 +754,7 @@ impl<'s, 'd> Context<'s, 'd> {
                         Error::validation(format!("unexpected value for type '{name}'"))
                             .with_path(path.to_owned())
                     })?;
-                coerce_scalar(name, json, path)
+                coerce_scalar(name, json, column, path)
             }
             _ => Err(Error::unexpected(format!("'{name}' is not an input type"))),
         }
@@ -833,23 +847,24 @@ pub(crate) fn coerce_json(
     schema: &Schema,
     value: &Json,
     ty: &TypeRef,
+    column: bool,
     path: &str,
 ) -> Result<Json, Error> {
     match (value, ty) {
         (Json::Null, TypeRef::NonNull(_)) => Err(null_error(ty, path)),
         (Json::Null, _) => Ok(Json::Null),
-        (_, TypeRef::NonNull(inner)) => coerce_json(schema, value, inner, path),
+        (_, TypeRef::NonNull(inner)) => coerce_json(schema, value, inner, column, path),
         (Json::Array(items), TypeRef::List(inner)) => items
             .iter()
             .enumerate()
-            .map(|(i, v)| coerce_json(schema, v, inner, &format!("{path}[{i}]")))
+            .map(|(i, v)| coerce_json(schema, v, inner, column, &format!("{path}[{i}]")))
             .collect::<Result<Vec<_>, _>>()
             .map(Json::Array),
-        (_, TypeRef::List(inner)) => {
-            Ok(Json::Array(vec![coerce_json(schema, value, inner, path)?]))
-        }
+        (_, TypeRef::List(inner)) => Ok(Json::Array(vec![coerce_json(
+            schema, value, inner, column, path,
+        )?])),
         (_, TypeRef::Named(name)) => match schema.get(name) {
-            Some(TypeDef::Scalar(_)) => coerce_scalar(name, value.clone(), path),
+            Some(TypeDef::Scalar(_)) => coerce_scalar(name, value.clone(), column, path),
             Some(TypeDef::Enum(e)) => match value {
                 Json::String(s) if e.values.contains_key(s) => Ok(value.clone()),
                 Json::String(v) if crate::tables::is_valid_name(v) => {
@@ -880,7 +895,10 @@ pub(crate) fn coerce_json(
                         Error::validation(format!("field '{k}' not found in type: '{name}'"))
                             .with_path(field_path.clone())
                     })?;
-                    out.insert(k.clone(), coerce_json(schema, v, &fdef.ty, &field_path)?);
+                    out.insert(
+                        k.clone(),
+                        coerce_json(schema, v, &fdef.ty, fdef.column, &field_path)?,
+                    );
                 }
                 check_required_fields(obj, &out, path)?;
                 Ok(Json::Object(out))
@@ -891,7 +909,9 @@ pub(crate) fn coerce_json(
     }
 }
 
-fn coerce_scalar(name: &str, value: Json, path: &str) -> Result<Json, Error> {
+/// `column`: a column-typed position, where V2 (`parsePGValue`) also accepts a string for a
+/// number or boolean and passes it to Postgres as text.
+fn coerce_scalar(name: &str, value: Json, column: bool, path: &str) -> Result<Json, Error> {
     let err = |expected: &str| {
         Error::validation(format!(
             "expected {expected} for type '{name}', but found {}",
@@ -899,7 +919,17 @@ fn coerce_scalar(name: &str, value: Json, path: &str) -> Result<Json, Error> {
         ))
         .with_path(path.to_owned())
     };
-    match scalars::builtin_kind(name) {
+    let kind = scalars::builtin_kind(name);
+    if column
+        && value.is_string()
+        && matches!(
+            kind,
+            Some(BuiltinScalar::Int | BuiltinScalar::Float | BuiltinScalar::Boolean)
+        )
+    {
+        return Ok(value);
+    }
+    match kind {
         Some(BuiltinScalar::Int) => match &value {
             Json::Number(n) if n.as_i64().is_some_and(|i| i32::try_from(i).is_ok()) => Ok(value),
             Json::Number(n)
