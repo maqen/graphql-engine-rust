@@ -134,7 +134,7 @@ fn err(path: &str, msg: impl std::fmt::Display) -> String {
     format!("Error in {path}: {msg}")
 }
 
-fn kind_of(v: &Json) -> &'static str {
+pub(super) fn kind_of(v: &Json) -> &'static str {
     match v {
         Json::Null => "Null",
         Json::Bool(_) => "Boolean",

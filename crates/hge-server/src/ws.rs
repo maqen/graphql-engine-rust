@@ -1076,6 +1076,12 @@ pub(crate) fn subscription_plan(op: &hge_ir::Operation) -> Result<Plan<'_>, Erro
     for (alias, rf) in &op.root_fields {
         match rf {
             RootField::Database(db) => {
+                if db.query.has_remote_joins() {
+                    return Err(Error::new(
+                        Code::NotSupported,
+                        "Remote relationships are not allowed in subscriptions",
+                    ));
+                }
                 sources.push(&*db.source);
                 layout.push(alias.clone());
                 fields.push(&db.query);

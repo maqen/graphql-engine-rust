@@ -24,7 +24,7 @@ use crate::tables::{RelKind, RelationshipInfo, TableInfo};
 const NO_QUERIES_MESSAGE: &str = "There are no queries available to the current role. Either there are no sources or remote schemas configured, or the current role doesn't have the required permissions.";
 
 pub fn lower(rs: &RoleSchema, op: &NormalizedOperation<'_>) -> Result<Operation, Error> {
-    let lw = Lowerer::new(rs);
+    let lw = Lowerer::new(rs).with_variables(&op.variables);
     let mut root_fields = Vec::with_capacity(op.fields.len());
     for field in &op.fields {
         let rf = match field.kind {
@@ -116,6 +116,8 @@ pub(crate) struct Lowerer<'a> {
     /// An error V2 only meets when Postgres runs the query (a negative offset), so it comes
     /// after every validation error.
     deferred: std::cell::RefCell<Option<Error>>,
+    /// The operation's variables (remote relationships forward them).
+    pub(crate) variables: Option<&'a crate::normalize::Variables>,
 }
 
 impl<'a> Lowerer<'a> {
@@ -123,7 +125,13 @@ impl<'a> Lowerer<'a> {
         Lowerer {
             rs,
             deferred: Default::default(),
+            variables: None,
         }
+    }
+
+    pub(crate) fn with_variables(mut self, variables: &'a crate::normalize::Variables) -> Self {
+        self.variables = Some(variables);
+        self
     }
 
     fn defer(&self, e: Error) {
@@ -328,6 +336,7 @@ impl Lowerer<'_> {
                             }
                         }
                     }
+                    FieldKind::RemoteRelationship(rel) => self.remote_join(table, rel, sel)?,
                     other => {
                         return Err(Error::unexpected(format!(
                             "unexpected field kind {other:?} in table selection"
@@ -338,6 +347,53 @@ impl Lowerer<'_> {
             out.push((sel.alias.clone(), f));
         }
         Ok(out)
+    }
+
+    /// A remote relationship: the row's join fields, which the executor replaces with what
+    /// the remote returns for them. Join fields ignore column permissions, like V2.
+    fn remote_join(
+        &self,
+        table: &TableInfo,
+        rel: &Arc<crate::remote::RemoteRelationship>,
+        sel: &SelectedField<'_>,
+    ) -> Result<Field, Error> {
+        use crate::remote::relationships::JoinField;
+        if self.variables.is_none() {
+            return Err(Error::new(
+                Code::NotSupported,
+                "remote relationships are not supported below action relationships yet",
+            )
+            .with_path(sel.path.clone()));
+        }
+        let mut lhs = Vec::with_capacity(rel.lhs.len());
+        for (name, field) in &rel.lhs {
+            let f = match field {
+                JoinField::Column(ty) => Field::Column(ColumnField {
+                    column: name.clone(),
+                    ty: ty.clone(),
+                    stringify: false,
+                    json_path: None,
+                    redact: None,
+                }),
+                JoinField::Computed(cf) => {
+                    let ComputedReturn::Scalar(ty) = &cf.returns else {
+                        return Err(Error::unexpected("table computed field as a join field"));
+                    };
+                    Field::ComputedScalar(Box::new(ComputedScalarField {
+                        call: self.computed_call(table, cf, None, &sel.path)?,
+                        ty: ty.clone(),
+                        stringify: false,
+                        json_path: None,
+                        redact: None,
+                    }))
+                }
+            };
+            lhs.push((name.clone(), f));
+        }
+        Ok(Field::RemoteJoin(Box::new(hge_ir::RemoteJoin {
+            lhs,
+            target: crate::remote::join_target(self.variables, rel, sel)?,
+        })))
     }
 
     pub(crate) fn table(

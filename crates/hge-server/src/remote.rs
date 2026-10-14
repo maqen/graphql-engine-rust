@@ -10,7 +10,9 @@ use hge_metadata::Metadata;
 use hge_remote_schema::{
     RemoteError, RemoteResponse, RemoteSchemaClient, RemoteSettings, RequestContext,
 };
-use hge_schema::remote::{RemoteSchemaInfo, RemoteSchemas, check_conflicts, metadata};
+use hge_schema::remote::{
+    RemoteSchemaInfo, RemoteSchemas, check_conflicts, metadata, resolve_table_relationships,
+};
 use hge_schema::{ResolvedActions, SchemaOptions, Tables, build_role_schema};
 use serde_json::{Map, Value as Json};
 
@@ -159,7 +161,9 @@ pub async fn prepare(
         }
     }
     if ordered.is_empty() {
-        return (prepared, RemoteSchemas::default(), inconsistencies);
+        let mut accepted = RemoteSchemas::default();
+        inconsistencies.extend(resolve_table_relationships(tables, &mut accepted));
+        return (prepared, accepted, inconsistencies);
     }
     let admin = build_role_schema(
         tables,
@@ -188,6 +192,8 @@ pub async fn prepare(
     }
     // Report in metadata order.
     inconsistencies.sort_by_key(|o| position(o.name.trim_start_matches("remote_schema ")));
+    let mut accepted = accepted;
+    inconsistencies.extend(resolve_table_relationships(tables, &mut accepted));
     (prepared, accepted, inconsistencies)
 }
 

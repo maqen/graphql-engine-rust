@@ -242,12 +242,282 @@ async fn mock_handler(
     out
 }
 
+// --- the remote of V2's remote relationship tests -----------------------------------------
+//
+// `server/tests-py/remote_schemas/nodejs/index.js` upstream, served at `/messages`.
+
+mod messages {
+    use async_graphql::{
+        EmptyMutation, EmptySubscription, Enum, ID, InputObject, Interface, Object, Schema,
+        SimpleObject, Union,
+    };
+
+    #[derive(Clone)]
+    pub struct Message {
+        id: i32,
+        name: &'static str,
+        msg: &'static str,
+    }
+
+    fn all() -> Vec<Message> {
+        vec![
+            Message {
+                id: 1,
+                name: "alice",
+                msg: "You win!",
+            },
+            Message {
+                id: 2,
+                name: "bob",
+                msg: "You lose!",
+            },
+            Message {
+                id: 3,
+                name: "alice",
+                msg: "Another alice",
+            },
+        ]
+    }
+
+    #[Object]
+    impl Message {
+        async fn id(&self) -> &i32 {
+            &self.id
+        }
+        async fn name(&self) -> String {
+            self.name.to_owned()
+        }
+        async fn msg(&self) -> String {
+            self.msg.to_owned()
+        }
+        #[graphql(name = "errorMsg")]
+        async fn error_msg(&self) -> async_graphql::Result<Option<String>> {
+            Err("intentional-error".into())
+        }
+    }
+
+    #[derive(Interface)]
+    #[graphql(field(name = "id", ty = "&i32"), field(name = "msg", ty = "String"))]
+    pub enum Communication {
+        Message(Message),
+    }
+
+    #[derive(SimpleObject)]
+    pub struct Book {
+        title: Option<String>,
+    }
+
+    #[derive(SimpleObject)]
+    pub struct Author {
+        name: Option<String>,
+    }
+
+    #[derive(Union)]
+    pub enum SearchResult {
+        Book(Book),
+        Author(Author),
+    }
+
+    #[derive(InputObject)]
+    pub struct IntCompareObj {
+        eq: Option<i32>,
+        gt: Option<i32>,
+        lt: Option<i32>,
+    }
+
+    #[derive(InputObject)]
+    pub struct StringCompareObj {
+        eq: Option<String>,
+    }
+
+    #[derive(InputObject)]
+    pub struct MessageWhereInpObj {
+        id: Option<IntCompareObj>,
+        name: Option<StringCompareObj>,
+    }
+
+    #[derive(InputObject)]
+    pub struct IncludeInpObj {
+        id: Option<Vec<Option<i32>>>,
+        name: Option<Vec<Option<String>>>,
+    }
+
+    #[derive(Enum, Copy, Clone, Eq, PartialEq)]
+    #[graphql(rename_items = "UPPERCASE")]
+    pub enum Occupation {
+        Singer,
+        Comedian,
+        Artist,
+    }
+
+    fn filter(
+        mut result: Vec<Message>,
+        whr: Option<MessageWhereInpObj>,
+        includes: Option<IncludeInpObj>,
+    ) -> Vec<Message> {
+        if let Some(w) = whr {
+            if let Some(c) = w.id {
+                result.retain(|m| {
+                    c.eq.is_none_or(|v| m.id == v)
+                        && c.gt.is_none_or(|v| m.id > v)
+                        && c.lt.is_none_or(|v| m.id < v)
+                });
+            }
+            if let Some(c) = w.name {
+                result.retain(|m| c.eq.as_deref().is_none_or(|v| m.name == v));
+            }
+        }
+        if let Some(i) = includes {
+            if let Some(ids) = i.id {
+                result.retain(|m| ids.contains(&Some(m.id)));
+            }
+            if let Some(names) = i.name {
+                result.retain(|m| names.contains(&Some(m.name.to_owned())));
+            }
+        }
+        result
+    }
+
+    pub struct User {
+        user_id: i32,
+    }
+
+    #[Object]
+    impl User {
+        #[graphql(name = "user_id")]
+        async fn user_id(&self) -> Option<i32> {
+            Some(self.user_id)
+        }
+        #[graphql(name = "userMessages")]
+        async fn user_messages(
+            &self,
+            whered: Option<MessageWhereInpObj>,
+            includes: Option<IncludeInpObj>,
+        ) -> Option<Vec<Option<Message>>> {
+            let mine = all().into_iter().filter(|m| m.id == self.user_id).collect();
+            Some(
+                filter(mine, whered, includes)
+                    .into_iter()
+                    .map(Some)
+                    .collect(),
+            )
+        }
+        #[graphql(name = "gimmeText")]
+        async fn gimme_text(&self, text: Option<String>) -> Option<String> {
+            Some(text.unwrap_or_else(|| "no text".to_owned()))
+        }
+    }
+
+    pub struct Query;
+
+    #[Object]
+    impl Query {
+        async fn hello(&self) -> Option<String> {
+            Some("world".to_owned())
+        }
+        async fn messages(
+            &self,
+            #[graphql(name = "where")] whr: Option<MessageWhereInpObj>,
+            includes: Option<IncludeInpObj>,
+        ) -> Option<Vec<Option<Message>>> {
+            Some(filter(all(), whr, includes).into_iter().map(Some).collect())
+        }
+        async fn user(&self, #[graphql(name = "user_id")] user_id: ID) -> Option<User> {
+            Some(User {
+                user_id: user_id.parse().ok()?,
+            })
+        }
+        async fn users(
+            &self,
+            #[graphql(name = "user_ids")] user_ids: Vec<Option<ID>>,
+        ) -> Option<Vec<Option<User>>> {
+            Some(
+                user_ids
+                    .into_iter()
+                    .map(|id| {
+                        Some(User {
+                            user_id: id?.parse().ok()?,
+                        })
+                    })
+                    .collect(),
+            )
+        }
+        async fn message(&self, id: i32) -> Option<Message> {
+            all().into_iter().find(|m| m.id == id)
+        }
+        async fn communications(&self, id: Option<i32>) -> Option<Vec<Option<Communication>>> {
+            Some(
+                all()
+                    .into_iter()
+                    .filter(|m| id.is_none_or(|i| m.id == i))
+                    .map(|m| Some(Communication::Message(m)))
+                    .collect(),
+            )
+        }
+        async fn search(&self, id: i32) -> Option<SearchResult> {
+            match id {
+                1 => Some(SearchResult::Book(Book {
+                    title: Some("Harry Porter and the prisoner of Azkaban".into()),
+                })),
+                2 => Some(SearchResult::Author(Author {
+                    name: Some("J.K. Rowling".into()),
+                })),
+                3 => Some(SearchResult::Book(Book {
+                    title: Some("Harry Porter and the philoshoper's stone".into()),
+                })),
+                _ => None,
+            }
+        }
+        #[graphql(name = "getOccupation")]
+        async fn get_occupation(&self, name: ID) -> async_graphql::Result<Occupation> {
+            match name.as_str() {
+                "alice" => Ok(Occupation::Singer),
+                "bob" => Ok(Occupation::Artist),
+                other => Err(format!("invalid argument - {other}").into()),
+            }
+        }
+        #[graphql(name = "getGrade")]
+        async fn get_grade(&self, marks: i32) -> Option<String> {
+            Some(
+                if marks > 90 {
+                    "S"
+                } else if marks > 80 {
+                    "A"
+                } else {
+                    "B"
+                }
+                .to_owned(),
+            )
+        }
+    }
+
+    pub type MessagesSchema = Schema<Query, EmptyMutation, EmptySubscription>;
+
+    pub fn schema() -> MessagesSchema {
+        Schema::build(Query, EmptyMutation, EmptySubscription).finish()
+    }
+}
+
 async fn start_mock() -> String {
     let schema = Schema::build(Query, Mutation, EmptySubscription).finish();
     let app = axum::Router::new()
         .route("/graphql", post(mock_handler))
         // Not a GraphQL server: introspection fails.
         .route("/broken", post(|| async { "not json" }))
+        .route(
+            "/messages",
+            post({
+                let schema = messages::schema();
+                move |body: String| {
+                    let schema = schema.clone();
+                    async move {
+                        *LAST_REQUEST.lock().unwrap() = Some(body.clone());
+                        let req: GqlRequest = serde_json::from_str(&body).unwrap();
+                        axum::Json(serde_json::to_value(schema.execute(req).await).unwrap())
+                    }
+                }
+            }),
+        )
         .with_state(schema);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

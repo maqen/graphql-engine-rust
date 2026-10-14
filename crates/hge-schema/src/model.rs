@@ -273,6 +273,8 @@ pub enum FieldKind {
     AsyncActionResult(AsyncResultField),
     /// A remote schema root field, a namespace field, or a field of a remote type.
     Remote(crate::remote::RemoteField),
+    /// A table's relationship to a remote schema.
+    RemoteRelationship(Arc<crate::remote::RemoteRelationship>),
 }
 
 #[derive(Debug, Clone)]

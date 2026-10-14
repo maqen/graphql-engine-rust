@@ -540,7 +540,7 @@ impl<'s, 'd> Context<'s, 'd> {
                 }
             };
             let raw_args = match def.kind {
-                FieldKind::Remote(_) => first
+                FieldKind::Remote(_) | FieldKind::RemoteRelationship(_) => first
                     .arguments
                     .iter()
                     .map(|(n, v)| (n.node.to_string(), v.node.clone()))

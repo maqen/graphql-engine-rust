@@ -12,6 +12,7 @@ pub mod migrations;
 mod parse_cache;
 pub mod policies;
 pub mod remote;
+pub mod remote_join;
 mod response_cache;
 pub mod rest;
 pub mod routes;

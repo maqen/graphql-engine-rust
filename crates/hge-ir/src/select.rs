@@ -88,6 +88,8 @@ pub enum Field {
     /// A table computed field: rows of the select's `from` function (called on the current
     /// row), as a JSON array.
     ComputedTable(Box<Select>),
+    /// A remote relationship: the database returns the join fields, the executor the rest.
+    RemoteJoin(Box<crate::RemoteJoin>),
 }
 
 #[derive(Debug, Clone)]

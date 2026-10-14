@@ -432,6 +432,8 @@ impl<'s> Translator<'s> {
                 self.select_many(select, Some((alias, &[])))?;
                 self.b.push(")");
             }
+            // The join fields; the executor replaces them with the remote result.
+            Field::RemoteJoin(join) => self.row_json(&join.lhs, alias)?,
         }
         Ok(())
     }

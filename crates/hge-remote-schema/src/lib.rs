@@ -318,6 +318,39 @@ impl RemoteSchemaClient {
     }
 }
 
+impl RemoteSchemaClient {
+    /// Send the request of a remote join and return the remote's `data` (spec 08 §9.4).
+    /// Unlike root fields, any remote error fails the join, whatever the data.
+    pub async fn call_join(
+        &self,
+        call: &RemoteCall,
+        ctx: &RequestContext<'_>,
+    ) -> Result<Map<String, Json>, Error> {
+        let url = self.url()?;
+        let headers = self.request_headers(ctx)?;
+        let (_, body) = self.post(&url, headers, request_body(call)).await?;
+        let json: Json = serde_json::from_slice(&body).map_err(|e| {
+            Error::unexpected(format!("Remote server response is not valid JSON: {e}"))
+                .with_status(500)
+        })?;
+        let Json::Object(mut obj) = json else {
+            return Err(
+                Error::unexpected("\"data\" field not found in remote response").with_status(500),
+            );
+        };
+        if let Some(errors) = obj.remove("errors").filter(|e| !e.is_null()) {
+            return Err(Error::unexpected("Errors from remote server")
+                .with_internal(json!({ "errors": errors })));
+        }
+        match obj.remove("data") {
+            Some(Json::Object(data)) => Ok(data),
+            _ => Err(
+                Error::unexpected("\"data\" field not found in remote response").with_status(500),
+            ),
+        }
+    }
+}
+
 /// `{"operationName"?, "query", "variables"?}`: absent keys are omitted, never `null`.
 pub fn request_body(call: &RemoteCall) -> String {
     let mut body = Map::new();
