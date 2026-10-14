@@ -20,6 +20,7 @@ use serde_json::{Value, json};
 use tokio_postgres::Client;
 
 use crate::db;
+use crate::helpers::Helpers;
 use crate::suite::{Isolation, Suite};
 
 pub const ADMIN_SECRET: &str = "conformance-admin-secret";
@@ -84,6 +85,7 @@ pub struct Slot {
     http: reqwest::Client,
     engine: Option<Running>,
     admin_secret: Option<String>,
+    helpers: Helpers,
 }
 
 impl Slot {
@@ -98,6 +100,7 @@ impl Slot {
                 .build()?,
             engine: None,
             admin_secret: None,
+            helpers: Helpers::default(),
         })
     }
 
@@ -111,6 +114,38 @@ impl Slot {
 
     pub fn admin_secret(&self) -> Option<&str> {
         self.admin_secret.as_deref()
+    }
+
+    pub fn helpers(&self) -> &Helpers {
+        &self.helpers
+    }
+
+    /// Start the helpers `suite` needs and return it with `{{helper:<name>}}` replaced by their
+    /// URLs, or `None` when it needs none.
+    pub async fn with_helpers(&mut self, suite: &Suite) -> Result<Option<Suite>> {
+        if suite.config.helpers.is_empty() {
+            return Ok(None);
+        }
+        let name = self.name();
+        self.helpers.ensure(&name, &suite.config.helpers).await?;
+        let h = &self.helpers;
+        let listed = &suite.config.helpers;
+        let mut out = suite.clone();
+        for v in out.config.env.values_mut() {
+            *v = h.expand(listed, v).map_err(anyhow::Error::msg)?;
+        }
+        out.metadata = h
+            .expand_value(listed, &suite.metadata)
+            .map_err(anyhow::Error::msg)
+            .context("metadata.json")?;
+        for case in &mut out.cases {
+            let v = h
+                .expand_value(listed, &serde_json::to_value(&case.file)?)
+                .map_err(anyhow::Error::msg)
+                .with_context(|| case.id.clone())?;
+            case.file = serde_json::from_value(v)?;
+        }
+        Ok(Some(out))
     }
 
     fn name(&self) -> String {
@@ -384,6 +419,7 @@ impl Slot {
     /// Stop the engine and drop this slot's databases.
     pub async fn finish(&mut self) {
         self.stop().await;
+        self.helpers.stop_all().await;
         for db in [self.src_db(), self.md_db()] {
             let _ = self
                 .admin

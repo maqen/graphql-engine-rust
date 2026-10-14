@@ -53,6 +53,10 @@ pub struct SuiteConfig {
     /// instead of this directory.
     #[serde(default)]
     pub snapshot: Option<String>,
+    /// Helper servers (`conformance/helpers/<name>.py`) the suite needs; `{{helper:<name>}}`
+    /// in its env, metadata and cases becomes the helper's URL.
+    #[serde(default)]
+    pub helpers: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -329,8 +333,13 @@ pub fn load_suite(root: &Path, area: &str, dir: &Path) -> Result<Suite> {
     let id = format!("{area}/{name}");
     let read_in =
         |d: &Path, f: &str| std::fs::read_to_string(d.join(f)).with_context(|| f.to_owned());
-    let mut config: SuiteConfig =
-        serde_yaml::from_str(&read_in(dir, "suite.yaml")?).context("suite.yaml")?;
+    let suite_yaml = read_in(dir, "suite.yaml")?;
+    let mut config: SuiteConfig = serde_yaml::from_str(&suite_yaml).context("suite.yaml")?;
+    let check_helpers = |text: &str, what: &dyn std::fmt::Display| {
+        crate::helpers::check_uses(text, &config.helpers)
+            .map_err(|e| anyhow::anyhow!("{what}: {e}"))
+    };
+    check_helpers(&suite_yaml, &"suite.yaml")?;
     let snapshot_dir = match &config.snapshot {
         Some(other) => {
             let parts: Vec<&str> = other.split('/').collect();
@@ -348,6 +357,9 @@ pub fn load_suite(root: &Path, area: &str, dir: &Path) -> Result<Suite> {
     let read = |f: &str| {
         read_in(&snapshot_dir, f).with_context(|| format!("in {}", snapshot_dir.display()))
     };
+    for h in &config.helpers {
+        crate::helpers::check_name(h)?;
+    }
     for v in config.env.values_mut() {
         *v = crate::jwt::expand_env(v).map_err(anyhow::Error::msg)?;
     }
@@ -360,13 +372,16 @@ pub fn load_suite(root: &Path, area: &str, dir: &Path) -> Result<Suite> {
     if config.isolation == Isolation::Data && data_sql.is_none() {
         bail!("isolation: data needs a data.sql");
     }
-    let metadata: Value = serde_json::from_str(&read("metadata.json")?).context("metadata.json")?;
+    let metadata_json = read("metadata.json")?;
+    check_helpers(&metadata_json, &"metadata.json")?;
+    let metadata: Value = serde_json::from_str(&metadata_json).context("metadata.json")?;
     let mut cases = vec![];
     for path in sorted_entries(&dir.join("cases"))? {
         if path.extension().is_none_or(|e| e != "yaml") {
             continue;
         }
         let text = std::fs::read_to_string(&path)?;
+        check_helpers(&text, &path.display())?;
         let file: CaseFile =
             serde_yaml::from_str(&text).with_context(|| format!("{}", path.display()))?;
         let stem = path

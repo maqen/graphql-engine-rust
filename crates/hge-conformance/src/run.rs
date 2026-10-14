@@ -43,6 +43,18 @@ pub async fn run_suite(
         passed: outcome.is_ok(),
         detail: outcome.err(),
     };
+    let expanded = match slot.with_helpers(suite).await {
+        Ok(e) => e,
+        Err(e) => {
+            let detail = format!("starting helpers failed: {e:#}");
+            return cases
+                .iter()
+                .map(|c| result(c, Err(detail.clone())))
+                .collect();
+        }
+    };
+    let suite = expanded.as_ref().unwrap_or(suite);
+    let cases: Vec<&Case> = suite.cases.iter().filter(|c| filter(&c.id)).collect();
     if let Err(e) = slot.setup_suite(suite).await {
         let detail = format!("suite setup failed: {e:#}");
         return cases
@@ -92,6 +104,11 @@ async fn run_case(slot: &Slot, case: &Case, record: bool) -> Result<(), String> 
     }
     conns.close_all().await;
     if record && outcome.is_ok() {
+        if !slot.helpers().is_empty() {
+            let v = serde_json::to_value(&file).map_err(|e| e.to_string())?;
+            file = serde_json::from_value(slot.helpers().unexpand_value(&v))
+                .map_err(|e| e.to_string())?;
+        }
         let text = serde_yaml::to_string(&file).map_err(|e| e.to_string())?;
         std::fs::write(&case.path, text).map_err(|e| format!("{}: {e}", case.path.display()))?;
     }

@@ -48,6 +48,7 @@ The `rust` run fails when
 suites/<area>/<suite>/
   suite.yaml       admin_secret: bool, env: {HASURA_GRAPHQL_*: ...}, isolation: none|data|database
                    snapshot: <area>/<suite> takes the next three files from that suite
+                   helpers: [<name>, ...] helper servers the suite needs (below)
   setup.sql        schema and data, applied to a fresh database
   data.sql         isolation: data only: the rows restored before every case
   metadata.json    V2 metadata (export_metadata format); sources on
@@ -81,6 +82,31 @@ metadata).
 Responses compare exactly: status, body and the listed response headers. Object key order
 matters inside GraphQL `data` (it follows the selection set) and nowhere else; floats may
 differ in the last bit (Postgres float aggregates do, on V2 too).
+
+### Helper servers
+
+Upstream's tests-py runs webhooks and GraphQL services next to the engine (auth webhooks,
+remote schemas, action and event handlers). Their scripts are vendored into
+`conformance/helpers/<name>.py`. Each one is started as `python3 <name>.py <port>` (or with
+`$CONFORMANCE_PYTHON`) and serves HTTP on `127.0.0.1:<port>`. A suite lists the ones it needs:
+
+```yaml
+helpers: [webhook]
+env:
+  HASURA_GRAPHQL_AUTH_HOOK: '{{helper:webhook}}/'
+```
+
+`{{helper:<name>}}` in the suite's env, its metadata and its cases becomes the helper's URL
+(`http://127.0.0.1:<port>`), and recording writes the placeholder back in place of the URL. A
+string that is exactly `{{helper_port:<name>}}` becomes the port number, and recording writes it
+for a `port` field holding a helper's port (error details give host and port apart). A suite
+may only use helpers it lists. Hasura runs with `--network host`, so it reaches the
+helpers on 127.0.0.1 too (on Linux; Docker Desktop's host networking differs).
+
+Each slot starts a helper the first time one of its suites needs it and keeps it until the slot
+finishes, so engines are still reused across suites. A helper that died is started again on a
+new port, which restarts the engine too. Helper output is appended to
+`$TMPDIR/hge-conformance-<slot>-<name>.log`, which is kept after the run.
 
 ### JWTs
 
