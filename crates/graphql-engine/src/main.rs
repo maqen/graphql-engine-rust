@@ -200,6 +200,10 @@ struct ServeArgs {
     #[arg(long, env = "HASURA_GRAPHQL_REDACT_ACTION_HANDLER_LOGS", value_parser = parse_bool, default_value = "false")]
     redact_action_handler_logs: bool,
 
+    /// Bearer token required by `/v1/metrics`.
+    #[arg(long, env = "HASURA_GRAPHQL_METRICS_SECRET", hide_env_values = true)]
+    metrics_secret: Option<String>,
+
     /// Async action poll interval in milliseconds (0 disables the processor).
     #[arg(
         long,
@@ -621,6 +625,7 @@ fn serve_config(cli: &Cli, args: &ServeArgs) -> anyhow::Result<ServerConfig> {
         },
         configured_header_precedence: args.configured_header_precedence,
         redact_action_handler_logs: args.redact_action_handler_logs,
+        metrics_secret: args.metrics_secret.clone().filter(|s| !s.is_empty()),
         async_actions_fetch_interval: args.async_actions_fetch_interval,
         async_actions_fetch_batch_size: args.async_actions_fetch_batch_size,
         metadata_database_extensions_schema: args.metadata_database_extensions_schema.clone(),
