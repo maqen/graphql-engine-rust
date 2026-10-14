@@ -97,9 +97,10 @@ impl Builder<'_> {
         ))
     }
 
+    /// Whether the role gets `T_aggregate`. Columns are not needed: a role without any can
+    /// still `count` the rows it may see, as in V2.
     pub(crate) fn may_aggregate(&self, table: &TableInfo) -> bool {
-        self.access(table)
-            .is_some_and(|a| a.allow_aggregations && !a.columns.is_empty())
+        self.access(table).is_some_and(|a| a.allow_aggregations)
     }
 
     /// The columns of `table` the role may select, in table order.
