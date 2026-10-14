@@ -221,6 +221,22 @@ const INSTALLED_TRIGGERS_SQL: &str = "SELECT t.tgname::text, tn.nspname::text, c
      WHERE NOT t.tgisinternal AND pn.nspname = 'hdb_catalog' \
      AND t.tgname LIKE 'notify\\_hasura\\_%'";
 
+/// Identifies the database a pool connects to, so sources that share one can share the set
+/// of triggers [`sync_triggers`] keeps: (server address, port, database name).
+const DATABASE_ID_SQL: &str = "SELECT coalesce(host(inet_server_addr()), '') || ':' || \
+     coalesce(inet_server_port()::text, '') || '/' || current_database()::text";
+
+/// The database `pool` connects to, as a comparable key. Two sources with the same key manage
+/// SQL triggers in the same `hdb_catalog`.
+pub async fn database_id(pool: &Pool) -> Result<String, DdlError> {
+    let client = pool.get().await.map_err(|e| e.to_string())?;
+    let row = client
+        .query_one(DATABASE_ID_SQL, &[])
+        .await
+        .map_err(pg_err)?;
+    Ok(row.get(0))
+}
+
 /// The event trigger a `notify_hasura_<name>_<OP>` object belongs to.
 fn trigger_of(object: &str) -> Option<&str> {
     let rest = object.strip_prefix("notify_hasura_")?;

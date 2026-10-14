@@ -68,6 +68,11 @@ pub async fn prepare(
     let mut inconsistencies = vec![];
     let mut pending = vec![];
     let mut out = EventTriggers::default();
+    let shared = if config.events.disable_eventing {
+        HashMap::new()
+    } else {
+        neighbour_triggers(metadata, sources).await
+    };
     for source in &metadata.sources {
         let Some(pg) = sources.get(&source.name) else {
             continue;
@@ -171,6 +176,10 @@ pub async fn prepare(
                 .and_then(|v| v.as_str())
                 .unwrap_or("public")
                 .to_owned();
+            // Another source on the same database owns these; pruning them would break it.
+            if let Some(names) = shared.get(source.name.as_str()) {
+                keep.extend(names.iter().cloned());
+            }
             let sync = PendingSync {
                 source: source.name.clone(),
                 definition: serde_json::to_value(source).unwrap_or_default(),
@@ -291,6 +300,53 @@ impl PendingSync {
     pub fn source(&self) -> &str {
         &self.source
     }
+}
+
+/// Event trigger names in a source's metadata, consistent or not.
+fn metadata_trigger_names(source: &hge_metadata::Source) -> impl Iterator<Item = &str> {
+    source
+        .tables
+        .iter()
+        .flat_map(|t| &t.event_triggers)
+        .map(|raw| raw.get("name").and_then(|v| v.as_str()).unwrap_or(""))
+}
+
+/// For each source, the event trigger names of the other sources connected to the same
+/// database. Each source prunes the trigger functions it does not know, so without these two
+/// sources on one database would drop each other's functions on every load. A source whose
+/// database cannot be identified shares with nobody.
+async fn neighbour_triggers<'a>(
+    metadata: &'a Metadata,
+    sources: &HashMap<String, Arc<PgSource>>,
+) -> HashMap<&'a str, HashSet<String>> {
+    let mut by_database: HashMap<String, Vec<&hge_metadata::Source>> = HashMap::new();
+    for source in &metadata.sources {
+        let Some(pg) = sources.get(&source.name) else {
+            continue;
+        };
+        match catalog::database_id(pg.pool()).await {
+            Ok(id) => by_database.entry(id).or_default().push(source),
+            Err(e) => warn!(
+                target: "startup",
+                source = %source.name,
+                error = %e,
+                "could not identify the source's database"
+            ),
+        }
+    }
+    let mut out = HashMap::new();
+    for group in by_database.values().filter(|g| g.len() > 1) {
+        for source in group {
+            let names = group
+                .iter()
+                .filter(|other| other.name != source.name)
+                .flat_map(|other| metadata_trigger_names(other))
+                .map(str::to_owned)
+                .collect();
+            out.insert(source.name.as_str(), names);
+        }
+    }
+    out
 }
 
 /// Columns a trigger listens to or sends in its payload; each must exist.
