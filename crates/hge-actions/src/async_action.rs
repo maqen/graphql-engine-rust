@@ -264,7 +264,14 @@ pub async fn poll_async_query(
             AsyncField::Output(selection) => match &row.response_payload {
                 None | Some(Value::Null) => Value::Null,
                 Some(payload) => {
-                    output_value(output, selection, payload, ctx.session, sources).await?
+                    // With relationships V2 reads the output through `jsonb_to_record`, where a
+                    // missing nested object is null.
+                    let missing = if has_relationships {
+                        project::Missing::Null
+                    } else {
+                        project::Missing::Omit
+                    };
+                    output_value(output, selection, payload, missing, ctx.session, sources).await?
                 }
             },
         };
@@ -280,6 +287,7 @@ async fn output_value(
     output: &ActionOutput,
     selection: &ActionSelection,
     payload: &Value,
+    missing: project::Missing,
     session: &Session,
     sources: &dyn Sources,
 ) -> Result<Value, Error> {
@@ -295,6 +303,7 @@ async fn output_value(
         selection,
         payload.clone(),
         &joined,
+        missing,
     ))
 }
 

@@ -211,7 +211,7 @@ Source: `server/src-lib/Hasura/RQL/Types/Headers.hs`, `server/src-lib/Hasura/RQL
   - Non-object: error `expecting object for headers`.
 - `value_from_env` starting with `HASURA_GRAPHQL_` is rejected at parse time:
   `env variables starting with "HASURA_GRAPHQL_" are not allowed in value_from_env: <VAR>`.
-  This is a `parse-failed` error at path `$.definition.headers[i]`. Golden:
+  This is a `parse-failed` error at path `$.args.definition.headers[i]`, on `/v1/query` too (v2.51.0 recording; upstream's golden still says `$.definition...`). Golden:
   `tests-py/queries/actions/metadata/create_with_headers.yaml`.
 - `value` is itself an env template (`{{VAR}}` interpolation).
 - Header values are resolved **per request** (`makeHeadersFromConf`), not at
@@ -850,9 +850,12 @@ project(fields, obj) = ordered object, in selection order, keyed by alias:
   scalar/enum field -> obj[originalFieldName] or null if missing
   nested object fld -> obj[ALIAS] (sic) then:
                          object -> project(sub, o)
-                         array  -> elements mapped (non-object elements dropped)
+                         array  -> elements mapped the same way (objects projected,
+                                   arrays recursed, nulls kept, scalars dropped)
                          null   -> null
-                         other scalar -> KEY OMITTED from the response
+                         other scalar, or key missing -> KEY OMITTED from the response
+                         (async actions with relationships read the output through
+                         jsonb_to_record instead: a missing key is null)
   relationship fld  -> placeholder string "remote relationship placeholder", replaced by the remote join (§8.7)
 ```
 

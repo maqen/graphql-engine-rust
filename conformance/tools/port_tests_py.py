@@ -92,6 +92,10 @@ HELPER_FIXTURES = {
     "gql_server": ("graphql_server", "REMOTE_SCHEMAS_WEBHOOK_DOMAIN"),
     "evts_webhook": ("events_webhook", "EVENT_WEBHOOK_HANDLER"),
 }
+# Mutation classes whose tests also change metadata (update_action). Upstream resets only the
+# rows between tests and relies on pytest's file order; our runner orders cases by name, so
+# these reset the whole database and metadata instead.
+METADATA_CHANGING_CLASSES = {"TestActionsSync"}
 HELPERS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "helpers")
 
 SUPPORTED_FIXTURES = set(HELPER_FIXTURES) | {
@@ -713,6 +717,8 @@ def port_class(hge, pg_url, up, out_root, test_file, cls, info, coverage):
         return
     mutation = "per_class_db_schema_for_mutation_tests" in info["fixtures"]
     isolation = "data" if mutation else ("database" if "per_method_tests_db_state" in info["fixtures"] else "none")
+    if cls in METADATA_CHANGING_CLASSES:
+        isolation = "database"
 
     def prepare():
         if isolation == "data":

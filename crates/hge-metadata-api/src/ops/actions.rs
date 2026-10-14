@@ -26,27 +26,6 @@ pub fn test_webhook_transform(args: &Value) -> ApiResult<Value> {
     hge_transforms::test_webhook_transform(args).map_err(|error| ApiError { status: 400, error })
 }
 
-/// On `/v1/query` V2 decodes these commands' `args` without adding `args` to the error
-/// path (`$.definition.headers[0]`, not `$.args.definition.headers[0]`).
-pub fn relative_to_args(command: &str, mut e: ApiError) -> ApiError {
-    const COMMANDS: &[&str] = &[
-        "create_action",
-        "update_action",
-        "drop_action",
-        "create_action_permission",
-        "drop_action_permission",
-        "set_custom_types",
-    ];
-    if COMMANDS.contains(&command)
-        && e.error.code == Code::ParseFailed
-        && let Some(rest) = e.error.path.strip_prefix(ARGS)
-        && !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
-    {
-        e.error.path = format!("${rest}");
-    }
-    e
-}
-
 /// `create_action {name, definition, comment?}`.
 pub async fn create_action<R: Runtime>(ctx: &mut Ctx<'_, R>, args: &Value) -> ApiResult<Value> {
     let (name, definition, comment) = action_args(args, "CreateAction")?;

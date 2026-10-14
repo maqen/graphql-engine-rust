@@ -26,6 +26,14 @@ cases:
         - extensions: { foo: bar, code: x }
           message: m
 
+  - description: a 4xx error that decodes has no internal details, even for admin
+    query:
+      query: '{ respond(status: 400, body: {message: "nope"}) { label } }'
+    response:
+      errors:
+        - extensions: { path: '$', code: unexpected }
+          message: nope
+
   - description: 4xx without a message
     headers: { x-hasura-role: user }
     query:
@@ -80,14 +88,14 @@ cases:
         - extensions: { path: '$', code: unexpected }
           message: got array for the action webhook response, expecting AuthorInfo
 
-  - description: null output for a nullable type; missing nullable fields are null
+  - description: null output for a nullable type; a missing scalar is null, a missing object is left out (V2's makeActionResponseNoRelations)
     headers: { x-hasura-role: user }
     query:
       query: '{ a: respond(status: 200, body: null) { label } b: respond(status: 201, body: {label: "x"}) { label authorId address { city } } }'
     response:
       data:
         a: null
-        b: { label: x, authorId: null, address: null }
+        b: { label: x, authorId: null }
 
   - description: list of scalars with a null element
     headers: { x-hasura-role: user }
@@ -132,3 +140,11 @@ cases:
       errors:
         - extensions: { path: '$', code: invalid-credentials }
           message: invalid credentials
+
+  - description: a nested object array keeps nulls and drops scalars (V2's mkValue)
+    headers: { x-hasura-role: user }
+    query:
+      query: '{ respond(status: 200, body: {label: "x", address: [{city: "a"}, null, "s", [{city: "b"}]]}) { address { city } } }'
+    response:
+      data:
+        respond: { address: [{ city: a }, null, [{ city: b }]] }
