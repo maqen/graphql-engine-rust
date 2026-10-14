@@ -58,6 +58,38 @@ pub trait SourceExecutor: Send + Sync {
             ))
         })
     }
+
+    /// `/v1/graphql/explain` for a query: the SQL of one root field with its values written
+    /// as literals, and the plan from `EXPLAIN` (one line per element).
+    fn explain_query<'a>(
+        &'a self,
+        field: &'a QueryRoot,
+        session: &'a Session,
+    ) -> BoxFuture<'a, Result<(String, Vec<String>), Error>> {
+        let _ = (field, session);
+        Box::pin(async {
+            Err(Error::new(
+                Code::NotSupported,
+                "explain is not supported on this source",
+            ))
+        })
+    }
+
+    /// `/v1/graphql/explain` for a subscription: the `EXPLAIN` plan of a multiplexed query run
+    /// for `cohorts` (as given to [`Self::execute_multiplexed`]).
+    fn explain_multiplexed<'a>(
+        &'a self,
+        sql: &'a str,
+        cohorts: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<String>, Error>> {
+        let _ = (sql, cohorts);
+        Box::pin(async {
+            Err(Error::new(
+                Code::NotSupported,
+                "explain is not supported on this source",
+            ))
+        })
+    }
 }
 
 /// A statement whose text depends only on the shape of a subscription; every value

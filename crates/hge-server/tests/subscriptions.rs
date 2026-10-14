@@ -82,22 +82,27 @@ impl Server {
 
     /// `POST /v1/graphql` as admin.
     async fn graphql(&self, query: &str) -> Value {
+        self.post("/v1/graphql", json!({ "query": query }), admin())
+            .await
+            .1
+    }
+
+    async fn post(&self, path: &str, body: Value, headers: Value) -> (u16, Value) {
         use tower::ServiceExt;
-        let req = axum::http::Request::post("/v1/graphql")
-            .header("x-hasura-admin-secret", SECRET)
-            .header("content-type", "application/json")
-            .body(axum::body::Body::from(
-                json!({ "query": query }).to_string(),
-            ))
-            .unwrap();
+        let mut req = axum::http::Request::post(path).header("content-type", "application/json");
+        for (k, v) in headers.as_object().unwrap() {
+            req = req.header(k.as_str(), v.as_str().unwrap());
+        }
+        let req = req.body(axum::body::Body::from(body.to_string())).unwrap();
         let resp = hge_server::routes::router(self.engine.clone())
             .oneshot(req)
             .await
             .unwrap();
+        let status = resp.status().as_u16();
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
             .unwrap();
-        serde_json::from_slice(&body).unwrap()
+        (status, serde_json::from_slice(&body).unwrap())
     }
 }
 
@@ -219,6 +224,7 @@ async fn websockets() {
     async_actions(&server, &url).await;
     async_actions_with_relationships(&server, &url).await;
     large_message(&server).await;
+    explain(&server).await;
 
     let server = start(&url, |c| {
         c.websocket.init_timeout = Duration::from_millis(200)
@@ -1000,6 +1006,115 @@ async fn large_message(server: &Server) {
     assert_eq!(
         recv(&mut ws).await,
         data("1", "next", json!({"message_by_pk": {"id": 1}}))
+    );
+}
+
+/// `/v1/graphql/explain`: the SQL and plan of each query root field, or of a subscription's
+/// multiplexed query.
+async fn explain(server: &Server) {
+    let post = |body: Value, headers: Value| server.post("/v1/graphql/explain", body, headers);
+    let (status, body) = post(
+        json!({"query": {"query": "query { message(where: {id: {_eq: 1}}) { id } __typename }"}}),
+        admin(),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body[0]["field"], "message");
+    let sql = body[0]["sql"].as_str().unwrap();
+    assert!(
+        sql.contains(r#""public"."message""#) && sql.contains("('1')"),
+        "{sql}"
+    );
+    assert!(!body[0]["plan"].as_array().unwrap().is_empty());
+    assert_eq!(
+        body[1],
+        json!({"field": "__typename", "sql": null, "plan": null})
+    );
+
+    // Quotes and backslashes in literals.
+    let (status, body) = post(
+        json!({"query": {"query": r#"query { message(where: {body: {_eq: "a'b\\c"}}) { id } }"#}}),
+        admin(),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert!(
+        body[0]["sql"].as_str().unwrap().contains(r"E'a''b\\c'"),
+        "{body}"
+    );
+    assert!(!body[0]["plan"].as_array().unwrap().is_empty());
+
+    // A role whose permission needs a session variable the `user` map lacks.
+    let (status, body) = post(
+        json!({"query": {"query": "query { message { id } }"}, "user": {"x-hasura-role": "user"}}),
+        admin(),
+    )
+    .await;
+    assert_eq!(status, 400, "{body}");
+    // Without a role the query is explained as admin.
+    let (status, body) = post(
+        json!({"query": {"query": "query { message { id } }"}, "user": {"x-hasura-user-id": "7"}}),
+        admin(),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert!(
+        !body[0]["sql"].as_str().unwrap().contains("author_id"),
+        "{body}"
+    );
+
+    // As a role: its permission filter, with session variables written as literals.
+    let session = json!({"x-hasura-role": "user", "x-hasura-user-id": "7"});
+    let (_, body) = post(
+        json!({"query": {"query": "query { message { id } }"}, "user": session}),
+        admin(),
+    )
+    .await;
+    assert!(body[0]["sql"].as_str().unwrap().contains("('7')"), "{body}");
+
+    let (status, body) = post(
+        json!({
+            "query": {"query": "subscription s($id: Int!) { message_by_pk(id: $id) { id } }", "variables": {"id": 2}},
+            "user": session,
+        }),
+        admin(),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert!(
+        body["sql"]
+            .as_str()
+            .unwrap()
+            .contains("json_array_elements")
+    );
+    assert!(!body["plan"].as_array().unwrap().is_empty());
+    assert_eq!(body["variables"]["session"], session);
+    assert_eq!(body["variables"]["query"], json!({"id": 2}));
+    assert_eq!(body["variables"]["synthetic"], json!(["7", "2", "1"]));
+
+    let (status, body) = post(
+        json!({"query": {"query": "mutation { delete_message(where: {id: {_eq: 0}}) { affected_rows } }"}}),
+        admin(),
+    )
+    .await;
+    assert_eq!(
+        (status, body),
+        (
+            400,
+            json!({"path": "$", "error": "only queries can be explained", "code": "invalid-params"})
+        )
+    );
+    let (status, body) = post(
+        json!({"query": {"query": "query { message { id } }"}}),
+        user(1),
+    )
+    .await;
+    assert_eq!(
+        (status, body),
+        (
+            400,
+            json!({"path": "$", "error": "You have to be an admin to access this endpoint", "code": "access-denied"})
+        )
     );
 }
 

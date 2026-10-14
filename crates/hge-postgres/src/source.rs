@@ -15,7 +15,7 @@ use tokio_postgres_rustls::MakeRustlsConnect;
 use crate::introspect;
 use crate::param::TextParam;
 use crate::pool::{IsolationLevel, PoolConfig, connect_pool};
-use crate::translate::{translate_multiplexed, translate_query};
+use crate::translate::{translate_field_inline, translate_multiplexed, translate_query};
 
 /// How long reading one enum table's rows may take.
 pub const ENUM_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
@@ -165,6 +165,15 @@ impl PgSource {
     }
 
     /// Run a statement and return every row's text columns.
+    /// The text plan of `EXPLAIN <sql>` (never `ANALYZE`), one line per element.
+    async fn explain(&self, sql: &str, params: &[Option<&str>]) -> Result<Vec<String>, Error> {
+        let rows = self.query_rows(&format!("EXPLAIN {sql}"), params).await?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|mut r| r.first_mut().and_then(Option::take))
+            .collect())
+    }
+
     pub async fn query_rows(
         &self,
         sql: &str,
@@ -254,6 +263,26 @@ impl SourceExecutor for PgSource {
         session: &Session,
     ) -> Result<MultiplexedQuery, Error> {
         translate_multiplexed(fields, session)
+    }
+
+    fn explain_query<'a>(
+        &'a self,
+        field: &'a QueryRoot,
+        session: &'a Session,
+    ) -> BoxFuture<'a, Result<(String, Vec<String>), Error>> {
+        Box::pin(async move {
+            let sql = translate_field_inline(field, session)?;
+            let plan = self.explain(&sql, &[]).await?;
+            Ok((sql, plan))
+        })
+    }
+
+    fn explain_multiplexed<'a>(
+        &'a self,
+        sql: &'a str,
+        cohorts: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<String>, Error>> {
+        Box::pin(async move { self.explain(sql, &[Some(cohorts)]).await })
     }
 
     fn execute_multiplexed<'a>(

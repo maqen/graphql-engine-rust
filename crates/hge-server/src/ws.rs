@@ -973,7 +973,7 @@ async fn sleep_until_system(at: Option<SystemTime>) {
 
 /// The response keys of a subscription's root fields, in order; field `i` is column `i` of
 /// the multiplexed query.
-struct Layout(Vec<String>);
+pub(crate) struct Layout(Vec<String>);
 
 impl Layout {
     /// `{"data":{"alias":…}}`
@@ -996,7 +996,7 @@ impl Layout {
 }
 
 /// How a subscription runs.
-enum Plan<'a> {
+pub(crate) enum Plan<'a> {
     /// Database root fields of one source, multiplexed in a poller.
     Live {
         source: &'a str,
@@ -1012,7 +1012,7 @@ enum Plan<'a> {
 }
 
 /// Check V2's subscription restrictions (spec 09 §5) and collect the root fields.
-fn subscription_plan(op: &hge_ir::Operation) -> Result<Plan<'_>, Error> {
+pub(crate) fn subscription_plan(op: &hge_ir::Operation) -> Result<Plan<'_>, Error> {
     if op.root_fields.len() != 1 && !op.multiple_top_level_fields {
         return Err(Error::validation(
             "subscriptions must select one top level field",
