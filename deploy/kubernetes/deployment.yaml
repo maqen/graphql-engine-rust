@@ -1,0 +1,66 @@
+# Expects a Secret named `hasura` with keys `database-url` and `admin-secret`:
+#   kubectl create secret generic hasura --from-literal=database-url=postgres://… \
+#     --from-literal=admin-secret=…
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hasura
+  labels: { app: hasura }
+spec:
+  # No `replicas`: hpa.yaml owns the scale (2 to 10). A fixed value here would reset the
+  # replica count on every apply.
+  selector:
+    matchLabels: { app: hasura }
+  strategy:
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  template:
+    metadata:
+      labels: { app: hasura }
+    spec:
+      # Worst-case shutdown: 5 s preStop sleep + up to 5 s closing WebSockets + max(30 s HTTP
+      # drain, HASURA_GRAPHQL_GRACEFUL_SHUTDOWN_TIMEOUT = 60 s) = 70 s.
+      terminationGracePeriodSeconds: 75
+      containers:
+        - name: graphql-engine
+          image: graphql-engine-rust
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            - name: HASURA_GRAPHQL_DATABASE_URL
+              valueFrom: { secretKeyRef: { name: hasura, key: database-url } }
+            - name: HASURA_GRAPHQL_ADMIN_SECRET
+              valueFrom: { secretKeyRef: { name: hasura, key: admin-secret } }
+            - { name: HASURA_GRAPHQL_PG_CONNECTIONS, value: "20" }
+            # With worker.yaml, API replicas leave background work to the worker. The first
+            # stops event, scheduled and cron triggers; the second stops async actions.
+            # - { name: HASURA_GRAPHQL_DISABLE_EVENT_PROCESSING, value: "true" }
+            # - { name: HASURA_GRAPHQL_ASYNC_ACTIONS_FETCH_INTERVAL, value: "0" }
+          resources:
+            requests: { cpu: 250m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          # Strict only at startup: a new pod with inconsistent metadata never gets traffic.
+          # Strict readiness would make every pod unready at once when metadata becomes
+          # inconsistent at runtime.
+          startupProbe:
+            httpGet: { path: "/healthz?strict=true", port: http }
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 15
+            failureThreshold: 6
+          lifecycle:
+            # Let endpoint removal propagate before the server stops accepting connections.
+            # (The image is distroless, with no shell: this needs the `sleep` action of
+            # Kubernetes 1.30+.)
+            preStop:
+              sleep: { seconds: 5 }
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+            seccompProfile: { type: RuntimeDefault }

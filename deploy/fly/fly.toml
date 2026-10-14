@@ -1,0 +1,32 @@
+# From the repository root (which holds the Dockerfile):
+#   cp deploy/fly/fly.toml . && fly launch --no-deploy --copy-config
+#   fly secrets set HASURA_GRAPHQL_DATABASE_URL=… HASURA_GRAPHQL_ADMIN_SECRET=…
+#   fly deploy
+app = "hasura-rs"
+primary_region = "ams"
+kill_signal = "SIGTERM"
+# Worst-case shutdown: 5 s closing WebSockets + max(30 s HTTP drain,
+# HASURA_GRAPHQL_GRACEFUL_SHUTDOWN_TIMEOUT) = 35 s.
+kill_timeout = 40
+
+[env]
+  HASURA_GRAPHQL_GRACEFUL_SHUTDOWN_TIMEOUT = "25"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Stopped machines deliver no events; keep one running.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/healthz"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
