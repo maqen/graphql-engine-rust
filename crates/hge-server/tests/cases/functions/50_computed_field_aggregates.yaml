@@ -1,0 +1,265 @@
+# Recorded on hasura/graphql-engine:v2.51.0-ce.
+config:
+  fixture: functions
+cases:
+- description: computed fields of every kind on author
+  url: /v1/metadata
+  query:
+    type: replace_metadata
+    args:
+      version: 3
+      sources:
+      - name: default
+        kind: postgres
+        configuration:
+          connection_info:
+            database_url:
+              from_env: HASURA_GRAPHQL_DATABASE_URL
+        tables:
+        - table:
+            schema: public
+            name: author
+          computed_fields:
+          - name: full_name
+            definition:
+              function:
+                schema: public
+                name: author_full_name
+          - name: id2
+            definition:
+              function:
+                schema: public
+                name: author_id2
+          - name: idn
+            definition:
+              function:
+                schema: public
+                name: author_idn
+          - name: idarg
+            definition:
+              function:
+                schema: public
+                name: author_idarg
+          - name: is_me
+            definition:
+              function:
+                schema: public
+                name: author_is_me
+          - name: published
+            definition:
+              function:
+                schema: public
+                name: author_published
+          - name: matching
+            definition:
+              function:
+                schema: public
+                name: author_articles_matching
+              table_argument: author_row
+          select_permissions:
+          - role: user
+            permission:
+              columns:
+              - id
+              computed_fields:
+              - id2
+              - full_name
+              filter: {}
+              allow_aggregations: true
+        - table:
+            schema: public
+            name: article
+          select_permissions:
+          - role: user
+            permission:
+              columns:
+              - id
+              - rating
+              filter:
+                is_published:
+                  _eq: true
+  response:
+    message: success
+- description: scalar computed fields in every aggregate function, with their own type
+  query:
+    query: '{ author_aggregate { aggregate { sum { id id2 idn idarg } avg { id2 idn } max { full_name
+      id2 } min { full_name idarg } stddev { id2 } variance { idn } } } }'
+  response:
+    data:
+      author_aggregate:
+        aggregate:
+          sum:
+            id: 6
+            id2: 12
+            idn: 2.0
+            idarg: 6
+          avg:
+            id2: 4.0
+            idn: 0.6666666666666666
+          max:
+            full_name: Carol Jones
+            id2: 6
+          min:
+            full_name: Alice Smith
+            idarg: 1
+          stddev:
+            id2: 2.0
+          variance:
+            idn: 0.1111111111111111
+- description: a computed field with arguments in an aggregate
+  query:
+    query: '{ author_aggregate(where: {id: {_lt: 3}}) { aggregate { sum { idarg(args: {k: 10}) } } } }'
+  response:
+    data:
+      author_aggregate:
+        aggregate:
+          sum:
+            idarg: 30
+- description: aggregates of the computed fields a role may select
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: '{ author_aggregate { aggregate { sum { id2 } max { full_name } } } }'
+  response:
+    data:
+      author_aggregate:
+        aggregate:
+          sum:
+            id2: 12
+          max:
+            full_name: Carol Jones
+- description: aggregate field types with computed fields
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: '{ sum: __type(name: "author_sum_fields") { fields { name description args { name } type {
+      name } } } avg: __type(name: "author_avg_fields") { fields { name type { name } } } max: __type(name:
+      "author_max_fields") { fields { name type { name } } } }'
+  response:
+    data:
+      sum:
+        fields:
+        - name: id
+          description: null
+          args: []
+          type:
+            name: Int
+        - name: id2
+          description: A computed field, executes function "author_id2"
+          args: []
+          type:
+            name: Int
+      avg:
+        fields:
+        - name: id
+          type:
+            name: Float
+        - name: id2
+          type:
+            name: Int
+      max:
+        fields:
+        - name: full_name
+          type:
+            name: String
+        - name: id
+          type:
+            name: Int
+        - name: id2
+          type:
+            name: Int
+- description: the types for computed fields with arguments
+  query:
+    query: '{ __type(name: "author_sum_fields") { fields { name args { name description type { kind name
+      } } type { name } } } }'
+  response:
+    data:
+      __type:
+        fields:
+        - name: id
+          args: []
+          type:
+            name: Int
+        - name: id2
+          args: []
+          type:
+            name: Int
+        - name: idarg
+          args:
+          - name: args
+            description: input parameters for computed field "idarg" defined on table "author"
+            type:
+              kind: INPUT_OBJECT
+              name: idarg_author_args
+          type:
+            name: Int
+        - name: idn
+          args: []
+          type:
+            name: numeric
+- description: ordering by the aggregate of a table computed field
+  query:
+    query: '{ author(order_by: [{published_aggregate: {count: desc}}, {id: asc}]) { id published { id
+      rating } } }'
+  response:
+    data:
+      author:
+      - id: 1
+        published:
+        - id: 1
+          rating: 5
+      - id: 2
+        published:
+        - id: 3
+          rating: 3
+      - id: 3
+        published:
+        - id: 4
+          rating: 4
+- description: ordering by a table computed field aggregate needs only select permission on its table
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: '{ author(order_by: [{published_aggregate: {max: {rating: asc_nulls_first}}}, {id: asc}]) {
+      id } }'
+  response:
+    data:
+      author:
+      - id: 2
+      - id: 3
+      - id: 1
+- description: order_by has aggregates of table computed fields without arguments
+  headers:
+    X-Hasura-Role: user
+  query:
+    query: '{ __type(name: "author_order_by") { inputFields { name type { name } } } }'
+  response:
+    data:
+      __type:
+        inputFields:
+        - name: full_name
+          type:
+            name: order_by
+        - name: id
+          type:
+            name: order_by
+        - name: id2
+          type:
+            name: order_by
+        - name: published_aggregate
+          type:
+            name: article_aggregate_order_by
+- description: in one order_by object, a table computed field aggregate sorts at the position of the field
+    name in V2 hash order
+  query:
+    query: '{ author(order_by: {published_aggregate: {max: {rating: desc}}, last_name: desc}) { id last_name
+      } }'
+  response:
+    data:
+      author:
+      - id: 1
+        last_name: Smith
+      - id: 3
+        last_name: Jones
+      - id: 2
+        last_name: null

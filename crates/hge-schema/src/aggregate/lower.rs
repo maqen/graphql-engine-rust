@@ -9,6 +9,7 @@ use hge_ir::{
 use serde_json::{Map, Value as Json};
 
 use super::AggregateFieldKind;
+use crate::functions::ComputedFieldInfo;
 use crate::lower::{HashKeyed, Lowerer, order_type};
 use crate::model::FieldKind;
 use crate::normalize::{Selected, SelectedField};
@@ -106,6 +107,15 @@ impl Lowerer<'_> {
                         stringify: self.rs.options.stringify_numeric_types
                             && scalars::is_big_num(ty),
                     },
+                    FieldKind::ComputedField(cf) => {
+                        let ty = cf.scalar_type().ok_or_else(|| unexpected_kind(&def.kind))?;
+                        AggregateColumnField::ComputedField {
+                            call: self.computed_field_call(table, cf, sel)?,
+                            redact: self.redaction(table, &cf.name).cloned().map(Box::new),
+                            stringify: self.rs.options.stringify_numeric_types
+                                && scalars::is_big_num(ty),
+                        }
+                    }
                     other => return Err(unexpected_kind(other)),
                 },
             };
@@ -123,6 +133,47 @@ impl Lowerer<'_> {
         out: &mut Vec<OrderBy>,
     ) -> Result<(), Error> {
         let target = self.target(rel)?;
+        self.aggregate_order_by_on(target, value, path, out, |permission_filter, aggregate| {
+            OrderByTarget::ArrayAggregate {
+                table: target.name.clone(),
+                mapping: rel.mapping.clone(),
+                permission_filter,
+                aggregate,
+            }
+        })
+    }
+
+    /// `order_by: {<computed field>_aggregate: {…}}` for a computed field returning rows of a
+    /// table and taking no arguments besides the row and the session.
+    pub(crate) fn computed_field_aggregate_order_by(
+        &self,
+        table: &TableInfo,
+        cf: &ComputedFieldInfo,
+        target: &TableInfo,
+        value: &Json,
+        path: &str,
+        out: &mut Vec<OrderBy>,
+    ) -> Result<(), Error> {
+        let call = self.computed_call(table, cf, None, path)?;
+        self.aggregate_order_by_on(target, value, path, out, |permission_filter, aggregate| {
+            OrderByTarget::ComputedFieldAggregate {
+                call: call.clone(),
+                permission_filter,
+                aggregate,
+            }
+        })
+    }
+
+    /// The sort keys of a `T_aggregate_order_by` value over the rows of `target`; `make`
+    /// builds each key from the target's permission filter and the aggregate.
+    fn aggregate_order_by_on(
+        &self,
+        target: &TableInfo,
+        value: &Json,
+        path: &str,
+        out: &mut Vec<OrderBy>,
+        make: impl Fn(Option<Box<BoolExp>>, AggregateOrderBy) -> OrderByTarget,
+    ) -> Result<(), Error> {
         let Json::Object(obj) = value else {
             return Ok(());
         };
@@ -131,12 +182,7 @@ impl Lowerer<'_> {
         let mut push = |aggregate: AggregateOrderBy, order: &Json| {
             let (direction, nulls) = order_type(order.as_str().unwrap_or("asc"));
             out.push(OrderBy {
-                target: OrderByTarget::ArrayAggregate {
-                    table: target.name.clone(),
-                    mapping: rel.mapping.clone(),
-                    permission_filter: permission_filter.clone(),
-                    aggregate,
-                },
+                target: make(permission_filter.clone(), aggregate),
                 direction,
                 nulls,
             });

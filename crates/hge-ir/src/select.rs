@@ -168,13 +168,23 @@ pub enum OrderByTarget {
         permission_filter: Option<Box<BoolExp>>,
         aggregate: AggregateOrderBy,
     },
+    /// An aggregate over the rows a table computed field returns for the row
+    /// (`<field>_aggregate: {count: asc}`) that pass the returned table's permission filter.
+    ComputedFieldAggregate {
+        call: FunctionCall,
+        permission_filter: Option<Box<BoolExp>>,
+        aggregate: AggregateOrderBy,
+    },
 }
 
 impl OrderByTarget {
-    /// Whether this sorts by an array relationship's aggregate (nested object relationships
-    /// are not looked into, like V2).
+    /// Whether this sorts by an aggregate of an array relationship or of a table computed
+    /// field (nested object relationships are not looked into, like V2).
     pub fn is_array_aggregate(&self) -> bool {
-        matches!(self, OrderByTarget::ArrayAggregate { .. })
+        matches!(
+            self,
+            OrderByTarget::ArrayAggregate { .. } | OrderByTarget::ComputedFieldAggregate { .. }
+        )
     }
 }
 

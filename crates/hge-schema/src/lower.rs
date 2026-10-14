@@ -260,19 +260,7 @@ impl Lowerer<'_> {
                         Field::ArrayAggregate(Box::new(self.relationship_aggregate(rel, sel)?))
                     }
                     FieldKind::ComputedField(cf) => {
-                        let user_args = match sel.arg("args") {
-                            Some(Json::Object(o)) => Some(o),
-                            Some(Json::Null) => {
-                                return Err(Error::validation(format!(
-                                    "expected an object for type '{}', but found null",
-                                    cf.args_type_name(table.type_name())
-                                ))
-                                .with_path(sel.arg_path("args")));
-                            }
-                            _ => None,
-                        };
-                        let call =
-                            self.computed_call(table, cf, user_args, &sel.arg_path("args"))?;
+                        let call = self.computed_field_call(table, cf, sel)?;
                         match &cf.returns {
                             ComputedReturn::Scalar(ty) => {
                                 let json_path = match sel.arg("path") {
@@ -323,9 +311,30 @@ impl Lowerer<'_> {
             .ok_or_else(|| Error::unexpected(format!("unknown table {name}")))
     }
 
+    /// The call of a selected computed field, with the `args` the query gives it.
+    pub(crate) fn computed_field_call(
+        &self,
+        table: &TableInfo,
+        cf: &ComputedFieldInfo,
+        sel: &SelectedField<'_>,
+    ) -> Result<FunctionCall, Error> {
+        let user_args = match sel.arg("args") {
+            Some(Json::Object(o)) => Some(o),
+            Some(Json::Null) => {
+                return Err(Error::validation(format!(
+                    "expected an object for type '{}', but found null",
+                    cf.args_type_name(table.type_name())
+                ))
+                .with_path(sel.arg_path("args")));
+            }
+            _ => None,
+        };
+        self.computed_call(table, cf, user_args, &sel.arg_path("args"))
+    }
+
     /// The call of a computed field on the current row of `table`. `user_args` is the
     /// field's `args` argument (at `path`).
-    fn computed_call(
+    pub(crate) fn computed_call(
         &self,
         table: &TableInfo,
         cf: &ComputedFieldInfo,
@@ -755,7 +764,8 @@ impl Lowerer<'_> {
                     Some(col) => col.name.clone(),
                     None => match aggregate_relationship(table, key) {
                         Some(rel) if table.relationship_by_name(key).is_none() => rel.name.clone(),
-                        _ => key.clone(),
+                        _ => computed_field_aggregate(table, key)
+                            .map_or_else(|| key.clone(), |cf| cf.name.clone()),
                     },
                 };
                 HashKeyed { field, item: entry }
@@ -813,6 +823,15 @@ impl Lowerer<'_> {
                 }
             } else if let Some(rel) = aggregate_relationship(table, key) {
                 self.aggregate_order_by(rel, value, &item_path, out)?;
+            } else if let Some((cf, target)) =
+                computed_field_aggregate(table, key).and_then(|cf| match &cf.returns {
+                    ComputedReturn::Table(target) => {
+                        Some((cf, self.table(&table.source, target).ok()?))
+                    }
+                    ComputedReturn::Scalar(_) => None,
+                })
+            {
+                self.computed_field_aggregate_order_by(table, cf, target, value, &item_path, out)?;
             } else {
                 return Err(Error::validation(format!(
                     "field '{key}' not found in type: '{}'",
@@ -835,6 +854,16 @@ impl<T> AsRef<str> for HashKeyed<T> {
     fn as_ref(&self) -> &str {
         &self.field
     }
+}
+
+/// The table computed field without arguments that `<field>_aggregate` names.
+fn computed_field_aggregate<'t>(
+    table: &'t TableInfo,
+    key: &str,
+) -> Option<&'t Arc<ComputedFieldInfo>> {
+    key.strip_suffix("_aggregate")
+        .and_then(|name| table.computed_field(name))
+        .filter(|cf| cf.scalar_type().is_none() && !cf.has_input_args())
 }
 
 /// Compare a redacted column like V2 compares `CASE WHEN condition THEN col ELSE NULL END`.
