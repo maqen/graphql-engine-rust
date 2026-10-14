@@ -11,6 +11,7 @@
 
 mod compare;
 mod db;
+mod jwt;
 mod report;
 mod run;
 mod suite;
@@ -90,6 +91,8 @@ enum TargetArg {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    // Signing keys for JWT cases live next to the suites.
+    jwt::set_keys_dir(cli.suites.join("../keys"));
     let mut suites = suite::load_all(&cli.suites)?;
     // Suites with the same engine environment run back to back, so Hasura containers get reused.
     suites.sort_by_key(|s| (s.engine_key(), s.id.clone()));
@@ -118,13 +121,16 @@ async fn main() -> Result<()> {
             }
             (Target::Rust { bin: bin.clone() }, "rust".to_owned(), 4)
         }
-        TargetArg::Hasura { image, .. } => (
-            Target::Hasura {
-                image: image.clone(),
-            },
-            image.clone(),
-            2,
-        ),
+        TargetArg::Hasura { image, .. } => {
+            target::remove_exited_containers().await;
+            (
+                Target::Hasura {
+                    image: image.clone(),
+                },
+                image.clone(),
+                2,
+            )
+        }
     };
     let jobs = cli
         .jobs

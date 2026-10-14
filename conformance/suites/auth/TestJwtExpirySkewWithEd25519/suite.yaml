@@ -1,0 +1,11 @@
+description: Hand-ported from hasura/graphql-engine server/tests-py/test_jwt.py::TestJwtExpirySkewWithEd25519
+upstream:
+  file: test_jwt.py
+  class: TestJwtExpirySkewWithEd25519
+  dir: queries/graphql_query/permissions
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_JWT_SECRET: '{"type": "Ed25519", "key": "{{public_key:ed25519}}", "allowed_skew": 60}'
+isolation: none
+snapshot: permissions/TestGraphqlQueryPermissions

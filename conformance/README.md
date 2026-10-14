@@ -47,6 +47,7 @@ The `rust` run fails when
 ```text
 suites/<area>/<suite>/
   suite.yaml       admin_secret: bool, env: {HASURA_GRAPHQL_*: ...}, isolation: none|data|database
+                   snapshot: <area>/<suite> takes the next three files from that suite
   setup.sql        schema and data, applied to a fresh database
   data.sql         isolation: data only: the rows restored before every case
   metadata.json    V2 metadata (export_metadata format); sources on
@@ -80,6 +81,27 @@ metadata).
 Responses compare exactly: status, body and the listed response headers. Object key order
 matters inside GraphQL `data` (it follows the selection set) and nowhere else; floats may
 differ in the last bit (Postgres float aggregates do, on V2 too).
+
+### JWTs
+
+A header value (or a value inside a websocket message) can be a token the runner signs when
+the case runs, so recorded cases never expire:
+
+```yaml
+headers:
+  Authorization:
+    prefix: 'Bearer '
+    jwt:
+      key: rsa                     # rsa (RS512), es (ES256), ed25519 (EdDSA), or {hs256: <secret>}
+      claims:
+        exp: '{{now+3600}}'        # {{now}}, {{now+N}}, {{now-N}}: Unix times
+        https://hasura.io/jwt/claims: {x-hasura-default-role: user, x-hasura-allowed-roles: [user]}
+```
+
+The keys are in `conformance/keys/`. In `suite.yaml` env, `{{public_key:rsa}}` is replaced by
+that public key, escaped for a JSON string, for `HASURA_GRAPHQL_JWT_SECRET`. The JWT suites
+whose claims depend on the current time are written by `conformance/tools/hand/jwt_cases.py`
+and then recorded; the rest use pre-signed tokens from `conformance/tools/gen_jwt_suites.py`.
 
 ### Websocket steps
 

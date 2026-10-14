@@ -24,6 +24,41 @@ use crate::suite::{Isolation, Suite};
 
 pub const ADMIN_SECRET: &str = "conformance-admin-secret";
 
+/// Every Hasura container the runner starts carries this label.
+const CONTAINER_LABEL: &str = "hge-conformance=1";
+
+/// Remove stopped containers left by earlier runs that were killed before cleaning up
+/// (running ones may belong to another run, so they are left alone).
+pub async fn remove_exited_containers() {
+    let filter = format!("label={CONTAINER_LABEL}");
+    let Ok(out) = tokio::process::Command::new("docker")
+        .args([
+            "ps",
+            "-aq",
+            "--filter",
+            &filter,
+            "--filter",
+            "status=exited",
+        ])
+        .args(["--filter", "status=created", "--filter", "status=dead"])
+        .output()
+        .await
+    else {
+        return;
+    };
+    let ids: Vec<String> = String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect();
+    if !ids.is_empty() {
+        let _ = tokio::process::Command::new("docker")
+            .arg("rm")
+            .args(&ids)
+            .output()
+            .await;
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Target {
     Rust { bin: PathBuf },
@@ -226,9 +261,18 @@ impl Slot {
             .args(["rm", "-f", &name])
             .output()
             .await;
-        let mut args: Vec<String> = ["run", "-d", "--rm", "--name", &name, "--network", "host"]
-            .map(String::from)
-            .to_vec();
+        let mut args: Vec<String> = [
+            "run",
+            "-d",
+            "--name",
+            &name,
+            "--label",
+            CONTAINER_LABEL,
+            "--network",
+            "host",
+        ]
+        .map(String::from)
+        .to_vec();
         let mut env = vec![
             (
                 "HASURA_GRAPHQL_METADATA_DATABASE_URL".to_owned(),
@@ -256,6 +300,11 @@ impl Slot {
             .await
             .context("running docker")?;
         if !out.status.success() {
+            // The container may exist even though it did not start.
+            let _ = tokio::process::Command::new("docker")
+                .args(["rm", "-f", &name])
+                .output()
+                .await;
             bail!(
                 "docker run failed: {}",
                 String::from_utf8_lossy(&out.stderr)
@@ -294,8 +343,9 @@ impl Slot {
             }) = &self.engine
                 && !container_running(name).await
             {
+                // Not started with --rm, so the log of a container that died is still there.
                 let log = self.engine_log().await;
-                self.engine = None;
+                self.stop().await;
                 bail!("container exited during start-up:\n{log}");
             }
             if started.elapsed() > timeout {

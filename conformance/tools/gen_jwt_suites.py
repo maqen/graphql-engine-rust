@@ -10,8 +10,8 @@ keys are thrown away. Responses are left out; record them from Hasura afterwards
     target/debug/hge-conformance --filter auth/ hasura --record
 
 Tests whose token must expire relative to the time of the request (allowed_skew leeway,
-subscription expiry) cannot be static and are not ported. port_tests_py.py rewrites their
-upstream-coverage.yaml entries; run this tool again after it.
+subscription expiry) cannot be static: conformance/tools/hand/jwt_cases.py writes those, with
+tokens the runner signs when the case runs.
 
 Needs PyJWT and cryptography (`pip install pyjwt cryptography`) and openssl.
 """
@@ -260,7 +260,6 @@ def classes(tmp):
         yield Cls("test_jwt_claims_map.py", f"TestJWTClaimsMapWithStaticHasuraClaimsMapValuesWith{kname}", kind, {"claims_map": STATIC_CLAIMS_MAP}, tmp), static_claims_map_cases
 
 
-NOT_STATIC = "token expiry is relative to the request time, so the token cannot be static"
 
 
 class Dumper(yaml.SafeDumper):
@@ -310,8 +309,9 @@ def main():
                 tests[method] = "ported by hand"
             coverage[(cls.file, cls.name)] = tests
     for kname in ["Rsa", "Ed25519", "Es"]:
-        coverage[("test_jwt.py", f"TestJwtExpirySkewWith{kname}")] = {"test_jwt_expiry_leeway": f"skipped: {NOT_STATIC}"}
-        coverage[("test_jwt.py", f"TestSubscriptionJwtExpiryWith{kname}")] = {"test_jwt_expiry": f"skipped: {NOT_STATIC}"}
+        # Written by hand/jwt_cases.py.
+        coverage[("test_jwt.py", f"TestJwtExpirySkewWith{kname}")] = {"test_jwt_expiry_leeway": "ported by hand"}
+        coverage[("test_jwt.py", f"TestSubscriptionJwtExpiryWith{kname}")] = {"test_jwt_expiry": "ported by hand"}
 
     with open(COVERAGE) as f:
         header = "".join(line for line in f if line.startswith("#"))

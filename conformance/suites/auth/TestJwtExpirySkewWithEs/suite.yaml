@@ -1,0 +1,11 @@
+description: Hand-ported from hasura/graphql-engine server/tests-py/test_jwt.py::TestJwtExpirySkewWithEs
+upstream:
+  file: test_jwt.py
+  class: TestJwtExpirySkewWithEs
+  dir: queries/graphql_query/permissions
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_JWT_SECRET: '{"type": "ES256", "key": "{{public_key:es}}", "allowed_skew": 60}'
+isolation: none
+snapshot: permissions/TestGraphqlQueryPermissions

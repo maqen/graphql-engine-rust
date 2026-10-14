@@ -49,6 +49,10 @@ pub struct SuiteConfig {
     pub env: BTreeMap<String, String>,
     #[serde(default)]
     pub isolation: Isolation,
+    /// Take `setup.sql`, `data.sql` and `metadata.json` from this suite (`<area>/<suite>`)
+    /// instead of this directory.
+    #[serde(default)]
+    pub snapshot: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -311,7 +315,7 @@ pub fn load_all(root: &Path) -> Result<Vec<Suite>> {
         for suite_dir in sorted_entries(&area_dir)? {
             if suite_dir.is_dir() {
                 suites.push(
-                    load_suite(&file_name(&area_dir), &suite_dir)
+                    load_suite(root, &file_name(&area_dir), &suite_dir)
                         .with_context(|| format!("loading suite {}", suite_dir.display()))?,
                 );
             }
@@ -320,13 +324,35 @@ pub fn load_all(root: &Path) -> Result<Vec<Suite>> {
     Ok(suites)
 }
 
-pub fn load_suite(area: &str, dir: &Path) -> Result<Suite> {
+pub fn load_suite(root: &Path, area: &str, dir: &Path) -> Result<Suite> {
     let name = file_name(dir);
     let id = format!("{area}/{name}");
-    let read = |f: &str| std::fs::read_to_string(dir.join(f)).with_context(|| f.to_owned());
-    let config: SuiteConfig = serde_yaml::from_str(&read("suite.yaml")?).context("suite.yaml")?;
+    let read_in =
+        |d: &Path, f: &str| std::fs::read_to_string(d.join(f)).with_context(|| f.to_owned());
+    let mut config: SuiteConfig =
+        serde_yaml::from_str(&read_in(dir, "suite.yaml")?).context("suite.yaml")?;
+    let snapshot_dir = match &config.snapshot {
+        Some(other) => {
+            let parts: Vec<&str> = other.split('/').collect();
+            if parts.len() != 2
+                || parts
+                    .iter()
+                    .any(|p| p.is_empty() || *p == "." || *p == "..")
+            {
+                bail!("snapshot must be <area>/<suite>, got {other:?}");
+            }
+            root.join(parts[0]).join(parts[1])
+        }
+        None => dir.to_path_buf(),
+    };
+    let read = |f: &str| {
+        read_in(&snapshot_dir, f).with_context(|| format!("in {}", snapshot_dir.display()))
+    };
+    for v in config.env.values_mut() {
+        *v = crate::jwt::expand_env(v).map_err(anyhow::Error::msg)?;
+    }
     let setup_sql = read("setup.sql")?;
-    let data_sql = if dir.join("data.sql").exists() {
+    let data_sql = if snapshot_dir.join("data.sql").exists() {
         Some(read("data.sql")?)
     } else {
         None
