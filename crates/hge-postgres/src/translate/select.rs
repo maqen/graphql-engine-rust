@@ -7,6 +7,8 @@
 //!       WHERE … ORDER BY "_t1"."name" ASC NULLS LAST LIMIT 10) AS "_b1"
 //! ```
 
+use std::fmt::Write;
+
 use hge_core::{Code, ColumnType, Error, QualifiedTable, Session};
 use hge_ir::{
     BoolExp, Field, FunctionArgValue, FunctionCall, JsonPathElement, NativeQueryPart, NullsOrder,
@@ -222,13 +224,15 @@ impl<'s> Translator<'s> {
             }
         }
         if let Some(l) = limit {
-            // Bound, not inlined: every distinct limit would otherwise be a new statement in
-            // each connection's prepared-statement cache.
-            self.b.push(" LIMIT ");
-            self.b
-                .param(Some(l.to_string()), &ColumnType::builtin("int8"));
+            // Inlined: with `LIMIT $n` Postgres cannot cost a generic plan (it assumes a
+            // tenth of the rows), so it re-plans a prepared statement on every execution.
+            // A literal lets it switch to the cached generic plan. Limits come from the query
+            // or the permission row limit, so few distinct values occur per query.
+            write!(self.b.sql, " LIMIT {l}").expect("write to string");
         }
         if let Some(o) = args.offset {
+            // Bound: offsets change on every page, and inlining them would fill each
+            // connection's prepared-statement cache.
             self.b.push(" OFFSET ");
             self.b
                 .param(Some(o.to_string()), &ColumnType::builtin("int8"));
