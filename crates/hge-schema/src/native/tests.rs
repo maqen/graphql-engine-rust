@@ -145,6 +145,21 @@ fn resolves_with_v2_errors() {
         issues,
         vec![
             json!({
+                "definition": {
+                    "description": "A summary",
+                    "fields": [
+                        {"name": "id", "type": {"nullable": false, "scalar": "int4"}},
+                        {"description": "The title", "name": "title", "type": {"nullable": true, "scalar": "text"}},
+                        {"name": "nested", "type": {"logical_model": "other", "nullable": true}}
+                    ],
+                    "name": "summary",
+                    "select_permissions": [{"permission": {"columns": ["id"], "filter": {}}, "role": "user"}]
+                },
+                "name": "inner_logical_model_other other in logical_model summary in source default",
+                "reason": "Inconsistent object: logical model \"other\" is not tracked",
+                "type": "inner_logical_model_other"
+            }),
+            json!({
                 "definition": {"arguments": {}, "code": "SELECT 1", "returns": "nope", "root_field_name": "no_model"},
                 "name": "native_query no_model in source default",
                 "reason": "Inconsistent object: The logical model nope could not be found",
@@ -153,7 +168,7 @@ fn resolves_with_v2_errors() {
             json!({
                 "definition": {"arguments": {}, "code": "SELECT {{x}}, {{y}}", "returns": "summary", "root_field_name": "undeclared"},
                 "name": "native_query undeclared in source default",
-                "reason": "Inconsistent object: The following columns are used in the query, but are not declared as arguments: ['x','y']",
+                "reason": "Inconsistent object: The following columns are used in the query, but are not declared as arguments: ['x', 'y']",
                 "type": "native_query"
             }),
             json!({

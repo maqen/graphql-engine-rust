@@ -13,7 +13,7 @@ use hge_metadata::{InheritedRole, Source};
 use serde::Deserialize;
 
 use super::{build_call, input_args, is_json, lookup};
-use crate::tables::{TableInfo, Tables};
+use crate::tables::{TableInfo, Tables, is_valid_name};
 
 /// `functions[]` of a source.
 #[derive(Debug, Clone, Deserialize)]
@@ -279,6 +279,17 @@ fn resolve_one(
         ))
     };
     let f = lookup(catalog, &meta.function).map_err(scoped)?;
+    // V2 checks the default name even when a custom name is configured.
+    let default_name = if meta.function.schema == "public" {
+        meta.function.name.clone()
+    } else {
+        format!("{}_{}", meta.function.schema, meta.function.name)
+    };
+    if !is_valid_name(&default_name) {
+        return Err(scoped(format!(
+            "cannot include \"{fname}\" in the GraphQL schema because \"{default_name}\" is not a valid GraphQL identifier"
+        )));
+    }
     if f.variadic {
         return Err(cannot(
             "function with \"VARIADIC\" parameters are not supported",
@@ -328,13 +339,7 @@ fn resolve_one(
         None => ExposedAs::Query,
     };
 
-    let gql_name = config.custom_name.clone().unwrap_or_else(|| {
-        if meta.function.schema == "public" {
-            meta.function.name.clone()
-        } else {
-            format!("{}_{}", meta.function.schema, meta.function.name)
-        }
-    });
+    let gql_name = config.custom_name.clone().unwrap_or(default_name);
     let root_field = config
         .custom_root_fields
         .as_ref()
