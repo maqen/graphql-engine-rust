@@ -286,15 +286,37 @@ pub fn engine_file(slot: &str) -> PathBuf {
 
 async fn start(slot: &str, name: &str) -> Result<Helper> {
     check_name(name)?;
-    let port = std::net::TcpListener::bind("127.0.0.1:0")?
-        .local_addr()?
+    // The port is free when picked, but something else can take it before the helper binds
+    // it; the helper then exits on its bind error, and starting again picks another port.
+    let mut tries = 0;
+    loop {
+        tries += 1;
+        match start_once(slot, name).await {
+            Err(Start::Exited(_)) if tries < 3 => {}
+            Err(Start::Exited(why) | Start::Failed(why)) => bail!(why),
+            Ok(h) => return Ok(h),
+        }
+    }
+}
+
+enum Start {
+    Exited(String),
+    Failed(String),
+}
+
+async fn start_once(slot: &str, name: &str) -> Result<Helper, Start> {
+    let io = |e: std::io::Error| Start::Failed(e.to_string());
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .and_then(|l| l.local_addr())
+        .map_err(io)?
         .port();
     let log = std::env::temp_dir().join(format!("hge-conformance-{slot}-{name}.log"));
     // Appended to, so a restarted helper keeps the log of the run that died.
     let file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&log)?;
+        .open(&log)
+        .map_err(io)?;
     let python = std::env::var("CONFORMANCE_PYTHON").unwrap_or_else(|_| "python3".into());
     let mut child = Command::new(&python)
         .arg(dir().join(format!("{name}.py")))
@@ -302,39 +324,40 @@ async fn start(slot: &str, name: &str) -> Result<Helper> {
         .env("PYTHONUNBUFFERED", "1")
         .env("HGE_CONFORMANCE_ENGINE", engine_file(slot))
         .stdin(Stdio::null())
-        .stdout(file.try_clone()?)
+        .stdout(file.try_clone().map_err(io)?)
         .stderr(file)
         .kill_on_drop(true)
         .spawn()
-        .with_context(|| format!("running {python}"))?;
+        .map_err(|e| Start::Failed(format!("running {python}: {e}")))?;
+    let tail = || {
+        let text = std::fs::read_to_string(&log).unwrap_or_default();
+        let lines: Vec<&str> = text.lines().collect();
+        lines[lines.len().saturating_sub(20)..].join("\n")
+    };
+    let probe = reqwest::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .map_err(|e| Start::Failed(e.to_string()))?;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
     loop {
-        if tokio::net::TcpStream::connect(("127.0.0.1", port))
+        // Ready once it answers HTTP, whatever the status, and is still running.
+        let answered = probe
+            .get(format!("http://127.0.0.1:{port}/"))
+            .send()
             .await
-            .is_ok()
-        {
-            // Something else could have taken the port before the helper bound it; the
-            // helper then exits on its bind error.
-            tokio::time::sleep(Duration::from_millis(200)).await;
-            if child.try_wait()?.is_none() {
-                return Ok(Helper { port, child });
-            }
+            .is_ok();
+        if let Some(status) = child.try_wait().map_err(io)? {
+            return Err(Start::Exited(format!("exited ({status}):\n{}", tail())));
         }
-        let failed = if let Some(status) = child.try_wait()? {
-            Some(format!("exited ({status})"))
-        } else if tokio::time::Instant::now() > deadline {
+        if answered {
+            return Ok(Helper { port, child });
+        }
+        if tokio::time::Instant::now() > deadline {
             let _ = child.kill().await;
-            Some("not listening after 20 s".to_owned())
-        } else {
-            None
-        };
-        if let Some(why) = failed {
-            let text = std::fs::read_to_string(&log).unwrap_or_default();
-            let lines: Vec<&str> = text.lines().collect();
-            bail!(
-                "{why}:\n{}",
-                lines[lines.len().saturating_sub(20)..].join("\n")
-            );
+            return Err(Start::Failed(format!(
+                "not answering after 20 s:\n{}",
+                tail()
+            )));
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
