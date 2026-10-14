@@ -279,3 +279,17 @@ cases:
     response:
       data:
         article: [{ id: 2 }, { id: 3 }, { id: 4 }, { id: 1 }]
+
+  - description: aggregate order_by applies count first, as V2 does
+    query:
+      query: "{ author(order_by: {articles_aggregate: {max: {score: asc}, count: asc}}) { id } }"
+    response:
+      data:
+        author: [{ id: 3 }, { id: 2 }, { id: 1 }]
+
+  - description: an aggregate function's columns apply in V2's hash order
+    query:
+      query: "{ author(order_by: {articles_aggregate: {max: {title: asc, author_id: desc}}}) { id } }"
+    response:
+      data:
+        author: [{ id: 3 }, { id: 2 }, { id: 1 }]

@@ -782,9 +782,9 @@ impl Lowerer<'_> {
 }
 
 /// An item sorted by the name of the field it belongs to.
-struct HashKeyed<T> {
-    field: String,
-    item: T,
+pub(crate) struct HashKeyed<T> {
+    pub(crate) field: String,
+    pub(crate) item: T,
 }
 
 impl<T> AsRef<str> for HashKeyed<T> {
