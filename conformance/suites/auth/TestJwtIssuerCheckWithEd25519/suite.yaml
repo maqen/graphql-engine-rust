@@ -1,0 +1,8 @@
+description: Ported by hand from hasura/graphql-engine server/tests-py/test_jwt.py::TestJwtIssuerCheckWithEd25519
+  by conformance/tools/gen_jwt_suites.py
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_JWT_SECRET: '{"type": "Ed25519", "key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAFv+iZstMalj8hI+GduqvzCdtCGwgQ/12qpoei0HEHSQ=\n-----END
+    PUBLIC KEY-----\n", "issuer": "https://hasura.com"}'
+isolation: none

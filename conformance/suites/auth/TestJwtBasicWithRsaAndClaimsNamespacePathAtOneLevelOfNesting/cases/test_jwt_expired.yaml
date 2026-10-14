@@ -1,0 +1,65 @@
+upstream:
+  by_hand: true
+  file: test_jwt.py
+  class: TestJwtBasicWithRsaAndClaimsNamespacePathAtOneLevelOfNesting
+  method: test_jwt_expired
+admin_secret_header: false
+steps:
+- description: User can only get his unpublished articles
+  url: /v1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDAwNjAsImhhc3VyYV9jbGFpbXMiOnsieC1oYXN1cmEtdXNlci1pZCI6IjEiLCJ4LWhhc3VyYS1kZWZhdWx0LXJvbGUiOiJ1c2VyIiwieC1oYXN1cmEtYWxsb3dlZC1yb2xlcyI6WyJ1c2VyIl19fQ.OqdwSPCsjzEvNlCZEVPHTHKsifuRrA0ktTkZx7ZeksGyidb0Jr40EE84XH7HJ65BsC7DV7qz9zrpvrngTpPuOdyNPcHMyauMXfF2FEudGRxsuiKfWA_8vXK_EPQjBSIX6H3HJskQT9aRlhc40X8cvftVhuH2kjHLJrLlquu34zWOGz8hIArtPtaU-bVFUefwAejGMrMn8aL2uK9NgfeZ1-EaikBFAL3rqwNFdv05WMuzEXwBNrDfYQTue21gY4V7kXEstGV9cuJnRmFk7c7DwS4GX7vi2lG2zA0Zk0IvmlbY3XdD7TS98hbSC7vIx5SYUKN7yQDrVbohgwsMTpcfpg
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'Could not verify JWT: JWTExpired'
+      extensions:
+        path: $
+        code: invalid-jwt
+- description: User can only get his unpublished articles
+  url: /v1alpha1/graphql
+  status: 400
+  headers:
+    Authorization: Bearer eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDAwNjAsImhhc3VyYV9jbGFpbXMiOnsieC1oYXN1cmEtdXNlci1pZCI6IjEiLCJ4LWhhc3VyYS1kZWZhdWx0LXJvbGUiOiJ1c2VyIiwieC1oYXN1cmEtYWxsb3dlZC1yb2xlcyI6WyJ1c2VyIl19fQ.OqdwSPCsjzEvNlCZEVPHTHKsifuRrA0ktTkZx7ZeksGyidb0Jr40EE84XH7HJ65BsC7DV7qz9zrpvrngTpPuOdyNPcHMyauMXfF2FEudGRxsuiKfWA_8vXK_EPQjBSIX6H3HJskQT9aRlhc40X8cvftVhuH2kjHLJrLlquu34zWOGz8hIArtPtaU-bVFUefwAejGMrMn8aL2uK9NgfeZ1-EaikBFAL3rqwNFdv05WMuzEXwBNrDfYQTue21gY4V7kXEstGV9cuJnRmFk7c7DwS4GX7vi2lG2zA0Zk0IvmlbY3XdD7TS98hbSC7vIx5SYUKN7yQDrVbohgwsMTpcfpg
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'Could not verify JWT: JWTExpired'
+      extensions:
+        path: $
+        code: invalid-jwt

@@ -1,0 +1,65 @@
+upstream:
+  by_hand: true
+  file: test_jwt.py
+  class: TestJwtBasicWithEd25519AndClaimsNamespacePathWithSpecialCharacters
+  method: test_jwt_no_allowed_roles_in_claim
+admin_secret_header: false
+steps:
+- description: User can only get his unpublished articles
+  url: /v1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImhhc3VyYSI6eyJjbGFpbXMlIjp7IngtaGFzdXJhLXVzZXItaWQiOiIxIiwieC1oYXN1cmEtZGVmYXVsdC1yb2xlIjoidXNlciJ9fX0.6o5eDpWcGiL8xsxMbMxzZKm0OVJ9ymUqu-KUhATIe-eRZJIS_uMDOD0VZR_ZN5BIKUg5J4Fs4-V4fiIPXWbUAw
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: JWT claim does not contain "x-hasura-allowed-roles"
+      extensions:
+        path: $
+        code: jwt-missing-role-claims
+- description: User can only get his unpublished articles
+  url: /v1alpha1/graphql
+  status: 400
+  headers:
+    Authorization: Bearer eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImhhc3VyYSI6eyJjbGFpbXMlIjp7IngtaGFzdXJhLXVzZXItaWQiOiIxIiwieC1oYXN1cmEtZGVmYXVsdC1yb2xlIjoidXNlciJ9fX0.6o5eDpWcGiL8xsxMbMxzZKm0OVJ9ymUqu-KUhATIe-eRZJIS_uMDOD0VZR_ZN5BIKUg5J4Fs4-V4fiIPXWbUAw
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: JWT claim does not contain "x-hasura-allowed-roles"
+      extensions:
+        path: $
+        code: jwt-missing-role-claims

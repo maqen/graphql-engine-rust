@@ -1,0 +1,8 @@
+description: Ported by hand from hasura/graphql-engine server/tests-py/test_jwt.py::TestJwtAudienceCheckWithRsaAndSingleAudience
+  by conformance/tools/gen_jwt_suites.py
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_JWT_SECRET: '{"type": "RS512", "key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAs6y8uTi/peoHUprOsBm1\nf+O6SDs70FzEzHWYE8nDIDBaOo8PLYoAF9AAvIHdjEMW7iN2oZkg7+1HLiehwQKo\nTjfO2kIk/n7SAsZIGD5CmlkMJVk6a0wQf+vZHOlpORcxBj4WS/0ENq2ReQxhaHG2\nY8QN70NDgPk5dzEQ+HcsLJiNTqzJCl96Yrglt7FOiLsH63YfCibSOq8XjltxSA2U\nUulmJCHQeKuyezt0FpsW3XTCt4QUArL47ASh7c515V4b3rbVSi9Q0+zl+nrCdkI4\npD9GatE4y9aW+Ce3wlHmFlYFVr3/PBkQavHmnh2eDnF2wtFoPh/80B1IIw7zpcQz\nTwIDAQAB\n-----END
+    PUBLIC KEY-----\n", "audience": "myapp-1234"}'
+isolation: none

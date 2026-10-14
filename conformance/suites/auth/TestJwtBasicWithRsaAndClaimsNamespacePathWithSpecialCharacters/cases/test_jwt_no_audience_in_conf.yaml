@@ -1,0 +1,73 @@
+upstream:
+  by_hand: true
+  file: test_jwt.py
+  class: TestJwtBasicWithRsaAndClaimsNamespacePathWithSpecialCharacters
+  method: test_jwt_no_audience_in_conf
+admin_secret_header: false
+steps:
+- description: User can only get his unpublished articles
+  url: /v1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImhhc3VyYSI6eyJjbGFpbXMlIjp7IngtaGFzdXJhLXVzZXItaWQiOiIxIiwieC1oYXN1cmEtZGVmYXVsdC1yb2xlIjoidXNlciIsIngtaGFzdXJhLWFsbG93ZWQtcm9sZXMiOlsidXNlciJdfX0sImF1ZCI6Imhhc3VyYS10ZXN0LXN1aXRlIn0.qJcW3DMhM1qTAu5sahSqxoQBT1JD3TOtLRXq71zNJr4mlzFYjPvqgZ6WKb8kRq88iXbPuKHaQ_0vXwwqRYdDfcAhDYkigrd2xxDmZellSGVuYncCYjAv4wpJ2ieL4Y_eShnGjqYrmVXMtCDh92bDKvgqq9p0Go2Fyuza2oeUX8wP0VFqARVMUvfXulfICPIm45hTqM5HOKaduiPB9B-9z6F8bN5qZbbmKF6svhMhdg5Af9dyGQwcQasU5bTE5oDz9gX9b4vS8gib2VVqV3KcB9eV8ZPEGZWQ5TKT4jDqZwq2FiIcxglA6UXD72Ja4gNaf0BABt-NNT0qpF1RJDE_Lg
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    data:
+      article:
+      - id: 1
+        title: Article 1
+        content: Sample article content 1
+        is_published: false
+        author:
+          id: 1
+          name: Author 1
+- description: User can only get his unpublished articles
+  url: /v1alpha1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImhhc3VyYSI6eyJjbGFpbXMlIjp7IngtaGFzdXJhLXVzZXItaWQiOiIxIiwieC1oYXN1cmEtZGVmYXVsdC1yb2xlIjoidXNlciIsIngtaGFzdXJhLWFsbG93ZWQtcm9sZXMiOlsidXNlciJdfX0sImF1ZCI6Imhhc3VyYS10ZXN0LXN1aXRlIn0.qJcW3DMhM1qTAu5sahSqxoQBT1JD3TOtLRXq71zNJr4mlzFYjPvqgZ6WKb8kRq88iXbPuKHaQ_0vXwwqRYdDfcAhDYkigrd2xxDmZellSGVuYncCYjAv4wpJ2ieL4Y_eShnGjqYrmVXMtCDh92bDKvgqq9p0Go2Fyuza2oeUX8wP0VFqARVMUvfXulfICPIm45hTqM5HOKaduiPB9B-9z6F8bN5qZbbmKF6svhMhdg5Af9dyGQwcQasU5bTE5oDz9gX9b4vS8gib2VVqV3KcB9eV8ZPEGZWQ5TKT4jDqZwq2FiIcxglA6UXD72Ja4gNaf0BABt-NNT0qpF1RJDE_Lg
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    data:
+      article:
+      - id: 1
+        title: Article 1
+        content: Sample article content 1
+        is_published: false
+        author:
+          id: 1
+          name: Author 1

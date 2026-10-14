@@ -1,0 +1,65 @@
+upstream:
+  by_hand: true
+  file: test_jwt_claims_map.py
+  class: TestJWTClaimsMapWithStaticHasuraClaimsMapValuesWithRSA
+  method: test_jwt_claims_map_claim_not_found
+admin_secret_header: false
+steps:
+- description: User can only get his unpublished articles
+  url: /v1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vbXlhcHAuY29tL2p3dC9jbGFpbXMiOnt9fQ.KXAY9BVbF6Lwjvdu-WZiiQcNTD9iOXGaBrodPOklh1wYIjmYaI5RKHHSeXZZMjJLFml15LbK_Y9nzdR8B5ZbErBqV_mnFXyHVuTdxJv-sfFcfO04-6JDFkQhZ8lLGTwYn3ehTQ7u9N1PrG-xfg92RzR9EziT_a8Db05lPTD9T10X_HT-QTbkhqObAbY1cxNARyozJbiVZH-BOrr1yEtIBpx8UpaW9pbxmI3_s-Cad8cOtTBNfp5zlVBnjF8Ec-BHThkZqxXCcVXwpHBrpacBfH73wuJeLlGAoc9FAM4SBR0p8_uUMnwPVmf6eOolAE5oAGVRDmc6yciRh-8dUuFdMg
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: JWT claim from claims_map, "x-hasura-user-id" not found
+      extensions:
+        path: $
+        code: jwt-invalid-claims
+- description: User can only get his unpublished articles
+  url: /v1alpha1/graphql
+  status: 400
+  headers:
+    Authorization: Bearer eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vbXlhcHAuY29tL2p3dC9jbGFpbXMiOnt9fQ.KXAY9BVbF6Lwjvdu-WZiiQcNTD9iOXGaBrodPOklh1wYIjmYaI5RKHHSeXZZMjJLFml15LbK_Y9nzdR8B5ZbErBqV_mnFXyHVuTdxJv-sfFcfO04-6JDFkQhZ8lLGTwYn3ehTQ7u9N1PrG-xfg92RzR9EziT_a8Db05lPTD9T10X_HT-QTbkhqObAbY1cxNARyozJbiVZH-BOrr1yEtIBpx8UpaW9pbxmI3_s-Cad8cOtTBNfp5zlVBnjF8Ec-BHThkZqxXCcVXwpHBrpacBfH73wuJeLlGAoc9FAM4SBR0p8_uUMnwPVmf6eOolAE5oAGVRDmc6yciRh-8dUuFdMg
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: JWT claim from claims_map, "x-hasura-user-id" not found
+      extensions:
+        path: $
+        code: jwt-invalid-claims

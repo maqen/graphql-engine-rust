@@ -1,0 +1,65 @@
+upstream:
+  by_hand: true
+  file: test_jwt.py
+  class: TestJwtBasicWithRsaAndClaimsNamespacePathAtOneLevelOfNesting
+  method: test_jwt_invalid_allowed_roles_in_claim
+admin_secret_header: false
+steps:
+- description: User can only get his unpublished articles
+  url: /v1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImhhc3VyYV9jbGFpbXMiOnsieC1oYXN1cmEtdXNlci1pZCI6IjEiLCJ4LWhhc3VyYS1hbGxvd2VkLXJvbGVzIjoidXNlciIsIngtaGFzdXJhLWRlZmF1bHQtcm9sZSI6InVzZXIifX0.DQBDjHbx0UiUihoBxU1LxDth-73jvryTVQrmn4MktjpY4u9OXrpCCLqFrpw8MOYDxb4GZHHb-47SdXNFVHB06lQaAI5uid43kEuivdFaJI4pxTJysQKQ-GfReaShr3LcqMgZmALVJiIjtgEJoI2tCBC7NoDYRdmC7uStOMHhlxZJDpNv1pll80AjH-oJmLJfKeEgOXMQhPgn8fovTQONi_8XzzqRWKJZJUsg7IYo0RNsvxkt1eot1hsH2eELzUJcHrdox5Mw1MD_SpSUS4ytnJa7bVb3ICxnVEaDygW99FGn95PWjgf_c5MaFv7A0Ob_TlinV03NqMC6LxqnacZE7A
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'invalid "x-hasura-allowed-roles"; should be a list of roles: parsing [] failed, expected Array, but encountered String'
+      extensions:
+        path: $
+        code: jwt-invalid-claims
+- description: User can only get his unpublished articles
+  url: /v1alpha1/graphql
+  status: 400
+  headers:
+    Authorization: Bearer eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImhhc3VyYV9jbGFpbXMiOnsieC1oYXN1cmEtdXNlci1pZCI6IjEiLCJ4LWhhc3VyYS1hbGxvd2VkLXJvbGVzIjoidXNlciIsIngtaGFzdXJhLWRlZmF1bHQtcm9sZSI6InVzZXIifX0.DQBDjHbx0UiUihoBxU1LxDth-73jvryTVQrmn4MktjpY4u9OXrpCCLqFrpw8MOYDxb4GZHHb-47SdXNFVHB06lQaAI5uid43kEuivdFaJI4pxTJysQKQ-GfReaShr3LcqMgZmALVJiIjtgEJoI2tCBC7NoDYRdmC7uStOMHhlxZJDpNv1pll80AjH-oJmLJfKeEgOXMQhPgn8fovTQONi_8XzzqRWKJZJUsg7IYo0RNsvxkt1eot1hsH2eELzUJcHrdox5Mw1MD_SpSUS4ytnJa7bVb3ICxnVEaDygW99FGn95PWjgf_c5MaFv7A0Ob_TlinV03NqMC6LxqnacZE7A
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: 'invalid "x-hasura-allowed-roles"; should be a list of roles: parsing [] failed, expected Array, but encountered String'
+      extensions:
+        path: $
+        code: jwt-invalid-claims

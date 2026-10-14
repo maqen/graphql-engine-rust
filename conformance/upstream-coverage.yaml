@@ -1022,133 +1022,431 @@
   skipped: no database state fixture
 - file: test_jwt.py
   class: TestJwtAudienceCheckWithEd25519AndListOfAudiences
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_audience: ported by hand
+    test_jwt_invalid_audience: ported by hand
 - file: test_jwt.py
   class: TestJwtAudienceCheckWithEd25519AndSingleAudience
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_audience: ported by hand
+    test_jwt_invalid_audience: ported by hand
 - file: test_jwt.py
   class: TestJwtAudienceCheckWithEsAndListOfAudiences
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_audience: ported by hand
+    test_jwt_invalid_audience: ported by hand
 - file: test_jwt.py
   class: TestJwtAudienceCheckWithEsAndSingleAudience
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_audience: ported by hand
+    test_jwt_invalid_audience: ported by hand
 - file: test_jwt.py
   class: TestJwtAudienceCheckWithRsaAndListOfAudiences
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_audience: ported by hand
+    test_jwt_invalid_audience: ported by hand
 - file: test_jwt.py
   class: TestJwtAudienceCheckWithRsaAndSingleAudience
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_audience: ported by hand
+    test_jwt_invalid_audience: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithEd25519
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithEd25519AndClaimsNamespacePathAtOneLevelOfNesting
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithEd25519AndClaimsNamespacePathAtRoot
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithEd25519AndClaimsNamespacePathAtTwoLevelsOfNesting
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithEd25519AndClaimsNamespacePathWithSpecialCharacters
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithEd25519AndCookie
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithEd25519AndStringifiedJsonClaims
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithEs
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithEsAndClaimsNamespacePathAtOneLevelOfNesting
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithEsAndClaimsNamespacePathAtRoot
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithEsAndClaimsNamespacePathAtTwoLevelsOfNesting
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithEsAndClaimsNamespacePathWithSpecialCharacters
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithEsAndCookie
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithEsAndStringifiedJsonClaims
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithRsa
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithRsaAndClaimsNamespacePathAtOneLevelOfNesting
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithRsaAndClaimsNamespacePathAtRoot
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithRsaAndClaimsNamespacePathAtTwoLevelsOfNesting
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithRsaAndClaimsNamespacePathWithSpecialCharacters
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithRsaAndCookie
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithRsaAndCustomHeader
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtBasicWithRsaAndStringifiedJsonClaims
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_claims_success: ported by hand
+    test_jwt_invalid_role_in_request_header: ported by hand
+    test_jwt_no_allowed_roles_in_claim: ported by hand
+    test_jwt_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_no_default_role: ported by hand
+    test_jwt_expired: ported by hand
+    test_jwt_invalid_signature: ported by hand
+    test_jwt_no_audience_in_conf: ported by hand
+    test_jwt_no_issuer_in_conf: ported by hand
 - file: test_jwt.py
   class: TestJwtExpirySkewWithEd25519
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_expiry_leeway: 'skipped: token expiry is relative to the request time, so the token cannot
+      be static'
 - file: test_jwt.py
   class: TestJwtExpirySkewWithEs
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_expiry_leeway: 'skipped: token expiry is relative to the request time, so the token cannot
+      be static'
 - file: test_jwt.py
   class: TestJwtExpirySkewWithRsa
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_expiry_leeway: 'skipped: token expiry is relative to the request time, so the token cannot
+      be static'
 - file: test_jwt.py
   class: TestJwtIssuerCheckWithEd25519
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_issuer: ported by hand
+    test_jwt_invalid_issuer: ported by hand
 - file: test_jwt.py
   class: TestJwtIssuerCheckWithEs
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_issuer: ported by hand
+    test_jwt_invalid_issuer: ported by hand
 - file: test_jwt.py
   class: TestJwtIssuerCheckWithRsa
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_valid_issuer: ported by hand
+    test_jwt_invalid_issuer: ported by hand
 - file: test_jwt.py
   class: TestSubscriptionJwtExpiryWithEd25519
-  skipped: needs pytest.mark.jwt
+  area: auth
+  tests:
+    test_jwt_expiry: 'skipped: token expiry is relative to the request time, so the token cannot be static'
 - file: test_jwt.py
   class: TestSubscriptionJwtExpiryWithEs
-  skipped: needs pytest.mark.jwt
+  area: auth
+  tests:
+    test_jwt_expiry: 'skipped: token expiry is relative to the request time, so the token cannot be static'
 - file: test_jwt.py
   class: TestSubscriptionJwtExpiryWithRsa
-  skipped: needs pytest.mark.jwt
+  area: auth
+  tests:
+    test_jwt_expiry: 'skipped: token expiry is relative to the request time, so the token cannot be static'
 - file: test_jwt_claims_map.py
   class: TestJWTClaimsMapBasicWithEd25519
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_claims_map_valid_claims_success: ported by hand
+    test_jwt_claims_map_invalid_role_in_request_header: ported by hand
+    test_jwt_claims_map_no_allowed_roles_in_claim: ported by hand
+    test_jwt_claims_map_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_claims_map_no_default_role: ported by hand
+    test_jwt_claims_map_claim_not_found: ported by hand
 - file: test_jwt_claims_map.py
   class: TestJWTClaimsMapBasicWithEd25519AndDefaultValues
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_claims_map_valid_claims_success: ported by hand
+    test_jwt_claims_map_invalid_role_in_request_header: ported by hand
+    test_jwt_claims_map_no_allowed_roles_in_claim: ported by hand
+    test_jwt_claims_map_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_claims_map_no_default_role: ported by hand
+    test_jwt_claims_map_claim_not_found: ported by hand
 - file: test_jwt_claims_map.py
   class: TestJWTClaimsMapBasicWithRSA
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_claims_map_valid_claims_success: ported by hand
+    test_jwt_claims_map_invalid_role_in_request_header: ported by hand
+    test_jwt_claims_map_no_allowed_roles_in_claim: ported by hand
+    test_jwt_claims_map_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_claims_map_no_default_role: ported by hand
+    test_jwt_claims_map_claim_not_found: ported by hand
 - file: test_jwt_claims_map.py
   class: TestJWTClaimsMapBasicWithRSAAndDefaultValues
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_claims_map_valid_claims_success: ported by hand
+    test_jwt_claims_map_invalid_role_in_request_header: ported by hand
+    test_jwt_claims_map_no_allowed_roles_in_claim: ported by hand
+    test_jwt_claims_map_invalid_allowed_roles_in_claim: ported by hand
+    test_jwt_claims_map_no_default_role: ported by hand
+    test_jwt_claims_map_claim_not_found: ported by hand
 - file: test_jwt_claims_map.py
   class: TestJWTClaimsMapWithStaticHasuraClaimsMapValuesWithEd25519
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_claims_map_valid_claims_success: ported by hand
+    test_jwt_claims_map_invalid_role_in_request_header: ported by hand
+    test_jwt_claims_map_claim_not_found: ported by hand
 - file: test_jwt_claims_map.py
   class: TestJWTClaimsMapWithStaticHasuraClaimsMapValuesWithRSA
-  skipped: parametrized by endpoint
+  area: auth
+  tests:
+    test_jwt_claims_map_valid_claims_success: ported by hand
+    test_jwt_claims_map_invalid_role_in_request_header: ported by hand
+    test_jwt_claims_map_claim_not_found: ported by hand
 - file: test_logging.py
   class: TestJwkRefreshLog
   skipped: needs pytest.mark.jwk_path

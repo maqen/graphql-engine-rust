@@ -1,0 +1,73 @@
+upstream:
+  by_hand: true
+  file: test_jwt.py
+  class: TestJwtBasicWithRsaAndCustomHeader
+  method: test_jwt_valid_claims_success
+admin_secret_header: false
+steps:
+- description: User can only get his unpublished articles
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+    hasura_user: eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vaGFzdXJhLmlvL2p3dC9jbGFpbXMiOnsieC1oYXN1cmEtdXNlci1pZCI6IjEiLCJ4LWhhc3VyYS1hbGxvd2VkLXJvbGVzIjpbInVzZXIiLCJlZGl0b3IiXSwieC1oYXN1cmEtZGVmYXVsdC1yb2xlIjoidXNlciJ9fQ.eU6EOfKfs_6e0_TghMEn7U54Q1Q_NEQDEW2t1QmsAyHGZhCEg0qQZOxFukg6u1T5MwQhZfUZkX6Vz69FeK7Rv_HhzS454L18Zx9GHNoaouC25UoWwk5aZ_rmoCt5EVkGcCZkX2_Ri1uLUNEf-zruU0O6q1Jf950_QeZgVP7k4EkDaQVi8NWkUAMkZvY4uiKUQUIDEnPG9vhP8R1nsN_YeXn1M7TfoGluXwIbFY857Y8HNtu8oM6S1zilw7omKxbegr94l8WEzPDpfEne2RNmUh8Cw75STX0vaYUB2qbSKUv-Y0M0ka1Ykk8Jpnpy1orbj-8UIqy8dlMpTBgtSr8egw
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    data:
+      article:
+      - id: 1
+        title: Article 1
+        content: Sample article content 1
+        is_published: false
+        author:
+          id: 1
+          name: Author 1
+- description: User can only get his unpublished articles
+  url: /v1alpha1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+    hasura_user: eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vaGFzdXJhLmlvL2p3dC9jbGFpbXMiOnsieC1oYXN1cmEtdXNlci1pZCI6IjEiLCJ4LWhhc3VyYS1hbGxvd2VkLXJvbGVzIjpbInVzZXIiLCJlZGl0b3IiXSwieC1oYXN1cmEtZGVmYXVsdC1yb2xlIjoidXNlciJ9fQ.eU6EOfKfs_6e0_TghMEn7U54Q1Q_NEQDEW2t1QmsAyHGZhCEg0qQZOxFukg6u1T5MwQhZfUZkX6Vz69FeK7Rv_HhzS454L18Zx9GHNoaouC25UoWwk5aZ_rmoCt5EVkGcCZkX2_Ri1uLUNEf-zruU0O6q1Jf950_QeZgVP7k4EkDaQVi8NWkUAMkZvY4uiKUQUIDEnPG9vhP8R1nsN_YeXn1M7TfoGluXwIbFY857Y8HNtu8oM6S1zilw7omKxbegr94l8WEzPDpfEne2RNmUh8Cw75STX0vaYUB2qbSKUv-Y0M0ka1Ykk8Jpnpy1orbj-8UIqy8dlMpTBgtSr8egw
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    data:
+      article:
+      - id: 1
+        title: Article 1
+        content: Sample article content 1
+        is_published: false
+        author:
+          id: 1
+          name: Author 1

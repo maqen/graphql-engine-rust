@@ -1,0 +1,8 @@
+description: Ported by hand from hasura/graphql-engine server/tests-py/test_jwt.py::TestJwtAudienceCheckWithEd25519AndListOfAudiences
+  by conformance/tools/gen_jwt_suites.py
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_JWT_SECRET: '{"type": "Ed25519", "key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA5UIxUYeGj5ALSBtnW504aGjWn4V4uU54KLcwD1qNt28=\n-----END
+    PUBLIC KEY-----\n", "audience": ["myapp-1234", "myapp-9876"]}'
+isolation: none

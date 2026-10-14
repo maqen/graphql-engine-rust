@@ -95,14 +95,18 @@ impl Key {
         }
     }
 
-    /// Whether this key can check a token with this `alg` and `kid` header. A key without a
-    /// `kid` is a candidate for any token.
-    pub fn usable_for(&self, alg: Alg, kid: Option<&str>) -> bool {
-        if let (Some(want), Some(have)) = (kid, &self.kid)
-            && want != have
-        {
-            return false;
+    /// Whether jose would try this key for a token with this `kid` header. A key or token
+    /// without a `kid` is a candidate for any token.
+    pub fn selected_by(&self, kid: Option<&str>) -> bool {
+        match (kid, &self.kid) {
+            (Some(want), Some(have)) => want == have,
+            _ => true,
         }
+    }
+
+    /// Whether this key can check a signature made with `alg`. A selected key that cannot
+    /// fails verification (`JWSInvalidSignature`), it is not skipped.
+    pub fn usable_for(&self, alg: Alg) -> bool {
         if self.alg.is_some_and(|a| a != alg) {
             return false;
         }

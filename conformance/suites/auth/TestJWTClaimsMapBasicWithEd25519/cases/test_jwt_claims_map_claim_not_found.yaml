@@ -1,0 +1,65 @@
+upstream:
+  by_hand: true
+  file: test_jwt_claims_map.py
+  class: TestJWTClaimsMapBasicWithEd25519
+  method: test_jwt_claims_map_claim_not_found
+admin_secret_header: false
+steps:
+- description: User can only get his unpublished articles
+  url: /v1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vbXlhcHAuY29tL2p3dC9jbGFpbXMiOnsicm9sZSI6eyJhbGxvd2VkIjpbInVzZXIiLCJlZGl0b3IiXSwiZGVmYXVsdCI6InVzZXIifX19.sKYyrF-3WhezMx44uAc_scaKD47bSaavAl5_mNSGMP7N5yQGRkXQI1U-Eujg2-kD4WtOVqEukZt7vGsDe87BBg
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: JWT claim from claims_map, "x-hasura-user-id" not found
+      extensions:
+        path: $
+        code: jwt-invalid-claims
+- description: User can only get his unpublished articles
+  url: /v1alpha1/graphql
+  status: 400
+  headers:
+    Authorization: Bearer eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vbXlhcHAuY29tL2p3dC9jbGFpbXMiOnsicm9sZSI6eyJhbGxvd2VkIjpbInVzZXIiLCJlZGl0b3IiXSwiZGVmYXVsdCI6InVzZXIifX19.sKYyrF-3WhezMx44uAc_scaKD47bSaavAl5_mNSGMP7N5yQGRkXQI1U-Eujg2-kD4WtOVqEukZt7vGsDe87BBg
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: JWT claim from claims_map, "x-hasura-user-id" not found
+      extensions:
+        path: $
+        code: jwt-invalid-claims

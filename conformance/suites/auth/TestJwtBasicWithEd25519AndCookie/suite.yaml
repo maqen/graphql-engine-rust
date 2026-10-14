@@ -1,0 +1,8 @@
+description: Ported by hand from hasura/graphql-engine server/tests-py/test_jwt.py::TestJwtBasicWithEd25519AndCookie
+  by conformance/tools/gen_jwt_suites.py
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_JWT_SECRET: '{"type": "Ed25519", "key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA3DBUfHyBX6lnMitvR0reGqnpKWnGgsfgx3KX9NfnZIQ=\n-----END
+    PUBLIC KEY-----\n", "header": {"type": "Cookie", "name": "hasura_user"}}'
+isolation: none

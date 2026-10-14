@@ -1,0 +1,8 @@
+description: Ported by hand from hasura/graphql-engine server/tests-py/test_jwt.py::TestJwtIssuerCheckWithRsa
+  by conformance/tools/gen_jwt_suites.py
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_JWT_SECRET: '{"type": "RS512", "key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsGA32Ubupl6x+vHMOuAJ\naVTwQEpw3jh+mzW9PHofr7SixycBluOWXwCQ5+kjoGGWof8Vjn7NweQArFWlAZaJ\njnVpDZVvjIxmEtKIrfexrUazOQnolwYyKZ+bs3K3yCH1ihXxJoxdUURcX2n4aBJP\nPGY38BgKRhxkN1WuKyfNANoq3b+8hwxR8FBoKBZTLDl6xzY2mpKGrL6oYKANquey\nju5pfX8Tze17jc68OilhYaRBDwhoeeY/NIMyXCOiC43D0/cDHJDUWVWvJ3IzEjEV\nNoheU3AH1TiTqumqgCor0ngJb/9WvWDRrDzS1quwIqdsRrzkFiliTvt2SBu/7rin\nawIDAQAB\n-----END
+    PUBLIC KEY-----\n", "issuer": "https://hasura.com"}'
+isolation: none

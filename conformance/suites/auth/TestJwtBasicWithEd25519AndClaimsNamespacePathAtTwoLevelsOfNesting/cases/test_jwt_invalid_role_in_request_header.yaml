@@ -1,0 +1,65 @@
+upstream:
+  by_hand: true
+  file: test_jwt.py
+  class: TestJwtBasicWithEd25519AndClaimsNamespacePathAtTwoLevelsOfNesting
+  method: test_jwt_invalid_role_in_request_header
+admin_secret_header: false
+steps:
+- description: User can only get his unpublished articles
+  url: /v1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImhhc3VyYSI6eyJjbGFpbXMiOnsieC1oYXN1cmEtdXNlci1pZCI6IjEiLCJ4LWhhc3VyYS1hbGxvd2VkLXJvbGVzIjpbImNvbnRyYWN0b3IiLCJlZGl0b3IiXSwieC1oYXN1cmEtZGVmYXVsdC1yb2xlIjoiY29udHJhY3RvciJ9fX0.brFeyF2Z6ST9wJSpYAZrabuxSGA6YoKJgArrdtAUCvpU7FHbropzXS9pl_DCEXCadf9AhWUeuCPTWlejgkb3Cg
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: Your requested role is not in allowed roles
+      extensions:
+        path: $
+        code: access-denied
+- description: User can only get his unpublished articles
+  url: /v1alpha1/graphql
+  status: 400
+  headers:
+    Authorization: Bearer eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImhhc3VyYSI6eyJjbGFpbXMiOnsieC1oYXN1cmEtdXNlci1pZCI6IjEiLCJ4LWhhc3VyYS1hbGxvd2VkLXJvbGVzIjpbImNvbnRyYWN0b3IiLCJlZGl0b3IiXSwieC1oYXN1cmEtZGVmYXVsdC1yb2xlIjoiY29udHJhY3RvciJ9fX0.brFeyF2Z6ST9wJSpYAZrabuxSGA6YoKJgArrdtAUCvpU7FHbropzXS9pl_DCEXCadf9AhWUeuCPTWlejgkb3Cg
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: Your requested role is not in allowed roles
+      extensions:
+        path: $
+        code: access-denied

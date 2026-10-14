@@ -1,0 +1,10 @@
+description: Ported by hand from hasura/graphql-engine server/tests-py/test_jwt_claims_map.py::TestJWTClaimsMapWithStaticHasuraClaimsMapValuesWithEd25519
+  by conformance/tools/gen_jwt_suites.py
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_JWT_SECRET: '{"type": "Ed25519", "key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAN20XM9DTeC3/gjuu1eNZ1jxL6H4ZB9mrdBQEal5z7GU=\n-----END
+    PUBLIC KEY-----\n", "claims_map": {"x-hasura-user-id": {"path": "$.[''https://myapp.com/jwt/claims''].user.id"},
+    "x-hasura-allowed-roles": ["user", "editor"], "x-hasura-default-role": "user", "x-hasura-custom-header":
+    "custom-value"}}'
+isolation: none

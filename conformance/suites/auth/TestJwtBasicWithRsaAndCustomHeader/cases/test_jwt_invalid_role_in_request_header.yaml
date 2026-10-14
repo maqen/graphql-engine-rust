@@ -1,0 +1,65 @@
+upstream:
+  by_hand: true
+  file: test_jwt.py
+  class: TestJwtBasicWithRsaAndCustomHeader
+  method: test_jwt_invalid_role_in_request_header
+admin_secret_header: false
+steps:
+- description: User can only get his unpublished articles
+  url: /v1/graphql
+  status: 200
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+    hasura_user: eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vaGFzdXJhLmlvL2p3dC9jbGFpbXMiOnsieC1oYXN1cmEtdXNlci1pZCI6IjEiLCJ4LWhhc3VyYS1hbGxvd2VkLXJvbGVzIjpbImNvbnRyYWN0b3IiLCJlZGl0b3IiXSwieC1oYXN1cmEtZGVmYXVsdC1yb2xlIjoiY29udHJhY3RvciJ9fQ.V0ghphNRgzMZDbnmfXjwxhwBGf3Fmyz4dkCNJM4s3w1qsfrud5qtKUyoaEo7UZYYcyYX6UgjM2iawwiHvPW-nFkRSRG_3Xk5AMzFWjL_MsxL840Mbz7QhiVlIySg06kiZJCCQfc9Old0GB6vJuO8rD9DNt8e-POh27K7iVI1xPf73RXYWJXGyZmkCtWt5sPL1dezsIdHWUpdK-o5rh2hATcnCETxc6IY3caP2eERPeUo_CSGx-Zaq9phwy5kwQ1TWNBTbzgXcIkXV6vxZY1YJZVHsaNg10Ebjam76JT88Wp0NN_RCCjVl_v7sfAr5EqPl03iaKMqz9oNLhJeWypXRA
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: Your requested role is not in allowed roles
+      extensions:
+        path: $
+        code: access-denied
+- description: User can only get his unpublished articles
+  url: /v1alpha1/graphql
+  status: 400
+  headers:
+    X-Hasura-Role: user
+    X-Hasura-User-Id: '1'
+    hasura_user: eyJhbGciOiJSUzUxMiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjQxMDI0NDQ4MDAsImh0dHBzOi8vaGFzdXJhLmlvL2p3dC9jbGFpbXMiOnsieC1oYXN1cmEtdXNlci1pZCI6IjEiLCJ4LWhhc3VyYS1hbGxvd2VkLXJvbGVzIjpbImNvbnRyYWN0b3IiLCJlZGl0b3IiXSwieC1oYXN1cmEtZGVmYXVsdC1yb2xlIjoiY29udHJhY3RvciJ9fQ.V0ghphNRgzMZDbnmfXjwxhwBGf3Fmyz4dkCNJM4s3w1qsfrud5qtKUyoaEo7UZYYcyYX6UgjM2iawwiHvPW-nFkRSRG_3Xk5AMzFWjL_MsxL840Mbz7QhiVlIySg06kiZJCCQfc9Old0GB6vJuO8rD9DNt8e-POh27K7iVI1xPf73RXYWJXGyZmkCtWt5sPL1dezsIdHWUpdK-o5rh2hATcnCETxc6IY3caP2eERPeUo_CSGx-Zaq9phwy5kwQ1TWNBTbzgXcIkXV6vxZY1YJZVHsaNg10Ebjam76JT88Wp0NN_RCCjVl_v7sfAr5EqPl03iaKMqz9oNLhJeWypXRA
+  query:
+    query: |
+      query {
+        article (
+          where: { is_published : {_eq : false}}
+        ) {
+          id
+          title
+          content
+          is_published
+          author {
+            id
+            name
+          }
+        }
+      }
+  response:
+    errors:
+    - message: Your requested role is not in allowed roles
+      extensions:
+        path: $
+        code: access-denied
