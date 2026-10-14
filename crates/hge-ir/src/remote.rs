@@ -92,3 +92,30 @@ impl TypenameTree {
         }
     }
 }
+
+/// A remote relationship field of a row (spec 08 §9). The database returns the row's join
+/// fields in its place (an object of `lhs`); the executor then replaces that object with
+/// what the target returns for those values.
+#[derive(Debug, Clone)]
+pub struct RemoteJoin {
+    /// The join fields by their names in the relationship (`lhs_fields`), and how to read
+    /// them from the row.
+    pub lhs: Vec<(String, crate::Field)>,
+    pub target: Arc<dyn RemoteJoinTarget>,
+}
+
+/// The other side of a [`RemoteJoin`].
+pub trait RemoteJoinTarget: std::fmt::Debug + Send + Sync {
+    /// The remote schema the join calls.
+    fn remote_schema(&self) -> &str;
+
+    /// One request for all of a join's distinct arguments (join field values by name),
+    /// each under the alias `f<id>`.
+    fn request(
+        &self,
+        arguments: &[(usize, &Map<String, Json>)],
+    ) -> Result<RemoteCall, hge_core::Error>;
+
+    /// The value for argument `id` in the remote's `data`.
+    fn extract(&self, data: &Map<String, Json>, id: usize) -> Result<Json, hge_core::Error>;
+}

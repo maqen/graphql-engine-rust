@@ -11,6 +11,7 @@ pub mod metadata;
 pub mod objects;
 pub(crate) mod parse;
 pub mod relationships_permissions;
+pub mod remote_relationships;
 pub mod remote_schemas;
 pub mod scheduled;
 pub mod sources_tables;
@@ -263,6 +264,9 @@ pub async fn run_backend<R: Runtime>(
             relationships_permissions::run(ctx, c, args).await
         }
         c if functions::COMMANDS.contains(&c) => functions::run(ctx, c, args).await,
+        c if remote_relationships::COMMANDS.contains(&c) => {
+            remote_relationships::run(ctx, c, args).await
+        }
         _ => Err(not_implemented(&format!("{backend}_{command}"))),
     }
 }

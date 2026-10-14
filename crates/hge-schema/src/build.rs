@@ -182,6 +182,7 @@ fn build_schema(
         },
         tables,
         access,
+        remotes,
         scalars: BTreeSet::new(),
         unused_model_objects: HashSet::new(),
         native_query_types: HashSet::new(),
@@ -285,6 +286,8 @@ pub(crate) struct Builder<'a> {
     pub(crate) schema: Schema,
     pub(crate) tables: &'a Tables,
     pub(crate) access: &'a HashMap<(Arc<str>, QualifiedTable), SelectAccess>,
+    /// The remote schemas in this schema, with the tables' relationships to them.
+    pub(crate) remotes: &'a crate::remote::RemoteSchemas,
     pub(crate) scalars: BTreeSet<String>,
     /// Logical model object types built only for their bool_exp, order_by and enum types
     /// (native queries with relationships have their own object type): dropped at the end
@@ -635,6 +638,23 @@ impl Builder<'_> {
             field.description = cf.description.clone();
             let field = self.with_computed_field_args(field, table, &cf);
             obj.fields.insert(cf.name.clone(), field);
+        }
+
+        // Remote relationships need no column permissions (spec 08 §8.6).
+        let remotes = self.remotes;
+        let key = (table.source.clone(), table.name.clone());
+        for rel in remotes.relationships.get(&key).into_iter().flatten() {
+            let mut field = FieldDef::new(
+                rel.name.clone(),
+                rel.ty.clone(),
+                FieldKind::RemoteRelationship(rel.clone()),
+            );
+            field.description = rel.description.clone();
+            field.args = rel.args.clone();
+            obj.fields.insert(rel.name.clone(), field);
+            for ty in &rel.input_types {
+                self.schema.add(TypeDef::InputObject(ty.clone()));
+            }
         }
 
         self.schema

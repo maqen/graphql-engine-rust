@@ -1,0 +1,11 @@
+- table: {schema: custom, name: profiles}
+- table: {schema: public, name: authors}
+- table: {schema: public, name: employees}
+- table: {schema: public, name: students}
+  computed_fields:
+    - name: total_marks
+      definition: {function: total_marks, table_argument: student_row}
+    - name: total_marks_offset
+      definition: {function: total_marks_offset, table_argument: student_row}
+    - name: total_marks_session
+      definition: {function: total_marks_session, table_argument: student_row, session_argument: hasura_session}

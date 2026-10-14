@@ -466,6 +466,31 @@ async fn run_concurrently(
             Err((i, e)) => fail(i, e.into()),
         }
     }
+    // Remote joins of the database fields.
+    let joins = root_fields
+        .iter()
+        .enumerate()
+        .filter_map(|(i, (_, rf))| match rf {
+            RootField::Database(db) if db.query.has_remote_joins() => {
+                Some((i, &db.query, results[i].take()?))
+            }
+            _ => None,
+        })
+        .map(|(i, query, json)| async move {
+            let visit = |v: &mut Json, f: &mut dyn FnMut(&hge_ir::RemoteJoin, &mut Json)| {
+                query.visit_remote_joins(v, f)
+            };
+            let out =
+                crate::remote_join::resolve(&state.prepared.remotes, json, &visit, &ctx.remote)
+                    .await;
+            (i, out)
+        });
+    for (i, res) in futures::future::join_all(joins).await {
+        match res {
+            Ok(json) => results[i] = Some(json),
+            Err(e) => fail(i, e.into()),
+        }
+    }
     for (i, res, cookies) in remote_results {
         match res {
             Ok(json) => {
@@ -488,10 +513,11 @@ async fn run_concurrently(
 }
 
 /// The source of a mutation whose root fields all run in one transaction: every field is a
-/// database mutation on that one source. Otherwise each field runs on its own.
+/// database mutation on that one source, without remote joins (V2 does not coalesce
+/// those). Otherwise each field runs on its own.
 pub(crate) fn one_transaction(op: &Operation) -> Option<&str> {
     let mut sources = op.root_fields.iter().map(|(_, rf)| match rf {
-        RootField::Mutation(m) => Some(&*m.source),
+        RootField::Mutation(m) if !m.mutation.has_remote_joins() => Some(&*m.source),
         _ => None,
     });
     let first = sources.next()??;
@@ -556,14 +582,54 @@ async fn run_mutations(
     for (slot, (_, rf)) in results.iter_mut().zip(&op.root_fields) {
         *slot = match rf {
             RootField::Static(_) => None,
-            RootField::Database(db) => source_executor(state, &db.source)?
-                .execute_query(&[&db.query], session)
-                .await?
-                .pop(),
-            RootField::Mutation(m) => source_executor(state, &m.source)?
-                .execute_mutations(&[&m.mutation], session)
-                .await?
-                .pop(),
+            RootField::Database(db) => {
+                let out = source_executor(state, &db.source)?
+                    .execute_query(&[&db.query], session)
+                    .await?
+                    .pop();
+                match out {
+                    Some(json) if db.query.has_remote_joins() => {
+                        let visit =
+                            |v: &mut Json, f: &mut dyn FnMut(&hge_ir::RemoteJoin, &mut Json)| {
+                                db.query.visit_remote_joins(v, f)
+                            };
+                        Some(
+                            crate::remote_join::resolve(
+                                &state.prepared.remotes,
+                                json,
+                                &visit,
+                                &ctx.remote,
+                            )
+                            .await?,
+                        )
+                    }
+                    other => other,
+                }
+            }
+            RootField::Mutation(m) => {
+                let out = source_executor(state, &m.source)?
+                    .execute_mutations(&[&m.mutation], session)
+                    .await?
+                    .pop();
+                match out {
+                    Some(json) if m.mutation.has_remote_joins() => {
+                        let visit =
+                            |v: &mut Json, f: &mut dyn FnMut(&hge_ir::RemoteJoin, &mut Json)| {
+                                m.mutation.visit_remote_joins(v, f)
+                            };
+                        Some(
+                            crate::remote_join::resolve(
+                                &state.prepared.remotes,
+                                json,
+                                &visit,
+                                &ctx.remote,
+                            )
+                            .await?,
+                        )
+                    }
+                    other => other,
+                }
+            }
             RootField::Action(a) => {
                 let r = hge_actions::execute(&state.action_registry, a, &ctx.actions, &ctx.sources)
                     .await?;

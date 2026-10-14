@@ -12,6 +12,7 @@ pub mod count;
 pub mod mutation;
 pub mod permissions;
 pub mod remote;
+pub mod remote_join;
 pub mod select;
 pub mod stream;
 pub mod value;

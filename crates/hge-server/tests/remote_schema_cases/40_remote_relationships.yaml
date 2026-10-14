@@ -1,0 +1,833 @@
+# V2's test_remote_relationships.py against the same remote (the `messages` mock).
+config:
+  fixture: remote_relationships
+cases:
+  - description: add the remote
+    url: /v1/metadata
+    query:
+      type: add_remote_schema
+      args:
+        name: my-remote-schema
+        definition: {url: "{{REMOTE_URL}}/messages", forward_client_headers: false}
+    response: {message: success}
+
+  # --- invalid definitions (setup_invalid_*.yaml) -------------------------------------------
+
+  - description: unknown join field
+    url: /v1/query
+    status: 400
+    query:
+      type: create_remote_relationship
+      args:
+        name: message
+        table: {schema: custom, name: profiles}
+        hasura_fields: [id_wrong, name]
+        remote_schema: my-remote-schema
+        remote_field: {message: {arguments: {id: "$id"}}}
+    response: {"error":"Inconsistent object: in table \"custom.profiles\": in remote relationship \"message\": field with name \"id_wrong\"is not provided by the lhs entity\"custom.profiles\"for defining a join condition, the allowed fields are \"id\" or \"name\"","path":"$.args","code":"invalid-configuration","internal":[{"definition":{"definition":{"hasura_fields":["id_wrong","name"],"remote_field":{"message":{"arguments":{"id":"$id"}}},"remote_schema":"my-remote-schema"},"name":"message","source":"default","table":{"name":"profiles","schema":"custom"}},"name":"remote_relationship message in table custom.profiles in source default","reason":"Inconsistent object: in table \"custom.profiles\": in remote relationship \"message\": field with name \"id_wrong\"is not provided by the lhs entity\"custom.profiles\"for defining a join condition, the allowed fields are \"id\" or \"name\"","type":"remote_relationship"}]}
+
+  - description: literal of the wrong type
+    url: /v1/query
+    status: 400
+    query:
+      type: create_remote_relationship
+      args:
+        name: message
+        table: {schema: custom, name: profiles}
+        hasura_fields: [id, name]
+        remote_schema: my-remote-schema
+        remote_field: {message: {arguments: {id: "abc"}}}
+    response: {"error":"Inconsistent object: in table \"custom.profiles\": in remote relationship \"message\": expected type \"Int\" but got \"String\"","path":"$.args","code":"invalid-configuration","internal":[{"definition":{"definition":{"hasura_fields":["id","name"],"remote_field":{"message":{"arguments":{"id":"abc"}}},"remote_schema":"my-remote-schema"},"name":"message","source":"default","table":{"name":"profiles","schema":"custom"}},"name":"remote_relationship message in table custom.profiles in source default","reason":"Inconsistent object: in table \"custom.profiles\": in remote relationship \"message\": expected type \"Int\" but got \"String\"","type":"remote_relationship"}]}
+
+  - description: unknown variable
+    url: /v1/query
+    status: 400
+    query:
+      type: create_remote_relationship
+      args:
+        name: message
+        table: {schema: custom, name: profiles}
+        hasura_fields: [id, name]
+        remote_schema: my-remote-schema
+        remote_field: {message: {arguments: {id: "$id_wrong"}}}
+    response: {"error":"Inconsistent object: in table \"custom.profiles\": in remote relationship \"message\": variable \"id_wrong\" is not found","path":"$.args","code":"invalid-configuration","internal":[{"definition":{"definition":{"hasura_fields":["id","name"],"remote_field":{"message":{"arguments":{"id":"$id_wrong"}}},"remote_schema":"my-remote-schema"},"name":"message","source":"default","table":{"name":"profiles","schema":"custom"}},"name":"remote_relationship message in table custom.profiles in source default","reason":"Inconsistent object: in table \"custom.profiles\": in remote relationship \"message\": variable \"id_wrong\" is not found","type":"remote_relationship"}]}
+
+  - description: unknown argument
+    url: /v1/query
+    status: 400
+    query:
+      type: create_remote_relationship
+      args:
+        name: message
+        table: {schema: custom, name: profiles}
+        hasura_fields: [id, name]
+        remote_schema: my-remote-schema
+        remote_field: {message: {arguments: {id_wrong: "$id"}}}
+    response: {"error":"Inconsistent object: in table \"custom.profiles\": in remote relationship \"message\": argument with name \"id_wrong\" not found in remote schema","path":"$.args","code":"invalid-configuration","internal":[{"definition":{"definition":{"hasura_fields":["id","name"],"remote_field":{"message":{"arguments":{"id_wrong":"$id"}}},"remote_schema":"my-remote-schema"},"name":"message","source":"default","table":{"name":"profiles","schema":"custom"}},"name":"remote_relationship message in table custom.profiles in source default","reason":"Inconsistent object: in table \"custom.profiles\": in remote relationship \"message\": argument with name \"id_wrong\" not found in remote schema","type":"remote_relationship"}]}
+
+  - description: unknown remote schema
+    url: /v1/query
+    status: 400
+    query:
+      type: create_remote_relationship
+      args:
+        name: message
+        table: {schema: custom, name: profiles}
+        hasura_fields: [id, name]
+        remote_schema: my-remote-schema-wrong
+        remote_field: {message: {arguments: {id: "$id"}}}
+    response: {"error":"Inconsistent object: in table \"custom.profiles\": in remote relationship \"message\": remote schema with name \"my-remote-schema-wrong\" not found","path":"$.args","code":"invalid-configuration","internal":[{"definition":{"definition":{"hasura_fields":["id","name"],"remote_field":{"message":{"arguments":{"id":"$id"}}},"remote_schema":"my-remote-schema-wrong"},"name":"message","source":"default","table":{"name":"profiles","schema":"custom"}},"name":"remote_relationship message in table custom.profiles in source default","reason":"Inconsistent object: in table \"custom.profiles\": in remote relationship \"message\": remote schema with name \"my-remote-schema-wrong\" not found","type":"remote_relationship"}]}
+
+  - description: unknown remote field
+    url: /v1/query
+    status: 400
+    query:
+      type: create_remote_relationship
+      args:
+        name: message
+        table: {schema: custom, name: profiles}
+        hasura_fields: [id, name]
+        remote_schema: my-remote-schema
+        remote_field: {message_wrong: {arguments: {id: "$id"}}}
+    response: {"error":"Inconsistent object: in table \"custom.profiles\": in remote relationship \"message\": remote field with name \"message_wrong\" and type \"Query\" not found","path":"$.args","code":"invalid-configuration","internal":[{"definition":{"definition":{"hasura_fields":["id","name"],"remote_field":{"message_wrong":{"arguments":{"id":"$id"}}},"remote_schema":"my-remote-schema"},"name":"message","source":"default","table":{"name":"profiles","schema":"custom"}},"name":"remote_relationship message in table custom.profiles in source default","reason":"Inconsistent object: in table \"custom.profiles\": in remote relationship \"message\": remote field with name \"message_wrong\" and type \"Query\" not found","type":"remote_relationship"}]}
+
+  - description: unknown nested input field
+    url: /v1/query
+    status: 400
+    query:
+      type: create_remote_relationship
+      args:
+        name: messagesNested
+        table: {schema: custom, name: profiles}
+        hasura_fields: [id]
+        remote_schema: my-remote-schema
+        remote_field: {messages: {arguments: {where: {id: {xyz: "$id"}}}}}
+    response: {"error":"Inconsistent object: in table \"custom.profiles\": in remote relationship \"messagesNested\": argument with name \"xyz\" not found in remote schema","path":"$.args","code":"invalid-configuration","internal":[{"definition":{"definition":{"hasura_fields":["id"],"remote_field":{"messages":{"arguments":{"where":{"id":{"xyz":"$id"}}}}},"remote_schema":"my-remote-schema"},"name":"messagesNested","source":"default","table":{"name":"profiles","schema":"custom"}},"name":"remote_relationship messagesNested in table custom.profiles in source default","reason":"Inconsistent object: in table \"custom.profiles\": in remote relationship \"messagesNested\": argument with name \"xyz\" not found in remote schema","type":"remote_relationship"}]}
+
+  - description: a list where a scalar is expected
+    url: /v1/query
+    status: 400
+    query:
+      type: create_remote_relationship
+      args:
+        name: messages
+        table: {schema: custom, name: profiles}
+        hasura_fields: [id]
+        remote_schema: my-remote-schema
+        remote_field: {messages: {arguments: {where: {id: {eq: ["$id"]}}}}}
+    response: {"error":"Inconsistent object: in table \"custom.profiles\": in remote relationship \"messages\": type \"Int\"is not a list type","path":"$.args","code":"invalid-configuration","internal":[{"definition":{"definition":{"hasura_fields":["id"],"remote_field":{"messages":{"arguments":{"where":{"id":{"eq":["$id"]}}}}},"remote_schema":"my-remote-schema"},"name":"messages","source":"default","table":{"name":"profiles","schema":"custom"}},"name":"remote_relationship messages in table custom.profiles in source default","reason":"Inconsistent object: in table \"custom.profiles\": in remote relationship \"messages\": type \"Int\"is not a list type","type":"remote_relationship"}]}
+
+  - description: a computed field with input arguments is no join field
+    url: /v1/query
+    status: 400
+    query:
+      type: create_remote_relationship
+      args:
+        name: grade_offset
+        table: students
+        hasura_fields: [total_marks_offset]
+        remote_schema: my-remote-schema
+        remote_field: {getGrade: {arguments: {marks: "$total_marks_offset"}}}
+    response: {"error":"Inconsistent object: in table \"students\": in remote relationship \"grade_offset\": field with name \"total_marks_offset\"is not provided by the lhs entity\"students\"for defining a join condition, the allowed fields are \"id\", \"name\", \"physics\", \"maths\", \"total_marks\" or \"total_marks_session\"","path":"$.args","code":"invalid-configuration","internal":[{"definition":{"definition":{"hasura_fields":["total_marks_offset"],"remote_field":{"getGrade":{"arguments":{"marks":"$total_marks_offset"}}},"remote_schema":"my-remote-schema"},"name":"grade_offset","source":"default","table":{"name":"students","schema":"public"}},"name":"remote_relationship grade_offset in table students in source default","reason":"Inconsistent object: in table \"students\": in remote relationship \"grade_offset\": field with name \"total_marks_offset\"is not provided by the lhs entity\"students\"for defining a join condition, the allowed fields are \"id\", \"name\", \"physics\", \"maths\", \"total_marks\" or \"total_marks_session\"","type":"remote_relationship"}]}
+
+  - description: a name taken by a column
+    url: /v1/query
+    status: 400
+    query:
+      type: create_remote_relationship
+      args:
+        name: name
+        table: {schema: custom, name: profiles}
+        hasura_fields: [id]
+        remote_schema: my-remote-schema
+        remote_field: {message: {arguments: {id: "$id"}}}
+    response: {"error":"Inconsistent object: in table \"custom.profiles\": in remote relationship \"name\": field definition conflicts with postgres column","path":"$.args","code":"invalid-configuration","internal":[{"definition":{"definition":{"hasura_fields":["id"],"remote_field":{"message":{"arguments":{"id":"$id"}}},"remote_schema":"my-remote-schema"},"name":"name","source":"default","table":{"name":"profiles","schema":"custom"}},"name":"remote_relationship name in table custom.profiles in source default","reason":"Inconsistent object: in table \"custom.profiles\": in remote relationship \"name\": field definition conflicts with postgres column","type":"remote_relationship"}]}
+
+  - description: both remote_schema and definition
+    url: /v1/metadata
+    status: 400
+    query:
+      type: pg_create_remote_relationship
+      args:
+        name: x
+        table: {schema: custom, name: profiles}
+        remote_schema: my-remote-schema
+        definition: {}
+    response: {"error": "Error when parsing command create_remote_relationship.\nSee our documentation at https://hasura.io/docs/latest/graphql/core/api-reference/metadata-api/index.html#metadata-apis.\nInternal error message: create_remote_relationship expects exactly one of: remote_schema, definition", "path": "$.args", "code": "parse-failed"}
+
+  # --- valid definitions --------------------------------------------------------------------
+
+  - description: legacy format (setup_remote_rel_basic.yaml)
+    url: /v1/query
+    query:
+      type: create_remote_relationship
+      args:
+        name: messageBasic
+        table: {schema: custom, name: profiles}
+        hasura_fields: [id]
+        remote_schema: my-remote-schema
+        remote_field: {message: {arguments: {id: "$id"}}}
+    response: {message: success}
+
+  - description: unified format with nested arguments (setup_remote_rel_nested_args.yaml)
+    url: /v1/metadata
+    query:
+      type: pg_create_remote_relationship
+      args:
+        name: messagesNestedArgs
+        table: {schema: custom, name: profiles}
+        definition:
+          to_remote_schema:
+            remote_schema: my-remote-schema
+            lhs_fields: [id]
+            remote_field: {messages: {arguments: {where: {id: {eq: "$id"}}}}}
+    response: {message: success}
+
+  - description: the generated fields and argument types (select_remote_fields.yaml)
+    query:
+      query: |
+        query {
+          __type(name: "custom_profiles") {
+            name
+            fields { name args { name type { name } } }
+          }
+        }
+    response:
+      data:
+        __type:
+          name: custom_profiles
+          fields:
+          - {name: id, args: []}
+          - {name: messageBasic, args: []}
+          - name: messagesNestedArgs
+            args:
+            - {name: includes, type: {name: IncludeInpObj}}
+            - {name: where, type: {name: MessageWhereInpObj_remote_rel_custom_profilesmessagesNestedArgs}}
+          - {name: name, args: []}
+
+  - description: the cloned input type keeps the fields the template leaves open
+    query:
+      query: |
+        query {
+          __type(name: "MessageWhereInpObj_remote_rel_custom_profilesmessagesNestedArgs") {
+            inputFields { name type { name } }
+          }
+        }
+    response:
+      data:
+        __type:
+          inputFields:
+          - {name: id, type: {name: IntCompareObj_remote_rel_custom_profilesmessagesNestedArgs}}
+          - {name: name, type: {name: StringCompareObj}}
+
+  - description: the field's type is the remote field's (remote_relationship_field_type.yaml)
+    query:
+      query: |
+        query {
+          __type(name: "custom_profiles") {
+            fields { name type { kind name ofType { name } } description }
+          }
+        }
+    response: {"data":{"__type":{"fields":[{"name":"id","type":{"kind":"NON_NULL","name":null,"ofType":{"name":"Int"}},"description":null},{"name":"messageBasic","type":{"kind":"OBJECT","name":"Message","ofType":null},"description":null},{"name":"messagesNestedArgs","type":{"kind":"LIST","name":null,"ofType":{"name":"Message"}},"description":null},{"name":"name","type":{"kind":"SCALAR","name":"String","ofType":null},"description":null}]}}}
+
+  - description: basic relationship (basic_relationship.yaml)
+    query:
+      query: |
+        query {
+          custom_profiles {
+            id
+            messageBasic { name }
+          }
+        }
+    response:
+      data:
+        custom_profiles:
+          - {id: 1, messageBasic: {name: alice}}
+          - {id: 2, messageBasic: {name: bob}}
+          - {id: 3, messageBasic: {name: alice}}
+
+  - description: only the joined field selected
+    query:
+      query: "{ custom_profiles { messageBasic { msg } } }"
+    response: {data: {custom_profiles: [{messageBasic: {msg: "You win!"}}, {messageBasic: {msg: "You lose!"}}, {messageBasic: {msg: "Another alice"}}]}}
+
+  - description: fragments (remote_rel_fragments.yaml)
+    query:
+      query: |
+        fragment basicInfo on Message {
+          id
+          name
+        }
+
+        query {
+          custom_profiles {
+            id
+            messageBasic {
+              ...basicInfo
+            }
+          }
+        }
+    response:
+      data:
+        custom_profiles:
+          - {id: 1, messageBasic: {id: 1, name: alice}}
+          - {id: 2, messageBasic: {id: 2, name: bob}}
+          - {id: 3, messageBasic: {id: 3, name: alice}}
+
+  - description: an aliased join column (basic_relationship_alias.yaml)
+    query:
+      query: |
+        query {
+          custom_profiles(limit: 1) {
+            aliased_id: id
+            messageBasic { name }
+          }
+        }
+    response: {data: {custom_profiles: [{aliased_id: 1, messageBasic: {name: alice}}]}}
+
+  - description: on a by_pk field (query_with_object_rel.yaml)
+    query:
+      query: |
+        query {
+          custom_profiles_by_pk(id: 1) {
+            id
+            name
+            messageBasic { msg }
+          }
+        }
+    response: {data: {custom_profiles_by_pk: {id: 1, name: alice, messageBasic: {msg: "You win!"}}}}
+
+  - description: an array remote field on a by_pk field (query_with_arr_rel.yaml)
+    query:
+      query: |
+        query {
+          custom_profiles_by_pk(id: 1) {
+            id
+            name
+            messagesNestedArgs { msg }
+          }
+        }
+    response: {data: {custom_profiles_by_pk: {id: 1, name: alice, messagesNestedArgs: [{msg: "You win!"}]}}}
+
+  - description: user arguments merged with the template (query_with_arguments.yaml)
+    query:
+      query: |
+        query {
+          custom_profiles {
+            id
+            messagesNestedArgs(where: { name: { eq:  "alice" } }) {
+              id
+              msg
+            }
+          }
+        }
+    response:
+      data:
+        custom_profiles:
+          - {id: 1, messagesNestedArgs: [{id: 1, msg: "You win!"}]}
+          - {id: 2, messagesNestedArgs: []}
+          - {id: 3, messagesNestedArgs: [{id: 3, msg: "Another alice"}]}
+
+  - description: variables in user arguments (remote_rel_variables.yaml)
+    query:
+      query: |
+        query ($name: String!) {
+          custom_profiles {
+            id
+            messagesNestedArgs(includes: { name:  [$name] }) {
+              id
+              msg
+            }
+          }
+        }
+      variables: {name: alice}
+    response:
+      data:
+        custom_profiles:
+          - {id: 1, messagesNestedArgs: [{id: 1, msg: "You win!"}]}
+          - {id: 2, messagesNestedArgs: []}
+          - {id: 3, messagesNestedArgs: [{id: 3, msg: "Another alice"}]}
+
+  - description: a variable for an argument merged with the template
+    query:
+      query: |
+        query ($w: MessageWhereInpObj_remote_rel_custom_profilesmessagesNestedArgs) {
+          custom_profiles {
+            id
+            messagesNestedArgs(where: $w) { id }
+          }
+        }
+      variables: {w: {name: {eq: bob}}}
+    response:
+      data:
+        custom_profiles:
+          - {id: 1, messagesNestedArgs: []}
+          - {id: 2, messagesNestedArgs: [{id: 2}]}
+          - {id: 3, messagesNestedArgs: []}
+
+  - description: remote errors fail the query (query_with_errors_obj.yaml)
+    query:
+      query: |
+        query {
+          custom_profiles {
+            id
+            messageBasic {
+              msg
+              errorMsg
+            }
+          }
+
+        }
+    response:
+      errors:
+      - extensions:
+          internal:
+            errors:
+            - {path: [f0, errorMsg], message: intentional-error, locations: [{line: 1, column: 36}]}
+            - {path: [f1, errorMsg], message: intentional-error, locations: [{line: 1, column: 74}]}
+            - {path: [f2, errorMsg], message: intentional-error, locations: [{line: 1, column: 112}]}
+          path: $
+          code: unexpected
+        message: Errors from remote server
+
+  - description: remote errors in a list (query_with_errors_arr.yaml)
+    query:
+      query: |
+        query {
+          custom_profiles {
+            id
+            name
+            messagesNestedArgs {
+              msg
+              errorMsg
+            }
+          }
+        }
+    response:
+      errors:
+      - extensions:
+          internal:
+            errors:
+            - {path: [f0, 0, errorMsg], message: intentional-error, locations: [{line: 1, column: 52}]}
+            - {path: [f1, 0, errorMsg], message: intentional-error, locations: [{line: 1, column: 106}]}
+            - {path: [f2, 0, errorMsg], message: intentional-error, locations: [{line: 1, column: 160}]}
+          path: $
+          code: unexpected
+        message: Errors from remote server
+
+  - description: a list template (setup_remote_rel_array.yaml)
+    url: /v1/query
+    query:
+      type: create_remote_relationship
+      args:
+        name: messagesNestedArr
+        table: {schema: custom, name: profiles}
+        hasura_fields: [name]
+        remote_schema: my-remote-schema
+        remote_field: {messages: {arguments: {includes: {name: ["$name"]}}}}
+    response: {message: success}
+
+  - description: deduplicated join values (basic_array.yaml)
+    query:
+      query: |
+        query {
+          custom_profiles {
+            id
+            name
+            messagesNestedArr { name msg }
+          }
+        }
+    response:
+      data:
+        custom_profiles:
+          - {id: 1, name: alice, messagesNestedArr: [{name: alice, msg: "You win!"}, {name: alice, msg: "Another alice"}]}
+          - {id: 2, name: bob, messagesNestedArr: [{name: bob, msg: "You lose!"}]}
+          - {id: 3, name: alice, messagesNestedArr: [{name: alice, msg: "You win!"}, {name: alice, msg: "Another alice"}]}
+
+  - description: without selecting the join column (basic_array_without_join_key.yaml)
+    query:
+      query: |
+        query {
+          custom_profiles {
+            id
+            messagesNestedArr { name msg }
+          }
+        }
+    response:
+      data:
+        custom_profiles:
+          - {id: 1, messagesNestedArr: [{name: alice, msg: "You win!"}, {name: alice, msg: "Another alice"}]}
+          - {id: 2, messagesNestedArr: [{name: bob, msg: "You lose!"}]}
+          - {id: 3, messagesNestedArr: [{name: alice, msg: "You win!"}, {name: alice, msg: "Another alice"}]}
+
+  - description: several templated arguments (setup_remote_rel_multiple_fields.yaml)
+    url: /v1/query
+    query:
+      type: create_remote_relationship
+      args:
+        name: messagesMultiFields
+        table: {schema: custom, name: profiles}
+        hasura_fields: [id, name]
+        remote_schema: my-remote-schema
+        remote_field: {messages: {arguments: {where: {name: {eq: "$name"}}, includes: {id: ["$id"]}}}}
+    response: {message: success}
+
+  - description: basic_multiple_fields.yaml
+    query:
+      query: "{ custom_profiles { id name messagesMultiFields { msg } } }"
+    response:
+      data:
+        custom_profiles:
+          - {id: 1, name: alice, messagesMultiFields: [{msg: "You win!"}]}
+          - {id: 2, name: bob, messagesMultiFields: [{msg: "You lose!"}]}
+          - {id: 3, name: alice, messagesMultiFields: [{msg: "Another alice"}]}
+
+  - description: a nested remote field (setup_remote_rel_nested_fields.yaml)
+    url: /v1/query
+    query:
+      type: create_remote_relationship
+      args:
+        name: userNestedFields
+        table: {schema: custom, name: profiles}
+        hasura_fields: [id, name]
+        remote_schema: my-remote-schema
+        remote_field:
+          user:
+            arguments: {user_id: $id}
+            field:
+              userMessages:
+                arguments: {whered: {name: {eq: $name}}}
+    response: {message: success}
+
+  - description: basic_nested_fields.yaml
+    query:
+      query: "{ custom_profiles { id name userNestedFields { name } } }"
+    response:
+      data:
+        custom_profiles:
+          - {id: 1, name: alice, userNestedFields: [{name: alice}]}
+          - {id: 2, name: bob, userNestedFields: [{name: bob}]}
+          - {id: 3, name: alice, userNestedFields: [{name: alice}]}
+
+  - description: a scalar leaf (setup_remote_rel_scalar.yaml)
+    url: /v1/query
+    query:
+      type: create_remote_relationship
+      args:
+        name: userScalar
+        table: {schema: custom, name: profiles}
+        hasura_fields: [id, name]
+        remote_schema: my-remote-schema
+        remote_field:
+          user:
+            arguments: {user_id: $id}
+            field: {gimmeText: {arguments: {text: $name}}}
+    response: {message: success}
+
+  - description: query_with_scalar_rel.yaml
+    query:
+      query: "{ custom_profiles { id name userScalar } }"
+    response:
+      data:
+        custom_profiles:
+          - {id: 1, name: alice, userScalar: alice}
+          - {id: 2, name: bob, userScalar: bob}
+          - {id: 3, name: alice, userScalar: alice}
+
+  - description: a single value for a list argument (setup_remote_rel_joining_singleton_with_array.yaml)
+    url: /v1/query
+    query:
+      type: bulk
+      args:
+      - type: create_remote_relationship
+        args:
+          name: remoteUsers
+          table: {schema: custom, name: profiles}
+          hasura_fields: [id]
+          remote_schema: my-remote-schema
+          remote_field: {users: {arguments: {user_ids: "$id"}}}
+      - type: create_remote_relationship
+        args:
+          name: remoteUsersMultipleIds
+          table: {schema: custom, name: profiles}
+          hasura_fields: [id]
+          remote_schema: my-remote-schema
+          remote_field: {users: {arguments: {user_ids: ["$id"]}}}
+    response: [{message: success}, {message: success}]
+
+  - description: basic_relationship_joining_singleton_with_array.yaml
+    query:
+      query: |
+        query {
+          custom_profiles(where:{ id: { _eq: 1}}) {
+            id
+            remoteUsers {
+              user_id
+              userMessages { id msg }
+            }
+          }
+        }
+    response: {data: {custom_profiles: [{id: 1, remoteUsers: [{user_id: 1, userMessages: [{id: 1, msg: "You win!"}]}]}]}}
+
+  - description: an interface (setup_remote_rel_with_interface.yaml)
+    url: /v1/query
+    query:
+      type: create_remote_relationship
+      args:
+        name: communicationsInterface
+        table: {schema: custom, name: profiles}
+        hasura_fields: [id]
+        remote_schema: my-remote-schema
+        remote_field: {communications: {arguments: {id: $id}}}
+    response: {message: success}
+
+  - description: remote_rel_interface.yaml
+    query:
+      query: "{ custom_profiles { id communicationsInterface { msg } } }"
+    response:
+      data:
+        custom_profiles:
+          - {id: 1, communicationsInterface: [{msg: "You win!"}]}
+          - {id: 2, communicationsInterface: [{msg: "You lose!"}]}
+          - {id: 3, communicationsInterface: [{msg: "Another alice"}]}
+
+  - description: a union (setup_remote_rel_with_union.yaml)
+    url: /v1/query
+    query:
+      type: create_remote_relationship
+      args:
+        name: searchUnion
+        table: {schema: custom, name: profiles}
+        hasura_fields: [id]
+        remote_schema: my-remote-schema
+        remote_field: {search: {arguments: {id: $id}}}
+    response: {message: success}
+
+  - description: remote_rel_union.yaml
+    query:
+      query: |
+        query {
+          custom_profiles {
+            id
+            searchUnion {
+              ... on Author { name }
+              ... on Book { title }
+            }
+          }
+        }
+    response:
+      data:
+        custom_profiles:
+          - {id: 1, searchUnion: {title: "Harry Porter and the prisoner of Azkaban"}}
+          - {id: 2, searchUnion: {name: "J.K. Rowling"}}
+          - {id: 3, searchUnion: {title: "Harry Porter and the philoshoper's stone"}}
+
+  - description: an enum leaf (setup_remote_rel_with_enum.yaml)
+    url: /v1/query
+    query:
+      type: create_remote_relationship
+      args:
+        name: getOccupationEnum
+        table: {schema: custom, name: profiles}
+        hasura_fields: [name]
+        remote_schema: my-remote-schema
+        remote_field: {getOccupation: {arguments: {name: $name}}}
+    response: {message: success}
+
+  - description: remote_rel_enum.yaml
+    query:
+      query: "{ custom_profiles { id getOccupationEnum } }"
+    response:
+      data:
+        custom_profiles:
+          - {id: 1, getOccupationEnum: SINGER}
+          - {id: 2, getOccupationEnum: ARTIST}
+          - {id: 3, getOccupationEnum: SINGER}
+
+  - description: null join values (setup_remote_rel_null_joining_fields.yaml)
+    url: /v1/query
+    query:
+      type: create_remote_relationship
+      args:
+        name: employeeMessages
+        table: employees
+        hasura_fields: [id, name]
+        remote_schema: my-remote-schema
+        remote_field: {messages: {arguments: {where: {name: {eq: "$name"}}, includes: {id: ["$id"]}}}}
+    response: {message: success}
+
+  - description: remote_rel_with_null_joining_fields.yaml
+    query:
+      query: "{ employees { id name employeeMessages { id name msg } } }"
+    response:
+      data:
+        employees:
+          - {id: 1, name: alice, employeeMessages: [{id: 1, name: alice, msg: "You win!"}]}
+          - {id: 2, name: null, employeeMessages: null}
+          - {id: 3, name: bob, employeeMessages: []}
+
+  - description: a declared join field the template does not use still takes part
+    url: /v1/query
+    query:
+      type: create_remote_relationship
+      args:
+        name: messageById
+        table: employees
+        hasura_fields: [id, name]
+        remote_schema: my-remote-schema
+        remote_field: {message: {arguments: {id: "$id"}}}
+    response: {message: success}
+
+  - description: so its null makes the relationship null
+    query:
+      query: "{ employees { id messageById { msg } } }"
+    response:
+      data:
+        employees:
+          - {id: 1, messageById: {msg: "You win!"}}
+          - {id: 2, messageById: null}
+          - {id: 3, messageById: {msg: "Another alice"}}
+
+  - description: computed fields as join fields (setup_remote_rel_computed_fields.yaml)
+    url: /v1/query
+    query:
+      type: bulk
+      args:
+      - type: create_remote_relationship
+        args:
+          name: grade
+          table: students
+          hasura_fields: [total_marks]
+          remote_schema: my-remote-schema
+          remote_field: {getGrade: {arguments: {marks: "$total_marks"}}}
+      - type: create_remote_relationship
+        args:
+          name: grade_session
+          table: students
+          hasura_fields: [total_marks_session]
+          remote_schema: my-remote-schema
+          remote_field: {getGrade: {arguments: {marks: "$total_marks_session"}}}
+    response: [{message: success}, {message: success}]
+
+  - description: remote_join_with_computed_field.yaml
+    query:
+      query: "{ students { id name grade } }"
+    response: {data: {students: [{id: 1, name: alice, grade: S}, {id: 2, name: bob, grade: B}]}}
+
+  - description: remote_join_with_computed_field_session.yaml
+    headers: {X-Hasura-Role: admin, x-hasura-offset: "10"}
+    query:
+      query: "{ students { id name grade_session } }"
+    response: {data: {students: [{id: 1, name: alice, grade_session: A}, {id: 2, name: bob, grade_session: B}]}}
+
+  # --- mutations ------------------------------------------------------------------------------
+
+  - description: setup_remote_rel_basic_with_authors.yaml
+    url: /v1/query
+    query:
+      type: create_remote_relationship
+      args:
+        name: messageBasic
+        table: authors
+        hasura_fields: [id]
+        remote_schema: my-remote-schema
+        remote_field: {message: {arguments: {id: "$id"}}}
+    response: {message: success}
+
+  - description: insert_one returning a remote join (mutation_output_with_remote_join_fields.yaml)
+    query:
+      query: |
+        mutation {
+          insert_authors_one(object: {name: "alice"}) {
+            name
+            messageBasic { id name msg }
+          }
+        }
+    response: {data: {insert_authors_one: {name: alice, messageBasic: {id: 1, name: alice, msg: "You win!"}}}}
+
+  - description: insert returning a remote join
+    query:
+      query: |
+        mutation {
+          insert_authors(objects: [{name: "bob"}]) {
+            affected_rows
+            returning {
+              name
+              messageBasic { id name msg }
+            }
+          }
+        }
+    response: {data: {insert_authors: {affected_rows: 1, returning: [{name: bob, messageBasic: {id: 2, name: bob, msg: "You lose!"}}]}}}
+
+  # --- update and delete ----------------------------------------------------------------------
+
+  - description: update an unknown relationship
+    url: /v1/query
+    status: 400
+    query:
+      type: update_remote_relationship
+      args:
+        name: nope
+        table: {schema: custom, name: profiles}
+        hasura_fields: [id]
+        remote_schema: my-remote-schema
+        remote_field: {message: {arguments: {id: "$id"}}}
+    response: {"error": "\"nope\" does not exist", "path": "$.args", "code": "not-exists"}
+
+  - description: update a column
+    url: /v1/query
+    status: 400
+    query:
+      type: update_remote_relationship
+      args:
+        name: name
+        table: {schema: custom, name: profiles}
+        hasura_fields: [id]
+        remote_schema: my-remote-schema
+        remote_field: {message: {arguments: {id: "$id"}}}
+    response: {"error": "expecting a remote relationship", "path": "$.args", "code": "unexpected-payload"}
+
+  - description: update_remote_rel_basic.yaml
+    url: /v1/query
+    query:
+      type: update_remote_relationship
+      args:
+        name: messageBasic
+        table: {schema: custom, name: profiles}
+        hasura_fields: [id]
+        remote_schema: my-remote-schema
+        remote_field: {messages: {arguments: {where: {id: {eq: "$id"}}}}}
+    response: {message: success}
+
+  - description: update_basic_query.yaml
+    query:
+      query: "{ custom_profiles { id messageBasic { name } } }"
+    response:
+      data:
+        custom_profiles:
+          - {id: 1, messageBasic: [{name: alice}]}
+          - {id: 2, messageBasic: [{name: bob}]}
+          - {id: 3, messageBasic: [{name: alice}]}
+
+  - description: the remote schema cannot go while relationships use it
+    url: /v1/metadata
+    status: 400
+    query: {type: remove_remote_schema, args: {name: my-remote-schema}}
+    response: {"error":"cannot drop due to the following dependent objects: remote relationship authors.messageBasic in source \"default\", remote relationship custom.profiles.communicationsInterface in source \"default\", remote relationship custom.profiles.getOccupationEnum in source \"default\", remote relationship custom.profiles.messageBasic in source \"default\", remote relationship custom.profiles.messagesMultiFields in source \"default\", remote relationship custom.profiles.messagesNestedArgs in source \"default\", remote relationship custom.profiles.messagesNestedArr in source \"default\", remote relationship custom.profiles.remoteUsers in source \"default\", remote relationship custom.profiles.remoteUsersMultipleIds in source \"default\", remote relationship custom.profiles.searchUnion in source \"default\", remote relationship custom.profiles.userNestedFields in source \"default\", remote relationship custom.profiles.userScalar in source \"default\", remote relationship employees.employeeMessages in source \"default\", remote relationship employees.messageById in source \"default\", remote relationship students.grade in source \"default\", remote relationship students.grade_session in source \"default\"","path":"$.args","code":"dependency-error"}
+
+  - description: delete_remote_rel.yaml
+    url: /v1/query
+    query:
+      type: delete_remote_relationship
+      args: {table: {schema: custom, name: profiles}, name: messageBasic}
+    response: {message: success}
+
+  - description: gone from the schema
+    query:
+      query: "{ custom_profiles { messageBasic { name } } }"
+    response: {"errors":[{"message":"field 'messageBasic' not found in type: 'custom_profiles'","extensions":{"path":"$.selectionSet.custom_profiles.selectionSet.messageBasic","code":"validation-failed"}}]}
+
+  - description: export keeps each definition's format
+    url: /v1/metadata
+    query: {type: export_metadata, args: {}}
+    response: {"version":3,"sources":[{"name":"default","kind":"postgres","tables":[{"table":{"name":"profiles","schema":"custom"},"remote_relationships":[{"definition":{"hasura_fields":["id"],"remote_field":{"communications":{"arguments":{"id":"$id"}}},"remote_schema":"my-remote-schema"},"name":"communicationsInterface"},{"definition":{"hasura_fields":["name"],"remote_field":{"getOccupation":{"arguments":{"name":"$name"}}},"remote_schema":"my-remote-schema"},"name":"getOccupationEnum"},{"definition":{"hasura_fields":["id","name"],"remote_field":{"messages":{"arguments":{"includes":{"id":["$id"]},"where":{"name":{"eq":"$name"}}}}},"remote_schema":"my-remote-schema"},"name":"messagesMultiFields"},{"definition":{"to_remote_schema":{"lhs_fields":["id"],"remote_field":{"messages":{"arguments":{"where":{"id":{"eq":"$id"}}}}},"remote_schema":"my-remote-schema"}},"name":"messagesNestedArgs"},{"definition":{"hasura_fields":["name"],"remote_field":{"messages":{"arguments":{"includes":{"name":["$name"]}}}},"remote_schema":"my-remote-schema"},"name":"messagesNestedArr"},{"definition":{"hasura_fields":["id"],"remote_field":{"users":{"arguments":{"user_ids":"$id"}}},"remote_schema":"my-remote-schema"},"name":"remoteUsers"},{"definition":{"hasura_fields":["id"],"remote_field":{"users":{"arguments":{"user_ids":["$id"]}}},"remote_schema":"my-remote-schema"},"name":"remoteUsersMultipleIds"},{"definition":{"hasura_fields":["id"],"remote_field":{"search":{"arguments":{"id":"$id"}}},"remote_schema":"my-remote-schema"},"name":"searchUnion"},{"definition":{"hasura_fields":["id","name"],"remote_field":{"user":{"arguments":{"user_id":"$id"},"field":{"userMessages":{"arguments":{"whered":{"name":{"eq":"$name"}}}}}}},"remote_schema":"my-remote-schema"},"name":"userNestedFields"},{"definition":{"hasura_fields":["id","name"],"remote_field":{"user":{"arguments":{"user_id":"$id"},"field":{"gimmeText":{"arguments":{"text":"$name"}}}}},"remote_schema":"my-remote-schema"},"name":"userScalar"}]},{"table":{"name":"authors","schema":"public"},"remote_relationships":[{"definition":{"hasura_fields":["id"],"remote_field":{"message":{"arguments":{"id":"$id"}}},"remote_schema":"my-remote-schema"},"name":"messageBasic"}]},{"table":{"name":"employees","schema":"public"},"remote_relationships":[{"definition":{"hasura_fields":["id","name"],"remote_field":{"messages":{"arguments":{"includes":{"id":["$id"]},"where":{"name":{"eq":"$name"}}}}},"remote_schema":"my-remote-schema"},"name":"employeeMessages"},{"definition":{"hasura_fields":["id","name"],"remote_field":{"message":{"arguments":{"id":"$id"}}},"remote_schema":"my-remote-schema"},"name":"messageById"}]},{"table":{"name":"students","schema":"public"},"computed_fields":[{"name":"total_marks","definition":{"function":"total_marks","table_argument":"student_row"}},{"name":"total_marks_offset","definition":{"function":"total_marks_offset","table_argument":"student_row"}},{"name":"total_marks_session","definition":{"function":"total_marks_session","session_argument":"hasura_session","table_argument":"student_row"}}],"remote_relationships":[{"definition":{"hasura_fields":["total_marks"],"remote_field":{"getGrade":{"arguments":{"marks":"$total_marks"}}},"remote_schema":"my-remote-schema"},"name":"grade"},{"definition":{"hasura_fields":["total_marks_session"],"remote_field":{"getGrade":{"arguments":{"marks":"$total_marks_session"}}},"remote_schema":"my-remote-schema"},"name":"grade_session"}]}],"configuration":{"connection_info":{"database_url":{"from_env":"HASURA_GRAPHQL_DATABASE_URL"},"isolation_level":"read-committed","pool_settings":{"connection_lifetime":600,"max_connections":10},"use_prepared_statements":false}}}],"remote_schemas":[{"name":"my-remote-schema","definition":{"url":"{{REMOTE_URL}}/messages","forward_client_headers":false}}]}

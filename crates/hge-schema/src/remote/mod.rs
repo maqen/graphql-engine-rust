@@ -7,6 +7,7 @@ pub mod introspection;
 mod lower;
 pub mod metadata;
 pub mod print;
+pub mod relationships;
 mod schema;
 
 use std::collections::HashMap;
@@ -14,7 +15,8 @@ use std::fmt;
 use std::sync::Arc;
 
 pub use introspection::{RemoteDocument, parse_introspection};
-pub use lower::lower_root;
+pub use lower::{join_target, lower_root};
+pub use relationships::{RemoteRelationship, resolve_table_relationships};
 pub(crate) use schema::add_remote_schemas;
 pub use schema::check_conflicts;
 
@@ -93,6 +95,8 @@ impl RemoteSchemaInfo {
 #[derive(Debug, Clone, Default)]
 pub struct RemoteSchemas {
     pub schemas: Vec<Arc<RemoteSchemaInfo>>,
+    /// The valid remote relationships of each table, in metadata order.
+    pub relationships: HashMap<(Arc<str>, hge_core::QualifiedTable), Vec<Arc<RemoteRelationship>>>,
 }
 
 #[cfg(test)]
