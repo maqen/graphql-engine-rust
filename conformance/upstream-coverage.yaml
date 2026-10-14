@@ -83,7 +83,10 @@
   skipped: class fixture federated_server_with_hge_only
 - file: test_auth_webhook_cookie.py
   class: TestWebhookHeaderCookie
-  skipped: needs fixture auth_hook
+  area: auth
+  tests:
+    test_single_set_cookie_header_in_response: ported by hand
+    test_duplicate_set_cookie_header_in_response: ported by hand
 - file: test_compat.py
   class: TestJsonControlCharHandling
   skipped: no database state fixture
@@ -2128,13 +2131,21 @@
   skipped: needs pytest.mark.tls_webhook_server
 - file: test_webhook.py
   class: TestWebhookMetadataInGETModeWithoutTLS
-  skipped: needs pytest.mark.no_tls_webhook_server
+  area: auth
+  tests:
+    test_v1_metadata: ported by hand
+    test_v1_metadata_without_secret_is_unauthorized: ported by hand
+    test_v1_metadata_with_bearer_is_unauthorized: ported by hand
 - file: test_webhook.py
   class: TestWebhookMetadataInPOSTModeWithTLS
   skipped: needs pytest.mark.tls_webhook_server
 - file: test_webhook.py
   class: TestWebhookMetadataInPOSTModeWithoutTLS
-  skipped: needs pytest.mark.no_tls_webhook_server
+  area: auth
+  tests:
+    test_v1_metadata: ported by hand
+    test_v1_metadata_without_secret_is_unauthorized: ported by hand
+    test_v1_metadata_with_bearer_is_unauthorized: ported by hand
 - file: test_webhook.py
   class: TestWebhookSubscriptionExpiry
   skipped: needs fixture webhook_server
@@ -2143,23 +2154,27 @@
   skipped: needs pytest.mark.tls_webhook_server
 - file: test_webhook.py
   class: TestWebhookV2QueryInGETModeWithoutTLS
-  skipped: needs pytest.mark.no_tls_webhook_server
+  area: auth
+  tests:
+    test_v2_query: ported by hand
 - file: test_webhook.py
   class: TestWebhookV2QueryInPOSTModeWithTLS
   skipped: needs pytest.mark.tls_webhook_server
 - file: test_webhook.py
   class: TestWebhookV2QueryInPOSTModeWithoutTLS
-  skipped: needs pytest.mark.no_tls_webhook_server
+  area: auth
+  tests:
+    test_v2_query: ported by hand
 - file: test_webhook_insecure.py
   class: TestHTTPSWebhookInsecure
   skipped: needs pytest.mark.tls_webhook_server
 - file: test_webhook_request_context.py
   class: TestWebhookRequestContext
-  area: webhook-request-context
+  area: auth
   tests:
-    test_query: 'skipped: uses extra fixtures: query_echo_webhook'
-    test_query_invalid: 'skipped: uses extra fixtures: query_echo_webhook'
-    test_mutation_with_vars: 'skipped: uses extra fixtures: query_echo_webhook'
+    test_query: ported by hand
+    test_query_invalid: ported by hand
+    test_mutation_with_vars: ported by hand
 - file: test_websocket_init_cookie.py
   class: TestWebsocketInitCookieNotReadWithCorsDisabled
   skipped: needs fixture auth_hook

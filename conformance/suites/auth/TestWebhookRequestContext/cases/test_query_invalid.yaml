@@ -1,0 +1,18 @@
+upstream:
+  by_hand: true
+  file: test_webhook_request_context.py
+  class: TestWebhookRequestContext
+  method: test_query_invalid
+admin_secret_header: false
+steps:
+- url: /v1/graphql
+  status: 200
+  headers:
+    auth-user-id: '1'
+  query: invalid-query
+  response:
+    errors:
+    - message: parsing Hasura.GraphQL.Transport.HTTP.Protocol.GQLReq(GQLReq) failed, expected Object, but encountered String
+      extensions:
+        path: $
+        code: parse-failed

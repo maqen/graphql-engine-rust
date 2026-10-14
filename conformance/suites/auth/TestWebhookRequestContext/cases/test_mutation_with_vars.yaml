@@ -1,0 +1,28 @@
+upstream:
+  by_hand: true
+  file: test_webhook_request_context.py
+  class: TestWebhookRequestContext
+  method: test_mutation_with_vars
+admin_secret_header: false
+steps:
+- url: /v1/graphql
+  status: 200
+  headers:
+    auth-user-id: '4'
+  query:
+    query: |
+      mutation insert_single_user($id: Int!, $name: String!) {
+        insert_users_one(object: {id: $id, name: $name}) {
+          id
+          name
+        }
+      }
+    variables:
+      id: 4
+      name: danish
+    operationName: insert_single_user
+  response:
+    data:
+      insert_users_one:
+        id: 4
+        name: danish

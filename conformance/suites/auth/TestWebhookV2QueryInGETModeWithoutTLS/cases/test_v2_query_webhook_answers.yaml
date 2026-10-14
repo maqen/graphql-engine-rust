@@ -1,0 +1,101 @@
+upstream:
+  by_hand: true
+  file: test_webhook.py
+  class: TestWebhookV2QueryInGETModeWithoutTLS
+  method: test_v2_query
+admin_secret_header: false
+steps:
+- description: the webhook refuses a token it does not know
+  url: /v2/query
+  status: 401
+  headers:
+    Authorization: Bearer Ym05MExXRXRkMlZpYUc5dmF5MTBiMnRsYmc9PQ==
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - id
+      - name
+  response:
+    error: Authentication hook unauthorized this request
+    path: $
+    code: access-denied
+- description: no credentials
+  url: /v2/query
+  status: 401
+  query:
+    type: select
+    args:
+      table: author
+      columns:
+      - id
+      - name
+  response:
+    error: Authentication hook unauthorized this request
+    path: $
+    code: access-denied
+- description: user role and session variables from the webhook
+  url: /v1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer eyJYLUhhc3VyYS1Sb2xlIjogInVzZXIiLCAiWC1IYXN1cmEtVXNlci1JZCI6ICIxIiwgIlgtSGFzdXJhLUF1dGgtTW9kZSI6ICJ3ZWJob29rIn0=
+  query:
+    query: query { author { name } }
+  response:
+    data:
+      author:
+      - name: Author 1
+      - name: Author 2
+- description: the webhook's answer has no role
+  url: /v1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer eyJYLUhhc3VyYS1Vc2VyLUlkIjogIjEiLCAiWC1IYXN1cmEtQXV0aC1Nb2RlIjogIndlYmhvb2sifQ==
+  query:
+    query: query { author { name } }
+  response:
+    errors:
+    - message: '"x-hasura-role" not found in session variables'
+      extensions:
+        path: $
+        code: invalid-params
+- description: an unknown role from the webhook
+  url: /v1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer eyJYLUhhc3VyYS1Sb2xlIjogIm5vYm9keSIsICJYLUhhc3VyYS1BdXRoLU1vZGUiOiAid2ViaG9vayJ9
+  query:
+    query: query { author { name } }
+  response:
+    errors:
+    - message: 'field ''author'' not found in type: ''query_root'''
+      extensions:
+        path: $.selectionSet.author
+        code: validation-failed
+- description: a refused token on /v1/graphql
+  url: /v1/graphql
+  status: 200
+  headers:
+    Authorization: Bearer e30=
+  query:
+    query: query { author { name } }
+  response:
+    errors:
+    - message: Authentication hook unauthorized this request
+      extensions:
+        path: $
+        code: access-denied
+- description: a refused token on /v1alpha1/graphql
+  url: /v1alpha1/graphql
+  status: 401
+  headers:
+    Authorization: Bearer e30=
+  query:
+    query: query { author { name } }
+  response:
+    errors:
+    - message: Authentication hook unauthorized this request
+      extensions:
+        path: $
+        code: access-denied

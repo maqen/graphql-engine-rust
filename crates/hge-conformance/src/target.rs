@@ -97,6 +97,9 @@ impl Slot {
             target,
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(60))
+                // Header names go out `Title-Case`, as most tests-py cases write them (requests
+                // sends names as written); V2 forwards names to auth webhooks as received.
+                .http1_title_case_headers()
                 .build()?,
             engine: None,
             admin_secret: None,

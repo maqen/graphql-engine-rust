@@ -1,0 +1,9 @@
+description: Ported by hand from hasura/graphql-engine server/tests-py/test_webhook.py::TestWebhookMetadataInGETModeWithoutTLS
+admin_secret: true
+helpers:
+- webhook
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_AUTH_HOOK: '{{helper:webhook}}/'
+  HASURA_GRAPHQL_AUTH_HOOK_MODE: GET
+isolation: none

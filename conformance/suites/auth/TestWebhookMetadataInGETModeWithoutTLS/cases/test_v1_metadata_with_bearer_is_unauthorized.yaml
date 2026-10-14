@@ -1,0 +1,18 @@
+upstream:
+  by_hand: true
+  file: test_webhook.py
+  class: TestWebhookMetadataInGETModeWithoutTLS
+  method: test_v1_metadata_with_bearer_is_unauthorized
+admin_secret_header: false
+steps:
+- url: /v1/metadata
+  status: 400
+  headers:
+    Authorization: Bearer eyJYLUhhc3VyYS1BdXRoLU1vZGUiOiAid2ViaG9vayJ9
+  query:
+    type: export_metadata
+    args: {}
+  response:
+    error: '"x-hasura-role" not found in session variables'
+    path: $
+    code: invalid-params

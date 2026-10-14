@@ -1,0 +1,25 @@
+upstream:
+  by_hand: true
+  file: test_webhook_request_context.py
+  class: TestWebhookRequestContext
+  method: test_query
+admin_secret_header: false
+steps:
+- url: /v1/graphql
+  status: 200
+  headers:
+    auth-user-id: '1'
+  query:
+    query: |
+      query allUsers {
+        users {
+          id
+          name
+        }
+      }
+    operationName: allUsers
+  response:
+    data:
+      users:
+      - id: 1
+        name: alice

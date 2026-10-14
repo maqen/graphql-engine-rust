@@ -1,0 +1,10 @@
+description: Ported by hand from hasura/graphql-engine server/tests-py/test_webhook_request_context.py::TestWebhookRequestContext.
+  Upstream also checks what the webhook received; here only the responses are compared.
+admin_secret: true
+helpers:
+- query_echo
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_AUTH_HOOK: '{{helper:query_echo}}/'
+  HASURA_GRAPHQL_AUTH_HOOK_MODE: POST
+isolation: database
