@@ -6858,8 +6858,7 @@
       "type": "computed_field"
      }
     ]
-   },
-   "todo": "needs resolver validation (Mutations thread)"
+   }
   },
   {
    "url": "/v1/metadata",
@@ -6999,8 +6998,7 @@
       "type": "computed_field"
      }
     ]
-   },
-   "todo": "needs resolver validation (Mutations thread)"
+   }
   },
   {
    "url": "/v1/metadata",
@@ -7142,8 +7140,7 @@
       "type": "computed_field"
      }
     ]
-   },
-   "todo": "needs resolver validation (Mutations thread)"
+   }
   },
   {
    "url": "/v1/metadata",

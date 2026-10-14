@@ -49,8 +49,13 @@ pub(crate) fn lookup<'c>(
 
 /// How V2 prints a type in function errors: `pg_catalog.integer`-style for built-ins is
 /// approximated by `schema.name`.
+/// A type's name as V2 prints a qualified name: without the `public` schema.
 pub(crate) fn type_text(ty: &ColumnType) -> String {
-    format!("{}.{}", ty.schema, ty.name)
+    if ty.schema == "public" {
+        ty.name.clone()
+    } else {
+        format!("{}.{}", ty.schema, ty.name)
+    }
 }
 
 pub(crate) fn is_json(arg: &FunctionArg) -> bool {

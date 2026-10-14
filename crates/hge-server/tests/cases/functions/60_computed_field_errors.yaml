@@ -1,0 +1,756 @@
+# Recorded on hasura/graphql-engine:v2.51.0-ce.
+config:
+  fixture: functions
+cases:
+- description: computed field on cfe_vol
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_vol
+      source: default
+  response:
+    error: 'Inconsistent object: in table "author": in computed field "cfx": the computed field "cfx"
+      cannot be added to table "author" because the function "cfe_vol" is of type VOLATILE; cannot be
+      added as a computed field'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_vol
+            schema: public
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: 'Inconsistent object: in table "author": in computed field "cfx": the computed field "cfx"
+        cannot be added to table "author" because the function "cfe_vol" is of type VOLATILE; cannot be
+        added as a computed field'
+      type: computed_field
+  status: 400
+- description: computed field on cfe_vol with table_argument random
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_vol
+        table_argument: random
+      source: default
+  response:
+    error: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field \"\
+      cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"cfe_vol\"\
+      \ is of type VOLATILE; cannot be added as a computed field\n  • \"random\" is not an input argument\
+      \ of the function \"cfe_vol\"\n"
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_vol
+            schema: public
+          table_argument: random
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field\
+        \ \"cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"\
+        cfe_vol\" is of type VOLATILE; cannot be added as a computed field\n  • \"random\" is not an input\
+        \ argument of the function \"cfe_vol\"\n"
+      type: computed_field
+  status: 400
+- description: computed field on cfe_vol_text
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_vol_text
+      source: default
+  response:
+    error: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field \"\
+      cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"cfe_vol_text\"\
+      \ is of type VOLATILE; cannot be added as a computed field\n  • first argument of the function \"\
+      cfe_vol_text\" is not COMPOSITE type\n  • first argument of the function \"cfe_vol_text\" of type\
+      \ \"pg_catalog.text\" is not the table to which the computed field is being added\n"
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_vol_text
+            schema: public
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field\
+        \ \"cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"\
+        cfe_vol_text\" is of type VOLATILE; cannot be added as a computed field\n  • first argument of\
+        \ the function \"cfe_vol_text\" is not COMPOSITE type\n  • first argument of the function \"cfe_vol_text\"\
+        \ of type \"pg_catalog.text\" is not the table to which the computed field is being added\n"
+      type: computed_field
+  status: 400
+- description: computed field on cfe_vol_untracked
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_vol_untracked
+      source: default
+  response:
+    error: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field \"\
+      cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"cfe_vol_untracked\"\
+      \ is of type VOLATILE; cannot be added as a computed field\n  • the function \"cfe_vol_untracked\"\
+      \ returning set of table \"cf_untracked\" is not tracked or not found in database\n"
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_vol_untracked
+            schema: public
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field\
+        \ \"cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"\
+        cfe_vol_untracked\" is of type VOLATILE; cannot be added as a computed field\n  • the function\
+        \ \"cfe_vol_untracked\" returning set of table \"cf_untracked\" is not tracked or not found in\
+        \ database\n"
+      type: computed_field
+  status: 400
+- description: computed field on cfe_vol_untracked with table_argument random
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_vol_untracked
+        table_argument: random
+      source: default
+  response:
+    error: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field \"\
+      cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"cfe_vol_untracked\"\
+      \ is of type VOLATILE; cannot be added as a computed field\n  • the function \"cfe_vol_untracked\"\
+      \ returning set of table \"cf_untracked\" is not tracked or not found in database\n  • \"random\"\
+      \ is not an input argument of the function \"cfe_vol_untracked\"\n"
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_vol_untracked
+            schema: public
+          table_argument: random
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field\
+        \ \"cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"\
+        cfe_vol_untracked\" is of type VOLATILE; cannot be added as a computed field\n  • the function\
+        \ \"cfe_vol_untracked\" returning set of table \"cf_untracked\" is not tracked or not found in\
+        \ database\n  • \"random\" is not an input argument of the function \"cfe_vol_untracked\"\n"
+      type: computed_field
+  status: 400
+- description: computed field on cfe_text_untracked
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_text_untracked
+      source: default
+  response:
+    error: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field \"\
+      cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"cfe_text_untracked\"\
+      \ returning set of table \"cf_untracked\" is not tracked or not found in database\n  • first argument\
+      \ of the function \"cfe_text_untracked\" is not COMPOSITE type\n  • first argument of the function\
+      \ \"cfe_text_untracked\" of type \"pg_catalog.text\" is not the table to which the computed field\
+      \ is being added\n"
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_text_untracked
+            schema: public
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field\
+        \ \"cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"\
+        cfe_text_untracked\" returning set of table \"cf_untracked\" is not tracked or not found in database\n\
+        \  • first argument of the function \"cfe_text_untracked\" is not COMPOSITE type\n  • first argument\
+        \ of the function \"cfe_text_untracked\" of type \"pg_catalog.text\" is not the table to which\
+        \ the computed field is being added\n"
+      type: computed_field
+  status: 400
+- description: computed field on cfe_untracked with table_argument random
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_untracked
+        table_argument: random
+      source: default
+  response:
+    error: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field \"\
+      cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"cfe_untracked\"\
+      \ returning set of table \"cf_untracked\" is not tracked or not found in database\n  • \"random\"\
+      \ is not an input argument of the function \"cfe_untracked\"\n"
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_untracked
+            schema: public
+          table_argument: random
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field\
+        \ \"cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"\
+        cfe_untracked\" returning set of table \"cf_untracked\" is not tracked or not found in database\n\
+        \  • \"random\" is not an input argument of the function \"cfe_untracked\"\n"
+      type: computed_field
+  status: 400
+- description: computed field on cfe_noargs
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_noargs
+      source: default
+  response:
+    error: 'Inconsistent object: in table "author": in computed field "cfx": the computed field "cfx"
+      cannot be added to table "author" because the function "cfe_noargs" has no input arguments'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_noargs
+            schema: public
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: 'Inconsistent object: in table "author": in computed field "cfx": the computed field "cfx"
+        cannot be added to table "author" because the function "cfe_noargs" has no input arguments'
+      type: computed_field
+  status: 400
+- description: computed field on cfe_vol_noargs
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_vol_noargs
+      source: default
+  response:
+    error: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field \"\
+      cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"cfe_vol_noargs\"\
+      \ is of type VOLATILE; cannot be added as a computed field\n  • the function \"cfe_vol_noargs\"\
+      \ has no input arguments\n"
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_vol_noargs
+            schema: public
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field\
+        \ \"cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"\
+        cfe_vol_noargs\" is of type VOLATILE; cannot be added as a computed field\n  • the function \"\
+        cfe_vol_noargs\" has no input arguments\n"
+      type: computed_field
+  status: 400
+- description: computed field on cfe_text
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_text
+      source: default
+  response:
+    error: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field \"\
+      cfx\" cannot be added to table \"author\" for the following reasons:\n  • first argument of the\
+      \ function \"cfe_text\" is not COMPOSITE type\n  • first argument of the function \"cfe_text\" of\
+      \ type \"pg_catalog.text\" is not the table to which the computed field is being added\n"
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_text
+            schema: public
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field\
+        \ \"cfx\" cannot be added to table \"author\" for the following reasons:\n  • first argument of\
+        \ the function \"cfe_text\" is not COMPOSITE type\n  • first argument of the function \"cfe_text\"\
+        \ of type \"pg_catalog.text\" is not the table to which the computed field is being added\n"
+      type: computed_field
+  status: 400
+- description: computed field on cfe_sess and session_argument s
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_sess
+        session_argument: s
+      source: default
+  response:
+    error: 'Inconsistent object: in table "author": in computed field "cfx": the computed field "cfx"
+      cannot be added to table "author" because "s" argument of the function "cfe_sess" is not of type
+      JSON'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_sess
+            schema: public
+          session_argument: s
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: 'Inconsistent object: in table "author": in computed field "cfx": the computed field "cfx"
+        cannot be added to table "author" because "s" argument of the function "cfe_sess" is not of type
+        JSON'
+      type: computed_field
+  status: 400
+- description: computed field on cfe_sess and session_argument zz
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_sess
+        session_argument: zz
+      source: default
+  response:
+    error: 'Inconsistent object: in table "author": in computed field "cfx": the computed field "cfx"
+      cannot be added to table "author" because "zz" is not an input argument of the function "cfe_sess"'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_sess
+            schema: public
+          session_argument: zz
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: 'Inconsistent object: in table "author": in computed field "cfx": the computed field "cfx"
+        cannot be added to table "author" because "zz" is not an input argument of the function "cfe_sess"'
+      type: computed_field
+  status: 400
+- description: computed field on cfe_vol_sess and session_argument s
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_vol_sess
+        session_argument: s
+      source: default
+  response:
+    error: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field \"\
+      cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"cfe_vol_sess\"\
+      \ is of type VOLATILE; cannot be added as a computed field\n  • \"s\" argument of the function \"\
+      cfe_vol_sess\" is not of type JSON\n"
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_vol_sess
+            schema: public
+          session_argument: s
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field\
+        \ \"cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"\
+        cfe_vol_sess\" is of type VOLATILE; cannot be added as a computed field\n  • \"s\" argument of\
+        \ the function \"cfe_vol_sess\" is not of type JSON\n"
+      type: computed_field
+  status: 400
+- description: computed field on cfe_vol_sess with table_argument random and session_argument s
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_vol_sess
+        table_argument: random
+        session_argument: s
+      source: default
+  response:
+    error: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field \"\
+      cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"cfe_vol_sess\"\
+      \ is of type VOLATILE; cannot be added as a computed field\n  • \"random\" is not an input argument\
+      \ of the function \"cfe_vol_sess\"\n"
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_vol_sess
+            schema: public
+          session_argument: s
+          table_argument: random
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field\
+        \ \"cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"\
+        cfe_vol_sess\" is of type VOLATILE; cannot be added as a computed field\n  • \"random\" is not\
+        \ an input argument of the function \"cfe_vol_sess\"\n"
+      type: computed_field
+  status: 400
+- description: computed field on cfe_text_sess and session_argument s
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_text_sess
+        session_argument: s
+      source: default
+  response:
+    error: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field \"\
+      cfx\" cannot be added to table \"author\" for the following reasons:\n  • first argument of the\
+      \ function \"cfe_text_sess\" is not COMPOSITE type\n  • first argument of the function \"cfe_text_sess\"\
+      \ of type \"pg_catalog.text\" is not the table to which the computed field is being added\n  • \"\
+      s\" argument of the function \"cfe_text_sess\" is not of type JSON\n"
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_text_sess
+            schema: public
+          session_argument: s
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field\
+        \ \"cfx\" cannot be added to table \"author\" for the following reasons:\n  • first argument of\
+        \ the function \"cfe_text_sess\" is not COMPOSITE type\n  • first argument of the function \"\
+        cfe_text_sess\" of type \"pg_catalog.text\" is not the table to which the computed field is being\
+        \ added\n  • \"s\" argument of the function \"cfe_text_sess\" is not of type JSON\n"
+      type: computed_field
+  status: 400
+- description: computed field on cfe_vol_sess and session_argument zz
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_vol_sess
+        session_argument: zz
+      source: default
+  response:
+    error: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field \"\
+      cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"cfe_vol_sess\"\
+      \ is of type VOLATILE; cannot be added as a computed field\n  • \"zz\" is not an input argument\
+      \ of the function \"cfe_vol_sess\"\n"
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_vol_sess
+            schema: public
+          session_argument: zz
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field\
+        \ \"cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"\
+        cfe_vol_sess\" is of type VOLATILE; cannot be added as a computed field\n  • \"zz\" is not an\
+        \ input argument of the function \"cfe_vol_sess\"\n"
+      type: computed_field
+  status: 400
+- description: computed field on cfe_rec
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_rec
+      source: default
+  response:
+    error: 'Inconsistent object: in table "author": in computed field "cfx": the computed field "cfx"
+      cannot be added to table "author" because the function "cfe_rec" returning type record is not a
+      BASE type'
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_rec
+            schema: public
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: 'Inconsistent object: in table "author": in computed field "cfx": the computed field "cfx"
+        cannot be added to table "author" because the function "cfe_rec" returning type record is not
+        a BASE type'
+      type: computed_field
+  status: 400
+- description: computed field on cfe_vol_rec
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_vol_rec
+      source: default
+  response:
+    error: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field \"\
+      cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"cfe_vol_rec\"\
+      \ is of type VOLATILE; cannot be added as a computed field\n  • the function \"cfe_vol_rec\" returning\
+      \ type record is not a BASE type\n  • first argument of the function \"cfe_vol_rec\" is not COMPOSITE\
+      \ type\n  • first argument of the function \"cfe_vol_rec\" of type \"pg_catalog.text\" is not the\
+      \ table to which the computed field is being added\n"
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_vol_rec
+            schema: public
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field\
+        \ \"cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"\
+        cfe_vol_rec\" is of type VOLATILE; cannot be added as a computed field\n  • the function \"cfe_vol_rec\"\
+        \ returning type record is not a BASE type\n  • first argument of the function \"cfe_vol_rec\"\
+        \ is not COMPOSITE type\n  • first argument of the function \"cfe_vol_rec\" of type \"pg_catalog.text\"\
+        \ is not the table to which the computed field is being added\n"
+      type: computed_field
+  status: 400
+- description: computed field on cfe_text_untracked and session_argument t
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_text_untracked
+        session_argument: t
+      source: default
+  response:
+    error: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field \"\
+      cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"cfe_text_untracked\"\
+      \ returning set of table \"cf_untracked\" is not tracked or not found in database\n  • first argument\
+      \ of the function \"cfe_text_untracked\" is not COMPOSITE type\n  • first argument of the function\
+      \ \"cfe_text_untracked\" of type \"pg_catalog.text\" is not the table to which the computed field\
+      \ is being added\n  • \"t\" argument of the function \"cfe_text_untracked\" is not of type JSON\n"
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_text_untracked
+            schema: public
+          session_argument: t
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field\
+        \ \"cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"\
+        cfe_text_untracked\" returning set of table \"cf_untracked\" is not tracked or not found in database\n\
+        \  • first argument of the function \"cfe_text_untracked\" is not COMPOSITE type\n  • first argument\
+        \ of the function \"cfe_text_untracked\" of type \"pg_catalog.text\" is not the table to which\
+        \ the computed field is being added\n  • \"t\" argument of the function \"cfe_text_untracked\"\
+        \ is not of type JSON\n"
+      type: computed_field
+  status: 400
+- description: computed field on cfe_vol_text with table_argument t
+  url: /v1/metadata
+  query:
+    type: pg_add_computed_field
+    args:
+      table: author
+      name: cfx
+      definition:
+        function: cfe_vol_text
+        table_argument: t
+      source: default
+  response:
+    error: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field \"\
+      cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"cfe_vol_text\"\
+      \ is of type VOLATILE; cannot be added as a computed field\n  • \"t\" argument of the function \"\
+      cfe_vol_text\" is not COMPOSITE type\n  • \"t\" argument of the function \"cfe_vol_text\" of type\
+      \ \"pg_catalog.text\" is not the table to which the computed field is being added\n"
+    path: $.args
+    code: invalid-configuration
+    internal:
+    - definition:
+        comment: null
+        definition:
+          function:
+            name: cfe_vol_text
+            schema: public
+          table_argument: t
+        name: cfx
+        source: default
+        table:
+          name: author
+          schema: public
+      name: computed_field cfx in table author in source default
+      reason: "Inconsistent object: in table \"author\": in computed field \"cfx\": the computed field\
+        \ \"cfx\" cannot be added to table \"author\" for the following reasons:\n  • the function \"\
+        cfe_vol_text\" is of type VOLATILE; cannot be added as a computed field\n  • \"t\" argument of\
+        \ the function \"cfe_vol_text\" is not COMPOSITE type\n  • \"t\" argument of the function \"cfe_vol_text\"\
+        \ of type \"pg_catalog.text\" is not the table to which the computed field is being added\n"
+      type: computed_field
+  status: 400
