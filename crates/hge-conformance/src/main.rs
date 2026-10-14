@@ -11,6 +11,7 @@
 
 mod compare;
 mod db;
+mod helpers;
 mod jwt;
 mod report;
 mod run;
@@ -93,6 +94,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     // Signing keys for JWT cases live next to the suites.
     jwt::set_keys_dir(cli.suites.join("../keys"));
+    helpers::set_dir(cli.suites.join("../helpers"));
     let mut suites = suite::load_all(&cli.suites)?;
     // Suites with the same engine environment run back to back, so Hasura containers get reused.
     suites.sort_by_key(|s| (s.engine_key(), s.id.clone()));
