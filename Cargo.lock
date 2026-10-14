@@ -1136,6 +1136,7 @@ dependencies = [
  "hge-core",
  "hge-ir",
  "hge-metadata",
+ "hge-testdb",
  "indexmap",
  "postgres-types",
  "rand 0.9.5",

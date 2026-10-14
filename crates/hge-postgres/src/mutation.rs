@@ -62,23 +62,52 @@ pub(crate) async fn execute(
         session,
         prepared: source.use_prepared_statements(),
     };
+    // BEGIN goes alone in its own message: it is built from fixed words only, so it can't
+    // fail to parse and leave the statements pipelined behind it running outside a
+    // transaction. The settings follow in a second message; if they fail, the transaction is
+    // open but aborted and the first mutation fails with it.
     let begin = format!(
-        "BEGIN ISOLATION LEVEL {} READ WRITE; SET LOCAL \"hasura.tracecontext\" = {}; \
-         SET LOCAL \"hasura.user\" = {}",
-        source.isolation_level().sql(),
+        "BEGIN ISOLATION LEVEL {} READ WRITE",
+        source.isolation_level().sql()
+    );
+    let settings = format!(
+        "SET LOCAL \"hasura.tracecontext\" = {}; SET LOCAL \"hasura.user\" = {}",
         quote_literal(&trace_context().to_string()),
         quote_literal(&session.variables.to_sorted_json_string()),
     );
-    client.batch_execute(&begin).await.map_err(tx_error)?;
+    // The first mutation is sent right behind those two messages instead of after their
+    // replies, saving a round trip.
+    let (first, rest) = fields
+        .split_first()
+        .map_or((None, &[][..]), |(f, r)| (Some(f), r));
+    let first = match pipelined(client, [&begin, &settings], async {
+        match first {
+            Some(m) => Some(tx.mutation(m).await),
+            None => None,
+        }
+    })
+    .await
+    {
+        Ok(first) => first,
+        // The guard is still armed, so the connection is detached instead of reused.
+        Err(e) => return Err(tx_error(e)),
+    };
 
     let mut results = Vec::with_capacity(fields.len());
     let mut failure = None;
-    for m in fields {
-        match tx.mutation(m).await {
-            Ok(json) => results.push(json),
-            Err(e) => {
-                failure = Some(e);
-                break;
+    match first {
+        Some(Ok(json)) => results.push(json),
+        Some(Err(e)) => failure = Some(e),
+        None => {}
+    }
+    if failure.is_none() {
+        for m in rest {
+            match tx.mutation(m).await {
+                Ok(json) => results.push(json),
+                Err(e) => {
+                    failure = Some(e);
+                    break;
+                }
             }
         }
     }
@@ -95,6 +124,23 @@ pub(crate) async fn execute(
             Ok(results)
         }
     }
+}
+
+/// Send the `begin` messages and then whatever `first` sends on the same connection without
+/// waiting for replies in between (tokio-postgres keeps requests in the order they are first
+/// polled, and `first` is polled last). `first`'s output is returned only if every `begin`
+/// message succeeded.
+async fn pipelined<T>(
+    client: &ClientWrapper,
+    [begin, settings]: [&str; 2],
+    first: impl Future<Output = T>,
+) -> Result<T, tokio_postgres::Error> {
+    let (begun, set, first) = futures::join!(
+        client.batch_execute(begin),
+        client.batch_execute(settings),
+        first
+    );
+    begun.and(set).map(|()| first)
 }
 
 /// `BEGIN` / `COMMIT` failures (including deferred constraints checked at commit).
@@ -435,5 +481,49 @@ fn empty_response(output: &MutationOutput) -> String {
                 .collect();
             Json::Object(obj).to_string()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pool::PoolConfig;
+
+    /// Failing BEGIN settings must keep the pipelined first statement from taking effect.
+    #[tokio::test]
+    async fn pipelined_statement_does_not_run_when_begin_fails() {
+        let Some(db) = hge_testdb::TestDb::create("pipelined_begin").await else {
+            return;
+        };
+        let source = PgSource::connect("default", db.url(), &PoolConfig::default()).unwrap();
+        source
+            .batch_execute("CREATE TABLE t (id int)")
+            .await
+            .unwrap();
+        let client = source.client().await.unwrap();
+        // A settings message that does not even parse: the transaction BEGIN opened is
+        // aborted, so the insert behind it fails instead of autocommitting.
+        let insert = client.execute("INSERT INTO t VALUES (1)", &[]);
+        let out = pipelined(&client, ["BEGIN", "SET LOCAL x = 'unterminated"], insert).await;
+        assert!(out.is_err());
+        client.batch_execute("ROLLBACK").await.unwrap();
+        // A setting that parses but fails.
+        let insert = client.execute("INSERT INTO t VALUES (1)", &[]);
+        let bad = "SET LOCAL statement_timeout = 'not a duration'";
+        assert!(pipelined(&client, ["BEGIN", bad], insert).await.is_err());
+        client.batch_execute("ROLLBACK").await.unwrap();
+
+        let ok = pipelined(
+            &client,
+            ["BEGIN", "SET LOCAL statement_timeout = '5s'"],
+            client.execute("INSERT INTO t VALUES (2)", &[]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(ok.unwrap(), 1);
+        client.batch_execute("COMMIT").await.unwrap();
+        let rows = client.query("SELECT id FROM t", &[]).await.unwrap();
+        let ids: Vec<i32> = rows.iter().map(|r| r.get(0)).collect();
+        assert_eq!(ids, vec![2]);
     }
 }
