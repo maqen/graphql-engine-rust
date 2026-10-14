@@ -10,7 +10,8 @@ keys are thrown away. Responses are left out; record them from Hasura afterwards
     target/debug/hge-conformance --filter auth/ hasura --record
 
 Tests whose token must expire relative to the time of the request (allowed_skew leeway,
-subscription expiry) cannot be static and are not ported.
+subscription expiry) cannot be static and are not ported. port_tests_py.py rewrites their
+upstream-coverage.yaml entries; run this tool again after it.
 
 Needs PyJWT and cryptography (`pip install pyjwt cryptography`) and openssl.
 """
@@ -280,11 +281,12 @@ def dump(obj, path):
 def main():
     with open(os.path.join(BASE, "suite.yaml")) as f:
         base_suite = yaml.safe_load(f)
-    shutil.rmtree(OUT, ignore_errors=True)
     coverage = {}
     with tempfile.TemporaryDirectory() as tmp:
         for cls, make in classes(tmp):
             d = os.path.join(OUT, cls.name)
+            # Only this tool's suites are replaced; other suites under auth/ are kept.
+            shutil.rmtree(d, ignore_errors=True)
             os.makedirs(os.path.join(d, "cases"))
             # Symlinks, so the 37 suites share one copy of the base suite's database.
             for f in ("setup.sql", "metadata.json"):
