@@ -69,6 +69,14 @@ impl Dependent {
     }
 }
 
+/// The dependents as V2 lists them: reports sorted as text (`reportSchemaObjs`).
+fn report_list(deps: &[Dependent], source: &str) -> Vec<String> {
+    let mut list: Vec<String> = deps.iter().map(|d| d.report(source)).collect();
+    list.sort();
+    list.dedup();
+    list
+}
+
 /// Update `metadata` for the changes between `before` and `after` (matched by oid).
 pub fn apply(
     metadata: &mut Metadata,
@@ -132,10 +140,7 @@ pub fn apply(
         }
     }
     if !cascade && let Some((table, column, deps)) = retyped.first() {
-        let mut deps = deps.clone();
-        deps.sort();
-        deps.dedup();
-        let list: Vec<String> = deps.iter().map(|d| d.report(source)).collect();
+        let list = report_list(deps, source);
         return Err(ApiError::bad(
             Code::DependencyError,
             format!(
@@ -155,7 +160,7 @@ pub fn apply(
     dependents.sort();
     dependents.dedup();
     if !dependents.is_empty() && !cascade {
-        let list: Vec<String> = dependents.iter().map(|d| d.report(source)).collect();
+        let list = report_list(&dependents, source);
         return Err(ApiError::bad(
             Code::DependencyError,
             format!(
@@ -1229,6 +1234,23 @@ mod tests {
                 .ends_with("event-trigger t.pay in source \"default\"")
         );
         apply(&mut md(), "default", &before, &drop(3), false).unwrap();
+        // Listed as V2 sorts the reports: the event trigger before the permission.
+        let mut m = md();
+        m.sources[0].tables[0].select_permissions = hge_metadata::from_json(json!({
+            "version": 3, "sources": [{"name": "default", "configuration": {}, "tables": [
+                {"table": "t", "select_permissions": [
+                    {"role": "user", "permission": {"columns": ["a"], "filter": {}}}]}]}]
+        }))
+        .unwrap()
+        .sources[0]
+            .tables[0]
+            .select_permissions
+            .clone();
+        let err = apply(&mut m, "default", &before, &drop(1), false).unwrap_err();
+        assert_eq!(
+            err.error.message,
+            "cannot drop due to the following dependent objects: event-trigger t.cols in source \"default\", permission t.user.select in source \"default\""
+        );
 
         let mut m = md();
         apply(&mut m, "default", &before, &drop(1), true).unwrap();
