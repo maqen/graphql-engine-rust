@@ -99,6 +99,8 @@ pub struct ComputedScalarField {
     pub stringify: bool,
     /// `path` argument on json/jsonb results.
     pub json_path: Option<Vec<JsonPathElement>>,
+    /// Inherited-role redaction: the value is NULL unless this holds for the row.
+    pub redact: Option<Box<BoolExp>>,
 }
 
 #[derive(Debug, Clone)]
@@ -143,6 +145,12 @@ pub enum OrderByTarget {
     },
     /// A scalar computed field's value for the row.
     ComputedField(FunctionCall),
+    /// A scalar computed field redacted for an inherited role: sorts as NULL where
+    /// `condition` fails.
+    RedactedComputedField {
+        call: FunctionCall,
+        condition: Box<BoolExp>,
+    },
     /// A column reached through an object relationship
     /// (`mapping`: `(this column, remote column)`).
     ObjectRelationship {
@@ -227,8 +235,9 @@ pub enum BoolExp {
     /// inside a relationship condition). Root references (`["$", col]`) inside it refer to
     /// the table it is evaluated against, not to the outer expression's root.
     Rooted(Box<BoolExp>),
-    /// A [`BoolExp::Compare`] on a column redacted for an inherited role: the column is
-    /// read as `CASE WHEN condition THEN col ELSE NULL END`, as V2 does.
+    /// A [`BoolExp::Compare`] or [`BoolExp::CompareComputed`] on a column or scalar computed
+    /// field redacted for an inherited role: the value is read as
+    /// `CASE WHEN condition THEN value ELSE NULL END`, as V2 does.
     Redacted {
         condition: Box<BoolExp>,
         exp: Box<BoolExp>,

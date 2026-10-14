@@ -99,9 +99,17 @@ impl Translator<'_> {
                 BoolExp::Compare { column, op, .. } => {
                     self.compare(alias, column, op, Some((condition, root)))?
                 }
+                BoolExp::CompareComputed { call, op, .. } => self.compare_with(op, |t| {
+                    t.b.push("(CASE WHEN ");
+                    t.bool_exp_in(condition, alias, root)?;
+                    t.b.push(" THEN ");
+                    t.function_call(call, alias)?;
+                    t.b.push(" ELSE NULL END)");
+                    Ok(())
+                })?,
                 other => {
                     return Err(Error::unexpected(format!(
-                        "redaction applies to column comparisons only, not {other:?}"
+                        "redaction applies to column and computed field comparisons only, not {other:?}"
                     )));
                 }
             },

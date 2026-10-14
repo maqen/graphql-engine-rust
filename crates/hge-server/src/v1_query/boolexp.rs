@@ -769,6 +769,11 @@ pub fn nullify_missing_in_select(select: &mut Select, session: &hge_core::Sessio
                     for_each_call_value(call, &mut |v| nullify_missing_value(v, session));
                     break;
                 }
+                OrderByTarget::RedactedComputedField { call, condition } => {
+                    for_each_call_value(call, &mut |v| nullify_missing_value(v, session));
+                    nullify_missing_session_variables(condition, session);
+                    break;
+                }
                 OrderByTarget::Column(_) => break,
             }
         }
@@ -785,6 +790,9 @@ pub fn nullify_missing_in_select(select: &mut Select, session: &hge_core::Sessio
             }
             Field::ComputedScalar(cf) => {
                 for_each_call_value(&mut cf.call, &mut |v| nullify_missing_value(v, session));
+                if let Some(cond) = &mut cf.redact {
+                    nullify_missing_session_variables(cond, session);
+                }
             }
             Field::ComputedTable(sel) => nullify_missing_in_select(sel, session),
             // `/v1/query` builds no aggregate fields.

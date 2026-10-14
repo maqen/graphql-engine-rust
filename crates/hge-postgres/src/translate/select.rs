@@ -250,6 +250,13 @@ impl<'s> Translator<'s> {
                 self.b.push(" ELSE NULL END)");
             }
             OrderByTarget::ComputedField(call) => self.function_call(call, alias)?,
+            OrderByTarget::RedactedComputedField { call, condition } => {
+                self.b.push("(CASE WHEN ");
+                self.bool_exp(condition, alias)?;
+                self.b.push(" THEN ");
+                self.function_call(call, alias)?;
+                self.b.push(" ELSE NULL END)");
+            }
             OrderByTarget::ObjectRelationship {
                 table,
                 mapping,
@@ -380,6 +387,11 @@ impl<'s> Translator<'s> {
                 self.b.push(")");
             }
             Field::ComputedScalar(cf) => {
+                if let Some(condition) = &cf.redact {
+                    self.b.push("(CASE WHEN ");
+                    self.bool_exp(condition, alias)?;
+                    self.b.push(" THEN ");
+                }
                 let geo = cf.ty.dimensions == 0
                     && matches!(cf.ty.name.as_str(), "geometry" | "geography");
                 if let Some(path) = cf.json_path.as_deref().filter(|p| !p.is_empty()) {
@@ -398,6 +410,9 @@ impl<'s> Translator<'s> {
                     self.b.push(", 15, 4)::json");
                 } else {
                     self.function_call(&cf.call, alias)?;
+                }
+                if cf.redact.is_some() {
+                    self.b.push(" ELSE NULL END)");
                 }
             }
             Field::ComputedTable(select) => {

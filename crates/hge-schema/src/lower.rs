@@ -254,6 +254,7 @@ impl Lowerer<'_> {
                                     stringify: self.rs.options.stringify_numeric_types
                                         && scalars::is_big_num(ty),
                                     json_path,
+                                    redact: self.redaction(table, &cf.name).cloned().map(Box::new),
                                 }))
                             }
                             ComputedReturn::Table(target) => {
@@ -517,11 +518,16 @@ impl Lowerer<'_> {
                         let call = self.computed_call(table, cf, None, &item_path)?;
                         match &cf.returns {
                             ComputedReturn::Scalar(ty) => {
+                                let redaction = self.redaction(table, &cf.name);
                                 for op in self.comparisons(ty, o, &item_path)? {
-                                    items.push(BoolExp::CompareComputed {
+                                    let cmp = BoolExp::CompareComputed {
                                         call: call.clone(),
                                         ty: ty.clone(),
                                         op,
+                                    };
+                                    items.push(match redaction {
+                                        None => cmp,
+                                        Some(condition) => redacted_comparison(condition, cmp),
                                     });
                                 }
                             }
@@ -710,10 +716,15 @@ impl Lowerer<'_> {
                 && cf.scalar_type().is_some()
             {
                 let (direction, nulls) = order_type(value.as_str().unwrap_or("asc"));
+                let call = self.computed_call(table, cf, None, &item_path)?;
                 out.push(OrderBy {
-                    target: OrderByTarget::ComputedField(
-                        self.computed_call(table, cf, None, &item_path)?,
-                    ),
+                    target: match self.redaction(table, &cf.name) {
+                        None => OrderByTarget::ComputedField(call),
+                        Some(condition) => OrderByTarget::RedactedComputedField {
+                            call,
+                            condition: Box::new(condition.clone()),
+                        },
+                    },
                     direction,
                     nulls,
                 });

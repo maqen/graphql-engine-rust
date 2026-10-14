@@ -224,6 +224,29 @@ fn or(mut items: Vec<BoolExp>) -> BoolExp {
     }
 }
 
+/// The rows on which a combined role sees `field` (a column or scalar computed field) that
+/// the parents matching `grants` give it, or `None` when it is visible on every row.
+fn redaction(
+    parents: &[&SelectPermission],
+    grants: impl Fn(&SelectPermission) -> bool,
+    field: &str,
+) -> Option<BoolExp> {
+    let granting: Vec<&SelectPermission> = parents.iter().copied().filter(|p| grants(p)).collect();
+    if granting.len() == parents.len() && granting.iter().all(|p| p.redaction(field).is_none()) {
+        return None;
+    }
+    // A parent that itself redacts the field contributes `redaction AND filter`.
+    let condition = or(granting
+        .iter()
+        .map(|p| match p.redaction(field) {
+            None => p.filter.clone(),
+            Some(r) if p.filter.is_true() => r.clone(),
+            Some(r) => BoolExp::And(vec![r.clone(), p.filter.clone()]),
+        })
+        .collect());
+    (!condition.is_true()).then_some(condition)
+}
+
 /// V2's `CombinedSelPermInfo`.
 fn combine_select<'a>(
     table: &TableInfo,
@@ -240,21 +263,7 @@ fn combine_select<'a>(
             continue;
         }
         columns.push(column.clone());
-        let unredacted = granting.len() == parents.len()
-            && granting.iter().all(|p| p.redaction(column).is_none());
-        if unredacted {
-            continue;
-        }
-        // A parent that itself redacts the column contributes `redaction AND filter`.
-        let condition = or(granting
-            .iter()
-            .map(|p| match p.redaction(column) {
-                None => p.filter.clone(),
-                Some(r) if p.filter.is_true() => r.clone(),
-                Some(r) => BoolExp::And(vec![r.clone(), p.filter.clone()]),
-            })
-            .collect());
-        if !condition.is_true() {
+        if let Some(condition) = redaction(&parents, |p| p.allows_column(column), column) {
             redactions.insert(column.clone(), condition);
         }
     }
@@ -264,6 +273,11 @@ fn combine_select<'a>(
             if !computed_fields.contains(cf) {
                 computed_fields.push(cf.clone());
             }
+        }
+    }
+    for cf in &computed_fields {
+        if let Some(condition) = redaction(&parents, |p| p.computed_fields.contains(cf), cf) {
+            redactions.insert(cf.clone(), condition);
         }
     }
     Some(SelectPermission {

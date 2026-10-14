@@ -575,7 +575,8 @@ impl<'s, 'd> Context<'s, 'd> {
                     "'{}' has no argument named '{}'",
                     def.name, name.node
                 ))
-                .with_path(format!("{path}.args.{}", name.node)));
+                // V2 rejects unknown arguments before entering `args`.
+                .with_path(path));
             }
         }
         let mut out = IndexMap::new();
