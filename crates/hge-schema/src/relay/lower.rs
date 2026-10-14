@@ -3,9 +3,8 @@
 use hge_core::{Code, ColumnType, Error};
 use hge_ir::{
     BoolExp, CompareOp, ConnectionField, ConnectionSelect, ConnectionSlice, ConnectionSplit,
-    DatabaseRootField, EdgeField, NodeIdField, NullsOrder, OrderBy, OrderByTarget,
-    OrderDirection, PageInfoField, QueryRoot, RootField, RowSource, Select, SplitItem, SplitKey,
-    SplitKind, Value,
+    DatabaseRootField, EdgeField, NodeIdField, NullsOrder, OrderBy, OrderByTarget, OrderDirection,
+    PageInfoField, QueryRoot, RootField, RowSource, Select, SplitItem, SplitKey, SplitKind, Value,
 };
 use serde_json::{Map, Value as Json};
 
@@ -22,8 +21,9 @@ impl Lowerer<'_> {
     /// `node(id:)`: the row the id points to, or `null`.
     pub(crate) fn node(&self, field: &SelectedField<'_>) -> Result<RootField, Error> {
         let id_path = field.arg_path("id");
-        let invalid =
-            |m: String| Error::validation(format!("invalid node id: {m}")).with_path(id_path.clone());
+        let invalid = |m: String| {
+            Error::validation(format!("invalid node id: {m}")).with_path(id_path.clone())
+        };
         let id = match field.arg("id") {
             Some(Json::String(s)) => s.clone(),
             Some(other) => other.to_string(),
@@ -228,8 +228,10 @@ impl Lowerer<'_> {
         let before = field.arg("before").and_then(Json::as_str);
         let split = match (after, before) {
             (Some(_), Some(_)) => {
-                return Err(Error::validation("\"after\" and \"before\" are not allowed at once")
-                    .with_path(args_path));
+                return Err(
+                    Error::validation("\"after\" and \"before\" are not allowed at once")
+                        .with_path(args_path),
+                );
             }
             (Some(c), None) => Some((SplitKind::After, c)),
             (None, Some(c)) => Some((SplitKind::Before, c)),
@@ -242,12 +244,13 @@ impl Lowerer<'_> {
                     Error::validation("the \"after\" or \"before\" cursor is invalid")
                         .with_path(args_path.clone())
                 };
-                let cursor: Json =
-                    serde_json::from_slice(&base64_decode_lenient(cursor)).map_err(|_| invalid())?;
+                let cursor: Json = serde_json::from_slice(&base64_decode_lenient(cursor))
+                    .map_err(|_| invalid())?;
                 let mut items = vec![];
                 if args.order_by.is_empty() {
                     for (column, ty) in &primary_key {
-                        let v = lookup(&cursor, std::slice::from_ref(column)).ok_or_else(invalid)?;
+                        let v =
+                            lookup(&cursor, std::slice::from_ref(column)).ok_or_else(invalid)?;
                         items.push(SplitItem {
                             key: SplitKey::Column(column.clone()),
                             direction: OrderDirection::Asc,
@@ -277,8 +280,10 @@ impl Lowerer<'_> {
         let last = non_negative_int(field, "last")?;
         let slice = match (first, last) {
             (Some(_), Some(_)) => {
-                return Err(Error::validation("\"first\" and \"last\" are not allowed at once")
-                    .with_path(args_path));
+                return Err(
+                    Error::validation("\"first\" and \"last\" are not allowed at once")
+                        .with_path(args_path),
+                );
             }
             (Some(n), None) => Some(ConnectionSlice::First(n)),
             (None, Some(n)) => Some(ConnectionSlice::Last(n)),

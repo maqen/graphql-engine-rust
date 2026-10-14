@@ -1,0 +1,76 @@
+steps:
+- ws_connect:
+    url: /v1beta1/relay
+    protocol: graphql-ws
+- ws_send:
+    message:
+      type: connection_init
+      payload: {}
+- ws_expect:
+    message:
+      type: connection_ack
+- ws_send:
+    message:
+      id: s1
+      type: start
+      payload:
+        query: |
+          subscription {
+            author_connection(first: 1) {
+              pageInfo { hasNextPage endCursor }
+              edges { cursor node { id name articles_connection(last: 1) { edges { node { id title } } } } }
+            }
+          }
+- ws_expect:
+    message:
+      type: data
+      id: s1
+      payload:
+        data:
+          author_connection:
+            pageInfo:
+              hasNextPage: true
+              endCursor: eyJpZCIgOiAxfQ==
+            edges:
+            - cursor: eyJpZCIgOiAxfQ==
+              node:
+                id: WzEsICJwdWJsaWMiLCAiYXV0aG9yIiwgMV0=
+                name: Author 1
+                articles_connection:
+                  edges:
+                  - node:
+                      id: WzEsICJwdWJsaWMiLCAiYXJ0aWNsZSIsIDNd
+                      title: Article 3
+- ws_send:
+    message:
+      id: s2
+      type: start
+      payload:
+        query: |
+          subscription { node(id: "WzEsICJwdWJsaWMiLCAiYXJ0aWNsZSIsIDJd") { id ... on article { title } } }
+- ws_expect:
+    message:
+      type: data
+      id: s2
+      payload:
+        data:
+          node:
+            id: WzEsICJwdWJsaWMiLCAiYXJ0aWNsZSIsIDJd
+            title: Article 2
+- ws_send:
+    message:
+      id: s3
+      type: start
+      payload:
+        query: |
+          subscription { author { id } }
+- ws_expect:
+    message:
+      type: error
+      id: s3
+      payload:
+        errors:
+        - message: 'field ''author'' not found in type: ''subscription_root'''
+          extensions:
+            path: $.selectionSet.author
+            code: validation-failed

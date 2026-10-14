@@ -58,7 +58,15 @@ pub fn build_relay_role_schema(
     options: &SchemaOptions,
 ) -> RoleSchema {
     let none = RemoteSchemas::default();
-    crate::build::build_role_schema_of_kind(tables, actions, &none, role, backend_only, options, true)
+    crate::build::build_role_schema_of_kind(
+        tables,
+        actions,
+        &none,
+        role,
+        backend_only,
+        options,
+        true,
+    )
 }
 
 /// Whether `table` implements `Node` in the Relay schema (it needs a primary key; the role's
@@ -77,9 +85,8 @@ pub(crate) fn add_query_root_fields(
     b.ensure_node_interface();
     root.fields.insert(
         "node".to_owned(),
-        FieldDef::new("node", TypeRef::named(NODE), FieldKind::Node).arg(
-            InputValueDef::new("id", TypeRef::nn("ID")).describe("A globally unique id"),
-        ),
+        FieldDef::new("node", TypeRef::named(NODE), FieldKind::Node)
+            .arg(InputValueDef::new("id", TypeRef::nn("ID")).describe("A globally unique id")),
     );
     let tables = b.tables;
     for table in &tables.ordered {
@@ -200,7 +207,12 @@ impl Builder<'_> {
 
     /// A connection field on `table` (`<name>(after:, before:, distinct_on:, first:, last:,
     /// order_by:, where:): <table>Connection!`), with the connection types.
-    fn connection_field(&mut self, table: &Arc<TableInfo>, name: String, kind: FieldKind) -> FieldDef {
+    fn connection_field(
+        &mut self,
+        table: &Arc<TableInfo>,
+        name: String,
+        kind: FieldKind,
+    ) -> FieldDef {
         let ty = self.ensure_connection_types(table);
         let field = FieldDef::new(name, TypeRef::nn(ty), kind);
         let field = self.with_select_args(field, table);
@@ -232,7 +244,11 @@ impl Builder<'_> {
             self.scalars.insert("String".to_owned());
             self.schema.add(TypeDef::Object(
                 ObjectDef::new(PAGE_INFO, None)
-                    .field(part("endCursor", TypeRef::nn("String"), ConnectionPart::EndCursor))
+                    .field(part(
+                        "endCursor",
+                        TypeRef::nn("String"),
+                        ConnectionPart::EndCursor,
+                    ))
                     .field(part(
                         "hasNextPage",
                         TypeRef::nn("Boolean"),
@@ -253,7 +269,11 @@ impl Builder<'_> {
         let edge = format!("{}Edge", table.type_name());
         self.schema.add(TypeDef::Object(
             ObjectDef::new(edge.clone(), None)
-                .field(part("cursor", TypeRef::nn("String"), ConnectionPart::Cursor))
+                .field(part(
+                    "cursor",
+                    TypeRef::nn("String"),
+                    ConnectionPart::Cursor,
+                ))
                 .field(part(
                     "node",
                     TypeRef::nn(table.type_name()),
@@ -268,8 +288,16 @@ impl Builder<'_> {
                     table.display_name()
                 )),
             )
-            .field(part("edges", TypeRef::nn_list_nn(edge), ConnectionPart::Edges))
-            .field(part("pageInfo", TypeRef::nn(PAGE_INFO), ConnectionPart::PageInfo)),
+            .field(part(
+                "edges",
+                TypeRef::nn_list_nn(edge),
+                ConnectionPart::Edges,
+            ))
+            .field(part(
+                "pageInfo",
+                TypeRef::nn(PAGE_INFO),
+                ConnectionPart::PageInfo,
+            )),
         ));
         connection
     }

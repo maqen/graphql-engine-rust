@@ -1,0 +1,144 @@
+upstream:
+  file: test_graphql_queries.py
+  class: TestRelayQueriesBasic
+  method: test_article_no_orderby_forward_pagination
+  by_hand: true
+  fixtures:
+  - queries/graphql_query/relay/basic/article_pagination_no_orderby/forward/page_1.yaml
+  - queries/graphql_query/relay/basic/article_pagination_no_orderby/forward/page_2.yaml
+  - queries/graphql_query/relay/basic/article_pagination_no_orderby/forward/page_3.yaml
+steps:
+- description: Get 1st page of articles with 3 items
+  url: /v1/relay
+  status: 200
+  query:
+    query: |
+      query {
+        article_connection(
+          first: 3
+        ){
+          pageInfo{
+            startCursor
+            endCursor
+            hasPreviousPage
+            hasNextPage
+          }
+          edges{
+            cursor
+            node{
+              title
+              content
+              author_id
+            }
+          }
+        }
+      }
+  response:
+    data:
+      article_connection:
+        pageInfo:
+          startCursor: eyJpZCIgOiAxfQ==
+          endCursor: eyJpZCIgOiAzfQ==
+          hasPreviousPage: false
+          hasNextPage: true
+        edges:
+        - cursor: eyJpZCIgOiAxfQ==
+          node:
+            title: Article 1
+            content: Sample article content 1
+            author_id: 1
+        - cursor: eyJpZCIgOiAyfQ==
+          node:
+            title: Article 2
+            content: Sample article content 2
+            author_id: 1
+        - cursor: eyJpZCIgOiAzfQ==
+          node:
+            title: Article 3
+            content: Sample article content 3
+            author_id: 1
+- description: Get 2nd page of articles with 2 items
+  url: /v1/relay
+  status: 200
+  query:
+    query: |
+      query {
+        article_connection(
+          first: 2
+          after: "eyJpZCIgOiAzfQ=="
+        ){
+          pageInfo{
+            startCursor
+            endCursor
+            hasPreviousPage
+            hasNextPage
+          }
+          edges{
+            cursor
+            node{
+              title
+              content
+              author_id
+            }
+          }
+        }
+      }
+  response:
+    data:
+      article_connection:
+        pageInfo:
+          startCursor: eyJpZCIgOiA0fQ==
+          endCursor: eyJpZCIgOiA1fQ==
+          hasPreviousPage: true
+          hasNextPage: true
+        edges:
+        - cursor: eyJpZCIgOiA0fQ==
+          node:
+            title: Article 4
+            content: Sample article content 4
+            author_id: 2
+        - cursor: eyJpZCIgOiA1fQ==
+          node:
+            title: Article 5
+            content: Sample article content 5
+            author_id: 2
+- description: Get 3rd page of articles
+  url: /v1/relay
+  status: 200
+  query:
+    query: |
+      query {
+        article_connection(
+          first: 3
+          after: "eyJpZCIgOiA1fQ=="
+        ){
+          pageInfo{
+            startCursor
+            endCursor
+            hasPreviousPage
+            hasNextPage
+          }
+          edges{
+            cursor
+            node{
+              title
+              content
+              author_id
+            }
+          }
+        }
+      }
+  response:
+    data:
+      article_connection:
+        pageInfo:
+          startCursor: eyJpZCIgOiA2fQ==
+          endCursor: eyJpZCIgOiA2fQ==
+          hasPreviousPage: true
+          hasNextPage: false
+        edges:
+        - cursor: eyJpZCIgOiA2fQ==
+          node:
+            title: Article 6
+            content: Sample article content 6
+            author_id: 3

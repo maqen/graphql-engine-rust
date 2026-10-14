@@ -176,6 +176,7 @@ pub(crate) fn table_schema_names(tables: &Tables) -> TableSchemaNames {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_schema(
     tables: &Tables,
     access: &HashMap<(Arc<str>, QualifiedTable), SelectAccess>,

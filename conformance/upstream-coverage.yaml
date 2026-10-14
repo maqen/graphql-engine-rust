@@ -982,10 +982,10 @@
     test_search_articles_connection: ported
     test_node: ported
     test_only_pageinfo: ported
-    test_article_no_orderby_forward_pagination: 'skipped: calls _test_relay_pagination'
-    test_article_no_orderby_backward_pagination: 'skipped: calls _test_relay_pagination'
-    test_author_orderby_articles_aggregate_orderby_forward_pagination: 'skipped: calls _test_relay_pagination'
-    test_author_orderby_articles_aggregate_orderby_backward_pagination: 'skipped: calls _test_relay_pagination'
+    test_article_no_orderby_forward_pagination: ported by hand
+    test_article_no_orderby_backward_pagination: ported by hand
+    test_author_orderby_articles_aggregate_orderby_forward_pagination: ported by hand
+    test_author_orderby_articles_aggregate_orderby_backward_pagination: ported by hand
     test_first_and_last_fail: ported
     test_after_and_before_fail: ported
     test_insufficient_data: ported
@@ -1003,8 +1003,8 @@
     test_author_connection: ported
     test_author_node: ported
     test_author_node_null: ported
-    test_article_pagination_forward: 'skipped: calls _test_relay_pagination'
-    test_article_pagination_backward: 'skipped: calls _test_relay_pagination'
+    test_article_pagination_forward: ported by hand
+    test_article_pagination_backward: ported by hand
 - file: test_graphql_queries.py
   class: TestUnauthorizedRolePermission
   area: permissions

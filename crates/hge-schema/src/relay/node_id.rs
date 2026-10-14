@@ -94,10 +94,7 @@ pub(crate) fn parse_node_id(bytes: &[u8]) -> Result<NodeId, String> {
                 values: rest.collect(),
             })
         }
-        Some(Scalar::Number(v)) => Err(in_root(&format!(
-            "unsupported GUID version: {}",
-            v.show()
-        ))),
+        Some(Scalar::Number(v)) => Err(in_root(&format!("unsupported GUID version: {}", v.show()))),
         Some(_) => Err(in_root(
             "unexpected GUID format, needs to start with a version number",
         )),
@@ -275,7 +272,11 @@ impl Sci {
         } else {
             self.digits.iter().map(|d| (b'0' + d) as char).collect()
         };
-        let e = if self.digits.is_empty() { 0 } else { self.exponent };
+        let e = if self.digits.is_empty() {
+            0
+        } else {
+            self.exponent
+        };
         let mut out = String::new();
         if self.negative {
             out.push('-');
@@ -567,7 +568,10 @@ mod tests {
     #[test]
     fn v2_error_messages() {
         let cases = [
-            ("random", r#"Unexpected "\173\169\221\162", expecting JSON value"#),
+            (
+                "random",
+                r#"Unexpected "\173\169\221\162", expecting JSON value"#,
+            ),
             (
                 "WzIsICJwdWJsaWMiLCAiYXV0aG9yIiwgMV0K",
                 "Error in $: unsupported GUID version: 2.0",
@@ -592,7 +596,10 @@ mod tests {
         let raw = |s: &str| parse_node_id(s.as_bytes()).unwrap_err();
         assert_eq!(raw("[1, x]"), r#"Unexpected "x]", expecting JSON value"#);
         assert_eq!(raw("[1]x"), "Trailing garbage");
-        assert_eq!(raw("{"), "Unexpected end-of-input, expecting record key literal or }");
+        assert_eq!(
+            raw("{"),
+            "Unexpected end-of-input, expecting record key literal or }"
+        );
         assert_eq!(raw("[1,\"a\" 1]"), r#"Unexpected "1]", expecting , or ]"#);
         assert_eq!(raw("[1,-]"), "Unexpected 93 while parsing number literal");
         assert_eq!(raw("[01]"), "Number literal with leading zero");
