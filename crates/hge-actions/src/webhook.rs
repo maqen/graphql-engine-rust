@@ -15,6 +15,7 @@ use serde_json::{Map, Value, json};
 use crate::env::Environment;
 use crate::registry::{ActionHandler, ConfiguredHeader, HandlerConfig};
 use crate::validate;
+use hge_metadata::actions::{ActionKind, ActionType};
 
 /// Client request headers: the live request's (sync) or the stored ones (async). They are
 /// only read when the action forwards client headers.
@@ -250,9 +251,18 @@ pub async fn call_detailed(
     call: &Call<'_>,
 ) -> Result<HandlerResponse, CallError> {
     let headers = request_headers(handler, config, env, call.client_headers)?;
+    // `action-handler-log` logs the request as built before any transform.
+    let mut log_request =
+        tracing::event_enabled!(target: "action-handler-log", tracing::Level::INFO)
+            .then(|| logged_request(handler, call, &headers))
+            .flatten();
     let (req, transformed, session) = match &handler.request_transform {
         None => {
-            let mut req = client.post(&handler.url).body(payload(&handler.name, call));
+            let body = match &log_request {
+                Some(r) => Bytes::from(r.body.clone()),
+                None => Bytes::from(payload(&handler.name, call)),
+            };
+            let mut req = client.post(&handler.url).body(body);
             for (k, v) in &headers {
                 req = req.header(k, v);
             }
@@ -304,6 +314,12 @@ pub async fn call_detailed(
                 .into());
         }
     };
+    let mut log = || {
+        if let Some(request) = log_request.take() {
+            let detail = handler_log(handler, config, request, &transformed, bytes.len());
+            tracing::info!(target: "action-handler-log", detail = %detail);
+        }
+    };
     let body: Value = match &handler.response_transform {
         Some(t) => {
             let session = session.unwrap_or_else(|| call.session.to_json());
@@ -323,24 +339,29 @@ pub async fn call_detailed(
                 status,
                 session_variables: session,
             };
-            apply_response_transform(t, &bytes, ctx)
-                .map_err(|bundle| logged(bundle.response_failed()))?
+            let body = apply_response_transform(t, &bytes, ctx)
+                .map_err(|bundle| logged(bundle.response_failed()))?;
+            log();
+            body
         }
-        None => match serde_json::from_slice(&bytes) {
-            Ok(v) => v,
-            Err(e) => {
-                let raw = Value::String(String::from_utf8_lossy(&bytes).into_owned());
-                return Err(Error::unexpected("not a valid json response from webhook")
-                    .with_internal(internal(
-                        handler,
-                        call,
-                        &transformed,
-                        Value::String(format!("invalid JSON: {e}")),
-                        Some(response_info(status, &resp_headers, raw)),
-                    ))
-                    .into());
+        None => {
+            log();
+            match serde_json::from_slice(&bytes) {
+                Ok(v) => v,
+                Err(e) => {
+                    let raw = Value::String(String::from_utf8_lossy(&bytes).into_owned());
+                    return Err(Error::unexpected("not a valid json response from webhook")
+                        .with_internal(internal(
+                            handler,
+                            call,
+                            &transformed,
+                            Value::String(format!("invalid JSON: {e}")),
+                            Some(response_info(status, &resp_headers, raw)),
+                        ))
+                        .into());
+                }
             }
-        },
+        }
     };
     let info = |body: &Value| response_info(status, &resp_headers, body.clone());
     match status {
@@ -393,6 +414,65 @@ pub async fn call_detailed(
             )),
         )),
     }
+}
+
+/// The request `action-handler-log` shows: V2's request before any transform, with the
+/// handler URL parsed like http-client does (no userinfo, default port dropped) and exactly
+/// the computed headers. `None` for an unparsable URL, which fails before any response.
+fn logged_request(
+    handler: &ActionHandler,
+    call: &Call<'_>,
+    headers: &[(String, String)],
+) -> Option<TransformRequest> {
+    let mut request = TransformRequest::new(
+        "POST",
+        &handler.url,
+        vec![],
+        payload(&handler.name, call).into_bytes(),
+    )
+    .ok()?;
+    request.headers = headers.to_vec();
+    Some(request)
+}
+
+/// V2's `ActionHandlerLog`: one per handler response (not for HTTP errors or failed
+/// transforms), keys in aeson's sorted order. `request` is the request before any transform;
+/// `response_size` counts the raw response body.
+fn handler_log(
+    handler: &ActionHandler,
+    config: &HandlerConfig,
+    request: TransformRequest,
+    transformed: &Transformed,
+    response_size: usize,
+) -> Value {
+    let action_type = match handler.action_type {
+        ActionType::Query => "query",
+        ActionType::Mutation(ActionKind::Synchronous) => "mutation-synchronous",
+        ActionType::Mutation(ActionKind::Asynchronous) => "mutation-asynchronous",
+    };
+    let timeout = Some(handler.timeout.as_micros());
+    let request_size = request.body.len();
+    let mut request = sorted(&request.to_json(timeout));
+    if config.redact_logs {
+        request["body"] = Value::Null;
+    }
+    let mut out = Map::new();
+    out.insert("action_name".into(), handler.name.as_str().into());
+    out.insert("action_type".into(), action_type.into());
+    out.insert("request".into(), request);
+    out.insert("request_size".into(), request_size.into());
+    if let Some((r, body)) = transformed {
+        let mut trans = sorted(&r.to_json_with_body(body, timeout));
+        if config.redact_logs {
+            trans["body"] = Value::Null;
+        }
+        out.insert("request_trans".into(), trans);
+    }
+    out.insert("response_size".into(), response_size.into());
+    if let Some((_, body)) = transformed {
+        out.insert("transformed_request_size".into(), body.len().into());
+    }
+    Value::Object(out)
 }
 
 /// Log a transform failure at error level (§7.4) and pass it on.
@@ -691,8 +771,9 @@ mod tests {
         assert_eq!(e.message, "internal error");
         assert_eq!(
             internal_of(&e)["request"]["transformed_request"],
+            // http-client's `getUri` keeps the query string.
             json!({
-                "url": format!("http://{addr}/base/fail"),
+                "url": format!("http://{addr}/base/fail?id=1"),
                 "method": "PUT",
                 "headers": [["Content-Type", "application/json"], ["X-A", "b"]],
                 "body": r#"{"id":1}"#,

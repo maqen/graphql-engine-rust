@@ -483,6 +483,7 @@ fn action_registry(
     let handler_config = HandlerConfig {
         user_agent: format!("hasura-graphql-engine/{}", crate::routes::VERSION),
         configured_header_precedence: config.configured_header_precedence,
+        redact_logs: config.redact_action_handler_logs,
         ..HandlerConfig::default()
     };
     let built = ActionRegistry::build(metadata, &outputs, env, handler_config);

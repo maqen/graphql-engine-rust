@@ -63,6 +63,8 @@ pub struct ServerConfig {
     pub schema_sync_poll_interval_ms: u64,
     /// `HASURA_GRAPHQL_CONFIGURED_HEADER_PRECEDENCE`
     pub configured_header_precedence: bool,
+    /// `HASURA_GRAPHQL_REDACT_ACTION_HANDLER_LOGS`
+    pub redact_action_handler_logs: bool,
     /// `HASURA_GRAPHQL_ASYNC_ACTIONS_FETCH_INTERVAL` (milliseconds; zero disables the async
     /// action processor).
     pub async_actions_fetch_interval: Duration,
@@ -138,6 +140,7 @@ impl Default for ServerConfig {
             read_only: false,
             schema_sync_poll_interval_ms: 1000,
             configured_header_precedence: false,
+            redact_action_handler_logs: false,
             async_actions_fetch_interval: Duration::from_millis(1000),
             async_actions_fetch_batch_size: 10,
             metadata_database_extensions_schema: "public".to_owned(),
