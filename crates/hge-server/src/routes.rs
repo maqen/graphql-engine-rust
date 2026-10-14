@@ -525,11 +525,20 @@ async fn query_post(
     };
     let log = log.map(|l| l.session(&session));
     // See `metadata_post`: run_sql commits DDL before the metadata catches up.
-    let resp =
-        tokio::spawn(
-            async move { hge_metadata_api::handle_query(&*engine, &session, &body).await },
-        )
-        .await
-        .unwrap_or_else(|e| panic_response(&e));
-    api_response(resp, rid, log)
+    let resp = tokio::spawn(async move {
+        match crate::v1_query::run_v2(&engine, &session, &body).await {
+            Ok(out) => Ok(out),
+            Err(e) => Err(e.to_response()),
+        }
+    })
+    .await
+    .unwrap_or_else(|e| Err(panic_response(&e)));
+    match resp {
+        Ok(out) => {
+            let mut resp = json_response(StatusCode::OK, out, Some(rid));
+            http_log::attach(&mut resp, log);
+            resp
+        }
+        Err(resp) => api_response(resp, rid, log),
+    }
 }

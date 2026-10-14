@@ -1,4 +1,5 @@
-//! The `/v1/query` envelope: `{"type": "...", "args": ..., "version": 1 | 2}`.
+//! The `/v1/query` envelope (`{"type": "...", "args": ..., "version": 1 | 2}`) and the
+//! `/v2/query` one (`{"type": "...", "args": ...}`).
 
 use serde_json::Value as Json;
 
@@ -146,6 +147,9 @@ pub enum Query {
     Delete(DeleteQuery),
     /// Sub-queries run in order; the first error aborts the request.
     Bulk(Vec<Query>),
+    /// `/v2/query`'s `concurrent_bulk`: sub-queries that may not change the schema, run
+    /// concurrently. The path is where its own errors are reported.
+    ConcurrentBulk(Vec<Query>, Path),
     RunSql {
         args: RunSql,
         /// Where the query's `args` sit (`$.args`, `$.args[1].args`).
@@ -155,6 +159,15 @@ pub enum Query {
     Metadata {
         command: Command,
         /// Where the query's envelope sits (`$`, `$.args[1]`).
+        path: Path,
+    },
+    /// `/v2/query`'s `run_sql` for a backend we do not have (MSSQL, BigQuery, data
+    /// connectors): every source is Postgres, so it fails once its source is resolved, as
+    /// V2 fails on a source of the wrong kind.
+    OtherBackendRunSql {
+        source: String,
+        /// V2's `queryModifiesUserDB` (false only for `bigquery_database_inspection`).
+        writes: bool,
         path: Path,
     },
     /// A type this endpoint does not run yet.
@@ -279,6 +292,123 @@ impl Query {
         })
     }
 
+    /// Parse a `/v2/query` envelope found at `path` (`$`, or `$.args[i]` inside a bulk).
+    /// `at` is where its errors are reported once it runs: V2 reports them relative to the
+    /// query's `args` (`$.columns[0]`), with the index of each enclosing `bulk` item
+    /// (`$[1].columns[0]`), while parse errors keep the request path.
+    pub fn parse_v2(v: &Json, path: &Path, at: &Path) -> Result<Query, ApiError> {
+        let o = Obj::new(v, path.clone(), "RQLQuery")?;
+        let ty = match o.req("type")? {
+            Json::String(t) => t.as_str(),
+            other => {
+                return Err(super::json::type_mismatch(
+                    "Text",
+                    "String",
+                    other,
+                    &o.at("type"),
+                ));
+            }
+        };
+        const KNOWN: &[&str] = &[
+            "insert",
+            "select",
+            "update",
+            "delete",
+            "count",
+            "run_sql",
+            "pg_run_sql",
+            "mssql_run_sql",
+            "citus_run_sql",
+            "cockroach_run_sql",
+            "bigquery_run_sql",
+            "bigquery_database_inspection",
+            "bulk",
+            "concurrent_bulk",
+        ];
+        if !KNOWN.contains(&ty) && data_connector_run_sql(ty).is_none() {
+            return Err(parse_failed(
+                format!("Unrecognised RQLQuery type: {ty}"),
+                path,
+            ));
+        }
+        let args_path = o.at("args");
+        let args = o.req("args")?;
+        let bulk = |args: &Json, item_at: &dyn Fn(usize) -> Path| match args {
+            Json::Array(items) => items
+                .iter()
+                .enumerate()
+                .map(|(i, q)| Query::parse_v2(q, &args_path.index(i), &item_at(i)))
+                .collect::<Result<Vec<_>, _>>(),
+            other => Err(super::json::type_mismatch("[]", "Array", other, &args_path)),
+        };
+        Ok(match ty {
+            "select" => Query::Select(at_runtime(SelectQuery::parse(args, &args_path)?, at, |q| {
+                &mut q.path
+            })),
+            "count" => Query::Count(at_runtime(CountQuery::parse(args, &args_path)?, at, |q| {
+                &mut q.path
+            })),
+            "insert" => Query::Insert(at_runtime(InsertQuery::parse(args, &args_path)?, at, |q| {
+                &mut q.path
+            })),
+            "update" => Query::Update(at_runtime(UpdateQuery::parse(args, &args_path)?, at, |q| {
+                &mut q.path
+            })),
+            "delete" => Query::Delete(at_runtime(DeleteQuery::parse(args, &args_path)?, at, |q| {
+                &mut q.path
+            })),
+            "run_sql" | "pg_run_sql" | "citus_run_sql" | "cockroach_run_sql" => {
+                serde_json::from_value(args.clone())
+                    .map(|args| Query::RunSql {
+                        args,
+                        path: at.clone(),
+                    })
+                    .map_err(|e| {
+                        parse_failed(hge_metadata_api::response::aeson_message(&e), &args_path)
+                    })?
+            }
+            "mssql_run_sql" | "bigquery_run_sql" | "bigquery_database_inspection" => {
+                let o = if ty == "mssql_run_sql" {
+                    Obj::new(args, args_path.clone(), "MSSQLRunSQL")?
+                } else {
+                    Obj::record(
+                        args,
+                        args_path.clone(),
+                        "Hasura.Backends.BigQuery.DDL.RunSQL.BigQueryRunSQL(BigQueryRunSQL)",
+                    )?
+                };
+                o.req("sql")?;
+                let source = if ty == "mssql_run_sql" {
+                    o.string("source")?
+                } else {
+                    Some(super::json::string(o.req("source")?, &o.at("source"))?)
+                };
+                Query::OtherBackendRunSql {
+                    source: source.unwrap_or_else(|| "default".to_owned()),
+                    writes: ty != "bigquery_database_inspection",
+                    path: at.clone(),
+                }
+            }
+            t if data_connector_run_sql(t).is_some() => {
+                let o = Obj::new(args, args_path.clone(), "DataConnectorRunSQL")?;
+                let source = super::json::string(o.req("source")?, &o.at("source"))?;
+                o.req("sql")?;
+                Query::OtherBackendRunSql {
+                    source,
+                    writes: true,
+                    path: at.clone(),
+                }
+            }
+            "bulk" => Query::Bulk(bulk(args, &|i| at.index(i))?),
+            // V2 runs these with `mapConcurrently`, which adds no index to error paths.
+            "concurrent_bulk" => Query::ConcurrentBulk(bulk(args, &|_| at.clone())?, at.clone()),
+            _ => Query::Other {
+                ty: ty.to_owned(),
+                path: at.clone(),
+            },
+        })
+    }
+
     /// V2's `requiresAdmin`.
     pub fn requires_admin(&self) -> bool {
         match self {
@@ -287,8 +417,10 @@ impl Query {
             | Query::Insert(_)
             | Query::Update(_)
             | Query::Delete(_) => false,
-            Query::RunSql { .. } | Query::Metadata { .. } => true,
-            Query::Bulk(qs) => qs.iter().any(Query::requires_admin),
+            Query::RunSql { .. } | Query::OtherBackendRunSql { .. } | Query::Metadata { .. } => {
+                true
+            }
+            Query::Bulk(qs) | Query::ConcurrentBulk(qs, _) => qs.iter().any(Query::requires_admin),
             Query::Other { ty, .. } => !DML_TYPES.contains(&ty.as_str()),
         }
     }
@@ -301,7 +433,7 @@ impl Query {
             Query::Metadata { command, .. } => {
                 Some(hge_metadata_api::api::modifies_metadata(command))
             }
-            Query::Bulk(qs) => qs
+            Query::Bulk(qs) | Query::ConcurrentBulk(qs, _) => qs
                 .iter()
                 .filter_map(Query::metadata_access)
                 .reduce(|a, b| a || b),
@@ -310,6 +442,7 @@ impl Query {
             | Query::Insert(_)
             | Query::Update(_)
             | Query::Delete(_)
+            | Query::OtherBackendRunSql { .. }
             | Query::Other { .. } => None,
         }
     }
@@ -318,12 +451,32 @@ impl Query {
     pub fn writes_data(&self) -> bool {
         match self {
             Query::RunSql { args, .. } => !args.read_only,
-            Query::Bulk(qs) => qs.iter().any(Query::writes_data),
+            // V2 never counts a `concurrent_bulk` as writing, so read-only mode lets its
+            // inserts through; we refuse them like any other write.
+            Query::Bulk(qs) | Query::ConcurrentBulk(qs, _) => qs.iter().any(Query::writes_data),
+            Query::OtherBackendRunSql { writes, .. } => *writes,
             Query::Insert(_) | Query::Update(_) | Query::Delete(_) => true,
             Query::Other { ty, .. } => matches!(ty.as_str(), "insert" | "update" | "delete"),
             Query::Select(_) | Query::Count(_) | Query::Metadata { .. } => false,
         }
     }
+}
+
+/// V2's `dcNameFromRunSql`: `<name>_run_sql`, where the name (up to the first `_`) is a
+/// GraphQL name.
+fn data_connector_run_sql(ty: &str) -> Option<&str> {
+    let (name, rest) = ty.split_once('_')?;
+    let mut chars = name.chars();
+    let valid = rest == "run_sql"
+        && chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric());
+    valid.then_some(name)
+}
+
+/// Move a parsed query's run-time error path to `at`.
+fn at_runtime<Q>(mut q: Q, at: &Path, path: impl FnOnce(&mut Q) -> &mut Path) -> Q {
+    *path(&mut q) = at.clone();
+    q
 }
 
 /// Legacy (version 1) `track_function` and `untrack_function` take the bare function
@@ -407,6 +560,49 @@ mod tests {
             e.error.message,
             "parsing Hasura.RQL.DML.Types.SelectG(SelectG) failed, key \"columns\" not found"
         );
+    }
+
+    #[test]
+    fn v2_runtime_paths() {
+        let select = json!({"type": "select", "args": {"table": "a", "columns": ["x"]}});
+        let v2 = |q: Json| Query::parse_v2(&q, &Path::root(), &Path::root()).unwrap();
+        let Query::Select(s) = v2(select.clone()) else {
+            panic!("expected a select")
+        };
+        assert_eq!(s.path.as_str(), "$");
+        let Query::Bulk(qs) = v2(json!({"type": "bulk", "args": [select.clone(), select.clone()]}))
+        else {
+            panic!("expected a bulk")
+        };
+        let Query::Select(s) = &qs[1] else {
+            panic!("expected a select")
+        };
+        assert_eq!(s.path.as_str(), "$[1]");
+        // `concurrent_bulk` adds no index.
+        let Query::ConcurrentBulk(qs, _) =
+            v2(json!({"type": "concurrent_bulk", "args": [select.clone(), select]}))
+        else {
+            panic!("expected a concurrent_bulk")
+        };
+        let Query::Select(s) = &qs[1] else {
+            panic!("expected a select")
+        };
+        assert_eq!(s.path.as_str(), "$");
+        // Parse errors keep the request path; metadata types are not /v2/query types.
+        let e = Query::parse_v2(
+            &json!({"type": "bulk", "args": [{"type": "select", "args": {"table": "a"}}]}),
+            &Path::root(),
+            &Path::root(),
+        )
+        .unwrap_err();
+        assert_eq!(e.error.path, "$.args[0].args");
+        let e = Query::parse_v2(
+            &json!({"type": "track_table", "args": {}}),
+            &Path::root(),
+            &Path::root(),
+        )
+        .unwrap_err();
+        assert_eq!(e.error.message, "Unrecognised RQLQuery type: track_table");
     }
 
     #[test]

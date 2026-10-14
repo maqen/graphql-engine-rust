@@ -1,0 +1,78 @@
+steps:
+- url: /v2/query
+  status: 200
+  query:
+    type: insert
+    args:
+      table: author
+      objects:
+      - id: 10
+        name: Author 10
+      returning:
+      - id
+      - name
+  response:
+    returning:
+    - id: 10
+      name: Author 10
+    affected_rows: 1
+- url: /v2/query
+  status: 200
+  query:
+    type: update
+    args:
+      table: author
+      where:
+        id: 10
+      $set:
+        name: Renamed
+      returning:
+      - name
+  response:
+    returning:
+    - name: Renamed
+    affected_rows: 1
+- url: /v2/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: delete
+      args:
+        table: author
+        where:
+          id: 10
+        returning:
+        - id
+    - type: count
+      args:
+        table: author
+  response:
+  - returning:
+    - id: 10
+    affected_rows: 1
+  - count: 2
+- url: /v2/query
+  status: 200
+  query:
+    type: concurrent_bulk
+    args:
+    - type: insert
+      args:
+        table: author
+        objects:
+        - id: 11
+          name: Author 11
+  response:
+  - affected_rows: 1
+- url: /v2/query
+  status: 200
+  query:
+    type: delete
+    args:
+      table: author
+      where:
+        id:
+          $gt: 2
+  response:
+    affected_rows: 1

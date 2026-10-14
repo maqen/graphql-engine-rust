@@ -1,0 +1,51 @@
+steps:
+- url: /v2/query
+  status: 400
+  query: 5
+  response:
+    error: parsing RQLQuery failed, expected Object, but encountered Number
+    path: $
+    code: parse-failed
+- url: /v2/query
+  status: 400
+  query: {}
+  response:
+    error: key "type" not found
+    path: $
+    code: parse-failed
+- url: /v2/query
+  status: 400
+  query:
+    type: 5
+    args: {}
+  response:
+    error: parsing Text failed, expected String, but encountered Number
+    path: $.type
+    code: parse-failed
+- url: /v2/query
+  status: 400
+  query:
+    type: select
+  response:
+    error: key "args" not found
+    path: $
+    code: parse-failed
+- url: /v2/query
+  status: 400
+  query:
+    type: track_table
+    args:
+      table: author
+  response:
+    error: 'Unrecognised RQLQuery type: track_table'
+    path: $
+    code: parse-failed
+- url: /v2/query
+  status: 400
+  query:
+    type: bulk
+    args: 5
+  response:
+    error: parsing [] failed, expected Array, but encountered Number
+    path: $.args
+    code: parse-failed
