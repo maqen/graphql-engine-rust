@@ -27,6 +27,7 @@ pub fn translate_field_inline(field: &QueryRoot, session: &Session) -> Result<St
         QueryRoot::SelectOne(select) => t.select_one(select, None)?,
         QueryRoot::Count(count) => t.count(count)?,
         QueryRoot::Aggregate(select) => t.select_aggregate(select, None)?,
+        QueryRoot::Connection(conn) => t.select_connection(conn, None)?,
         QueryRoot::Stream(_) => {
             return Err(Error::new(
                 Code::NotSupported,
