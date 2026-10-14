@@ -27,5 +27,8 @@ tracing.workspace = true
 webpki-roots.workspace = true
 bytes.workspace = true
 
+[dev-dependencies]
+hge-testdb.workspace = true
+
 [lints]
 workspace = true
