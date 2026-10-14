@@ -1,0 +1,159 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "article",
+            "schema": "public"
+          },
+          "select_permissions": [
+            {
+              "role": "role3",
+              "permission": {
+                "columns": [
+                  "name",
+                  "user_id"
+                ],
+                "filter": {
+                  "user_id": "X-Hasura-User-Id"
+                }
+              }
+            },
+            {
+              "role": "role4",
+              "permission": {
+                "columns": [
+                  "name",
+                  "user_id"
+                ],
+                "filter": {
+                  "user_id": "X-Hasura-User-Id"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "table": {
+            "name": "user",
+            "schema": "public"
+          }
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ],
+  "actions": [
+    {
+      "name": "create_user",
+      "definition": {
+        "handler": "{{ACTION_WEBHOOK_HANDLER}}/create-user",
+        "output_type": "UserId",
+        "ignored_client_headers": [
+          "Content-Length",
+          "Content-MD5",
+          "User-Agent",
+          "Host",
+          "Origin",
+          "Referer",
+          "Accept",
+          "Accept-Encoding",
+          "Accept-Language",
+          "Accept-Datetime",
+          "Cache-Control",
+          "Connection",
+          "DNT",
+          "Content-Type"
+        ],
+        "arguments": [
+          {
+            "name": "email",
+            "type": "String!"
+          },
+          {
+            "name": "name",
+            "type": "String!"
+          }
+        ],
+        "type": "mutation",
+        "kind": "synchronous"
+      },
+      "permissions": [
+        {
+          "role": "role2"
+        },
+        {
+          "role": "role1"
+        }
+      ]
+    }
+  ],
+  "custom_types": {
+    "objects": [
+      {
+        "name": "UserId",
+        "fields": [
+          {
+            "name": "id",
+            "type": "Int!"
+          }
+        ],
+        "relationships": [
+          {
+            "field_mapping": {
+              "id": "id"
+            },
+            "name": "user",
+            "remote_table": {
+              "name": "user",
+              "schema": "public"
+            },
+            "source": "default",
+            "type": "object"
+          },
+          {
+            "field_mapping": {
+              "id": "user_id"
+            },
+            "name": "articles",
+            "remote_table": {
+              "name": "article",
+              "schema": "public"
+            },
+            "source": "default",
+            "type": "array"
+          }
+        ]
+      }
+    ]
+  },
+  "inherited_roles": [
+    {
+      "role_name": "inherited_role1",
+      "role_set": [
+        "role1",
+        "role2",
+        "role3"
+      ]
+    },
+    {
+      "role_name": "inherited_role2",
+      "role_set": [
+        "role3",
+        "role4"
+      ]
+    }
+  ]
+}

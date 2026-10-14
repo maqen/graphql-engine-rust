@@ -1,0 +1,13 @@
+description: Ported from hasura/graphql-engine server/tests-py/test_roles_inheritance.py::TestActionsPermissionInheritance
+upstream:
+  file: test_roles_inheritance.py
+  class: TestActionsPermissionInheritance
+  dir: queries/actions/roles_inheritance/
+admin_secret: true
+env:
+  HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: 'true'
+  HASURA_GRAPHQL_ENABLE_REMOTE_SCHEMA_PERMISSIONS: 'true'
+  ACTION_WEBHOOK_HANDLER: '{{helper:actions_webhook}}'
+helpers:
+- actions_webhook
+isolation: data

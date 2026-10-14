@@ -1,0 +1,54 @@
+upstream:
+  file: test_events.py
+  class: TestEventDataFormat
+  method: test_bigint
+  by_hand: true
+steps:
+- description: drop deliveries left by earlier cases
+  url: '{{helper:events_webhook}}/__reset'
+  status: 200
+  response:
+    dropped: '{{any}}'
+- url: /v1/query
+  status: 200
+  query:
+    type: insert
+    args:
+      table:
+        schema: hge_tests
+        name: test_bigint
+      objects:
+      - id: 50755254975729665
+        name: hello
+      returning: []
+  response:
+    returning:
+    - {}
+    affected_rows: 1
+- description: INSERT event of bigint_all
+  url: '{{helper:events_webhook}}/__next_event?timeout=3'
+  status: 200
+  response:
+    path: /
+    body:
+      created_at: '{{any}}'
+      delivery_info:
+        current_retry: 0
+        max_retries: 0
+      event:
+        data:
+          new:
+            id: '50755254975729665'
+            name: hello
+          old: null
+        op: INSERT
+        session_variables:
+          x-hasura-role: admin
+        trace_context: '{{any}}'
+      id: '{{any}}'
+      table:
+        name: test_bigint
+        schema: hge_tests
+      trigger:
+        name: bigint_all
+    headers: {}

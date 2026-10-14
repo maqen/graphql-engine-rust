@@ -2,8 +2,8 @@
 """Port Hasura's server/tests-py suites into conformance/suites/.
 
 For every upstream test class that needs only Postgres, or also one of upstream's servers this
-tool can start (the fixtures in HELPER_FIXTURES: the action handler, the remote GraphQL server),
-and whose test methods only call `check_query_f`, this tool:
+tool can start (the fixtures in HELPER_FIXTURES: the action handler, the event webhook, the
+remote GraphQL server), and whose test methods only call `check_query_f`, this tool:
 
 1. runs the class's upstream setup files against a real Hasura v2 CE container,
 2. snapshots the result as `setup.sql` (pg_dump of the source database), `metadata.json`
@@ -50,7 +50,7 @@ IMAGE = "hasura/graphql-engine:v2.51.0-ce"
 ADMIN_SECRET = "conformance-admin-secret"
 SRC_DB = "conf_port_src"
 
-# Classes whose tests are custom Python (websocket protocol, subscriptions). Their setup is
+# Classes whose tests are custom Python (websocket protocol, subscriptions, event deliveries). Their setup is
 # snapshotted like any other class; their cases are written by hand in the suite directory
 # (marked `upstream: {by_hand: true}`), recorded with `hge-conformance hasura --record`, and
 # kept when this tool regenerates the suite.
@@ -63,6 +63,21 @@ HAND_PORTED = {
     "test_subscriptions.py::TestStreamingSubscriptionWithTies",
     "test_subscriptions.py::TestSubscriptionUDFWithSessionArg",
     "test_subscriptions.py::TestSubscriptionCohortIsolationMSSQLPostgres",
+    # Event triggers: conformance/tools/hand/event_cases.py writes their cases.
+    "test_events.py::TestCreateEventQueryPostgresMSSQL",
+    "test_events.py::TestCreateEventQueryPostgres",
+    "test_events.py::TestEventDataFormat",
+    "test_events.py::TestEventRetryConfPostgresMSSQL",
+    "test_events.py::TestEventHeadersPostgresMSSQL",
+    "test_events.py::TestDeleteEventQuery",
+    "test_events.py::TestEventSelCols",
+    "test_events.py::TestEventInsertOnly",
+    "test_events.py::TestEventSelPayload",
+    "test_events.py::TestWebhookEvent",
+    "test_events.py::TestEventWebhookTemplateURL",
+    "test_events.py::TestEventSessionVariables",
+    "test_events.py::TestManualEvents",
+    "test_events.py::TestEventTransform",
 }
 # Fixtures that only open websocket connections, which hand-ported cases do themselves.
 WS_FIXTURES = {"ws_conn_init", "ws_conn_init_graphql_ws"}
@@ -72,6 +87,7 @@ WS_FIXTURES = {"ws_conn_init", "ws_conn_init_graphql_ws"}
 HELPER_FIXTURES = {
     "actions_fixture": ("actions_webhook", "ACTION_WEBHOOK_HANDLER"),
     "gql_server": ("graphql_server", "REMOTE_SCHEMAS_WEBHOOK_DOMAIN"),
+    "evts_webhook": ("events_webhook", "EVENT_WEBHOOK_HANDLER"),
 }
 HELPERS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "helpers")
 
@@ -138,8 +154,12 @@ class Skip(Exception):
     pass
 
 
-def literal(node, cls_dir):
-    """Evaluate a path expression such as `self.dir() + "/x.yaml"`."""
+def literal(node, cls_dir, names=None):
+    """Evaluate a path expression such as `self.dir() + "/x.yaml"`; `names`: class attributes
+    it may refer to (`directory + "/setup.yaml"`)."""
+    names = names or {}
+    if isinstance(node, ast.Name) and node.id in names:
+        return literal(names[node.id], cls_dir)
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
     if isinstance(node, ast.Call) and ast.unparse(node.func) in ("self.dir", "cls.dir"):
@@ -147,21 +167,21 @@ def literal(node, cls_dir):
             raise Skip("uses dir() without a dir")
         return cls_dir
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        return literal(node.left, cls_dir) + literal(node.right, cls_dir)
+        return literal(node.left, cls_dir, names) + literal(node.right, cls_dir, names)
     if isinstance(node, ast.JoinedStr):
         out = ""
         for v in node.values:
             if isinstance(v, ast.FormattedValue):
-                out += literal(v.value, cls_dir)
+                out += literal(v.value, cls_dir, names)
             else:
                 out += v.value
         return out
     if isinstance(node, ast.Call) and ast.unparse(node.func) == "hge_ctx.backend_suffix":
         return literal(node.args[0], cls_dir)  # Postgres is the default backend: no suffix
     if isinstance(node, ast.Call) and ast.unparse(node.func) == "os.path.join":
-        return os.path.join(*[literal(a, cls_dir) for a in node.args])
+        return os.path.join(*[literal(a, cls_dir, names) for a in node.args])
     if isinstance(node, (ast.List, ast.Tuple)):
-        return [literal(e, cls_dir) for e in node.elts]
+        return [literal(e, cls_dir, names) for e in node.elts]
     raise Skip(f"cannot evaluate {ast.unparse(node)}")
 
 
@@ -246,7 +266,7 @@ def discover(upstream):
                 except Skip as e:
                     yield test_file, node.name, str(e)
                 except ValueError as e:
-                    yield test_file, node.name, f"cannot evaluate class settings: {e}"
+                    yield test_file, node.name, "cannot evaluate class settings: " + re.sub(r" at 0x[0-9a-f]+", "", str(e))
 
 
 def expand_decorator(d, aliases):
@@ -265,6 +285,10 @@ def class_info(node, aliases, classes, hand_ported=False):
     admin_secret = False
     backends = None
     decorators = list(node.decorator_list)
+    # The module's `pytestmark` applies to every class in it.
+    if "pytestmark" in aliases:
+        marks = aliases["pytestmark"]
+        decorators = (list(marks.elts) if isinstance(marks, ast.List) else [marks]) + decorators
     # Single inheritance within the module: inherit decorators, attributes and methods.
     bases = [b.id for b in node.bases if isinstance(b, ast.Name)]
     chain = [node]
@@ -332,7 +356,7 @@ def class_info(node, aliases, classes, hand_ported=False):
     files = {}
     for attr in ("setup_files", "schema_setup_files", "values_setup_files"):
         if attr in attrs:
-            v = literal(attrs[attr], cls_dir)
+            v = literal(attrs[attr], cls_dir, attrs)
             files[attr] = v if isinstance(v, list) else [v]
 
     tests = {}
@@ -384,7 +408,7 @@ def recreate_db(base, name):
     psql(db_url(base, "postgres"), f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE);\nCREATE DATABASE "{name}";\n')
 
 
-TRIGGER_RE = re.compile(r"^CREATE TRIGGER notify_hasura_.*?;\n", re.M | re.S)
+TRIGGER_RE = re.compile(r"^CREATE TRIGGER \"?notify_hasura_.*?;\n", re.M | re.S)
 
 
 def pg_dump(url, data_only=False):

@@ -1,0 +1,116 @@
+upstream:
+  file: test_events.py
+  class: TestEventCreateAndDelete
+  method: test_create_delete
+  fixtures:
+  - queries/event_triggers/create-delete/create_and_delete.yaml
+steps:
+- description: create and then drop an event trigger
+  url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: track_table
+      args:
+        schema: hge_tests
+        name: test_t1
+    - type: create_event_trigger
+      args:
+        name: t1_1
+        table:
+          schema: hge_tests
+          name: test_t1
+        insert:
+          columns: '*'
+        update:
+          columns: '*'
+        delete:
+          columns: '*'
+        webhook: '{{EVENT_WEBHOOK_HANDLER}}'
+    - type: delete_event_trigger
+      args:
+        name: t1_1
+    - type: untrack_table
+      args:
+        table:
+          schema: hge_tests
+          name: test_t1
+  response:
+  - message: success
+  - message: success
+  - message: success
+  - message: success
+- description: create an event trigger on case sensitive table name and then drop that event trigger
+  url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: track_table
+      args:
+        schema: hge_tests
+        name: TEST_T2
+    - type: create_event_trigger
+      args:
+        name: t1_2
+        table:
+          schema: hge_tests
+          name: TEST_T2
+        insert:
+          columns: '*'
+        update:
+          columns: '*'
+        delete:
+          columns: '*'
+        webhook: '{{EVENT_WEBHOOK_HANDLER}}'
+    - type: delete_event_trigger
+      args:
+        name: t1_2
+    - type: untrack_table
+      args:
+        table:
+          schema: hge_tests
+          name: TEST_T2
+  response:
+  - message: success
+  - message: success
+  - message: success
+  - message: success
+- description: create an event trigger on case sensitive table name on public schema and then drop that
+    event trigger
+  url: /v1/query
+  status: 200
+  query:
+    type: bulk
+    args:
+    - type: track_table
+      args:
+        schema: public
+        name: Test_T3
+    - type: create_event_trigger
+      args:
+        name: t1_3
+        table:
+          schema: public
+          name: Test_T3
+        insert:
+          columns: '*'
+        update:
+          columns: '*'
+        delete:
+          columns: '*'
+        webhook: '{{EVENT_WEBHOOK_HANDLER}}'
+    - type: delete_event_trigger
+      args:
+        name: t1_3
+    - type: untrack_table
+      args:
+        table:
+          schema: public
+          name: Test_T3
+  response:
+  - message: success
+  - message: success
+  - message: success
+  - message: success

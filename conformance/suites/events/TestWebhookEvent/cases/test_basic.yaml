@@ -1,0 +1,136 @@
+upstream:
+  file: test_events.py
+  class: TestWebhookEvent
+  method: test_basic
+  by_hand: true
+steps:
+- description: drop deliveries left by earlier cases
+  url: '{{helper:events_webhook}}/__reset'
+  status: 200
+  response:
+    dropped: '{{any}}'
+- url: /v1/query
+  status: 200
+  query:
+    type: insert
+    args:
+      table:
+        schema: hge_tests
+        name: test_t1
+      objects:
+      - c1: 1
+        c2: hello
+      returning: []
+  response:
+    returning:
+    - {}
+    affected_rows: 1
+- description: INSERT event of t1_all
+  url: '{{helper:events_webhook}}/__next_event?timeout=3'
+  status: 200
+  response:
+    path: /
+    body:
+      created_at: '{{any}}'
+      delivery_info:
+        current_retry: 0
+        max_retries: 0
+      event:
+        data:
+          new:
+            c1: 1
+            c2: hello
+          old: null
+        op: INSERT
+        session_variables:
+          x-hasura-role: admin
+        trace_context: '{{any}}'
+      id: '{{any}}'
+      table:
+        name: test_t1
+        schema: hge_tests
+      trigger:
+        name: t1_all
+    headers: {}
+- url: /v1/query
+  status: 200
+  query:
+    type: update
+    args:
+      table:
+        schema: hge_tests
+        name: test_t1
+      where:
+        c1: 1
+      $set:
+        c2: world
+  response:
+    affected_rows: 1
+- description: UPDATE event of t1_all
+  url: '{{helper:events_webhook}}/__next_event?timeout=3'
+  status: 200
+  response:
+    path: /
+    body:
+      created_at: '{{any}}'
+      delivery_info:
+        current_retry: 0
+        max_retries: 0
+      event:
+        data:
+          new:
+            c1: 1
+            c2: world
+          old:
+            c1: 1
+            c2: hello
+        op: UPDATE
+        session_variables:
+          x-hasura-role: admin
+        trace_context: '{{any}}'
+      id: '{{any}}'
+      table:
+        name: test_t1
+        schema: hge_tests
+      trigger:
+        name: t1_all
+    headers: {}
+- url: /v1/query
+  status: 200
+  query:
+    type: delete
+    args:
+      table:
+        schema: hge_tests
+        name: test_t1
+      where:
+        c1: 1
+  response:
+    affected_rows: 1
+- description: DELETE event of t1_all
+  url: '{{helper:events_webhook}}/__next_event?timeout=3'
+  status: 200
+  response:
+    path: /
+    body:
+      created_at: '{{any}}'
+      delivery_info:
+        current_retry: 0
+        max_retries: 0
+      event:
+        data:
+          new: null
+          old:
+            c1: 1
+            c2: world
+        op: DELETE
+        session_variables:
+          x-hasura-role: admin
+        trace_context: '{{any}}'
+      id: '{{any}}'
+      table:
+        name: test_t1
+        schema: hge_tests
+      trigger:
+        name: t1_all
+    headers: {}

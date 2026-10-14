@@ -1,0 +1,68 @@
+upstream:
+  file: test_events.py
+  class: TestDeleteEventQuery
+  method: test_delete_basic
+  by_hand: true
+steps:
+- description: drop deliveries left by earlier cases
+  url: '{{helper:events_webhook}}/__reset'
+  status: 200
+  response:
+    dropped: '{{any}}'
+- url: /v1/query
+  status: 200
+  query:
+    type: insert
+    args:
+      table:
+        schema: hge_tests
+        name: test_t1
+      objects:
+      - c1: 1
+        c2: hello
+      returning: []
+  response:
+    returning:
+    - {}
+    affected_rows: 1
+- description: no event
+  url: '{{helper:events_webhook}}/__next_event?timeout=0'
+  status: 404
+  response:
+    error: no event
+- url: /v1/query
+  status: 200
+  query:
+    type: update
+    args:
+      table:
+        schema: hge_tests
+        name: test_t1
+      where:
+        c1: 1
+      $set:
+        c2: world
+  response:
+    affected_rows: 1
+- description: no event
+  url: '{{helper:events_webhook}}/__next_event?timeout=0'
+  status: 404
+  response:
+    error: no event
+- url: /v1/query
+  status: 200
+  query:
+    type: delete
+    args:
+      table:
+        schema: hge_tests
+        name: test_t1
+      where:
+        c1: 1
+  response:
+    affected_rows: 1
+- description: no event
+  url: '{{helper:events_webhook}}/__next_event?timeout=2'
+  status: 404
+  response:
+    error: no event

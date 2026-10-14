@@ -83,6 +83,31 @@ fn response_diff(expected: &Value, actual: &Value, path: &str) -> Option<String>
 /// check because Hasura does not produce them deterministically.
 pub const ANY: &str = "{{any}}";
 
+/// `actual`, with `{{any}}` kept wherever `expected` has it: what recording writes, so that
+/// re-recording a case does not drop its wildcards.
+pub fn keep_any(expected: &Value, actual: &Value) -> Value {
+    if expected == ANY {
+        return expected.clone();
+    }
+    match (expected, actual) {
+        (Value::Object(e), Value::Object(a)) => Value::Object(
+            a.iter()
+                .map(|(k, av)| {
+                    let v = e.get(k).map_or_else(|| av.clone(), |ev| keep_any(ev, av));
+                    (k.clone(), v)
+                })
+                .collect(),
+        ),
+        (Value::Array(e), Value::Array(a)) => Value::Array(
+            a.iter()
+                .enumerate()
+                .map(|(i, av)| e.get(i).map_or_else(|| av.clone(), |ev| keep_any(ev, av)))
+                .collect(),
+        ),
+        _ => actual.clone(),
+    }
+}
+
 fn value_diff(expected: &Value, actual: &Value, path: &str, ordered: bool) -> Option<String> {
     if expected == ANY {
         return None;
@@ -249,6 +274,16 @@ mod tests {
         assert!(diff(&e, &json!({"code": "other", "internal": 1}), false).is_some());
         // The key itself must still be there.
         assert!(diff(&e, &json!({"code": "unexpected"}), false).is_some());
+    }
+
+    #[test]
+    fn recording_keeps_wildcards() {
+        let e = json!({"id": ANY, "body": {"op": "INSERT", "at": ANY}, "gone": 1});
+        let a = json!({"id": "x", "body": {"op": "UPDATE", "at": 5, "new": true}, "list": [1]});
+        assert_eq!(
+            keep_any(&e, &a),
+            json!({"id": ANY, "body": {"op": "UPDATE", "at": ANY, "new": true}, "list": [1]})
+        );
     }
 
     #[test]

@@ -11,3 +11,6 @@ Helper servers for the conformance suite, vendored from hasura/graphql-engine
 - `actions_webhook.py`: upstream's `ActionsWebhookHandler` (context.py), the action handler of
   `test_actions.py`. Some actions call back into the engine; it reads the engine's URL and admin
   secret from the JSON file named by `$HGE_CONFORMANCE_ENGINE`.
+- `events_webhook.py`: upstream's `EvtsWebhookServer`, the event-trigger webhook of
+  `test_events.py`, plus GET routes that hand its deliveries to the cases (`/__next_event`,
+  `/__reset`, `/__queue_empty`, `/__unblock`).

@@ -2,32 +2,9 @@ upstream:
   file: test_schema_stitching.py
   class: TestValidateRemoteSchemaQuery
   method: test_remote_schema_field_validation
-  by_hand: true
+  fixtures:
+  - queries/remote_schemas/validation//field_validation.yaml
 steps:
-- url: /v1/query
-  status: 200
-  query:
-    type: bulk
-    args:
-    - type: add_remote_schema
-      args:
-        name: user
-        definition:
-          url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/user-graphql'
-    - type: add_remote_schema
-      args:
-        name: character-iface
-        definition:
-          url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/character-iface-graphql'
-    - type: add_remote_schema
-      args:
-        name: union
-        definition:
-          url: '{{REMOTE_SCHEMAS_WEBHOOK_DOMAIN}}/union-graphql'
-  response:
-  - message: success
-  - message: success
-  - message: success
 - description: query the remote with a non-existing field 'non_existing_field', which should fail to validate
   url: /v1/graphql
   status: 200

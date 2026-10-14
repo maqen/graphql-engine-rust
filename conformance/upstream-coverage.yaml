@@ -139,9 +139,7 @@
     test_query_user: ported
     test_query_user_by_pk: ported
     test_query_user_with_typename: ported
-    test_query_non_allowlist: 'skipped: step 0: upstream response differs from its fixture: {"data": {"user":
-      [{"id": 1, "name": "clarke", "account_id": 23, "company": "Symons"}, {"id": 2, "name": "reckler",
-      "account_id": 2, "company": null}]}}'
+    test_query_non_allowlist: ported
     test_query_user_fragment: ported
     test_query_as_admin: ported
     test_update_query: ported
@@ -153,7 +151,7 @@
   skipped: needs fixture clean_allowlist, enterprise_edition, pro_tests_fixtures
 - file: test_apis_disabled.py
   class: TestGraphQLDisabled
-  skipped: no database state fixture
+  skipped: needs fixture auth_hook
 - file: test_apis_disabled.py
   class: TestGraphQLEnabled
   skipped: needs pytest.mark.default_source_disabled
@@ -162,7 +160,7 @@
   skipped: needs pytest.mark.default_source_disabled
 - file: test_apis_disabled.py
   class: TestMetadataEnabled
-  skipped: no database state fixture
+  skipped: needs fixture auth_hook
 - file: test_apollo_federation.py
   class: TestApolloFederation
   skipped: class fixture federated_server_with_hge_only
@@ -241,22 +239,18 @@
 - file: test_events.py
   class: TestCreateEventQueryPostgres
   area: events
-  tests: {}
-  skipped: 'setup failed upstream: /v1/query {"type": "bulk", "args": [{"type": "run_sql", "args": {"sql":
-    "create table hge_tests.test_t1(\n    c1 int,\n    c2 text\n);\n"}}, {"type": "track_table", "args":
-    {"schema": "hge_tests", "name": "test_t1"}}, {"type": "create_event_trigger", "args": {"name": "t1_all",
-    "table": {"schema": "h'
+  tests:
+    test_partitioned_table_basic_insert: ported by hand
 - file: test_events.py
   class: TestCreateEventQueryPostgresMSSQL
   area: events
-  tests: {}
-  skipped: 'setup failed upstream: /v1/query {"type": "bulk", "args": [{"type": "run_sql", "args": {"sql":
-    "create table hge_tests.test_t1(\n    c1 int,\n    c2 text\n);\n"}}, {"type": "track_table", "args":
-    {"schema": "hge_tests", "name": "test_t1"}}, {"type": "create_event_trigger", "args": {"name": "t1_all",
-    "table": {"schema": "h'
+  tests:
+    test_basic: ported by hand
 - file: test_events.py
   class: TestDeleteEventQuery
-  skipped: cannot evaluate directory
+  area: events
+  tests:
+    test_delete_basic: ported by hand
 - file: test_events.py
   class: TestDeleteEventQueryMSSQL
   skipped: backend mssql
@@ -264,14 +258,8 @@
   class: TestEventCreateAndDelete
   area: events
   tests:
-    test_create_delete: 'skipped: step 0: upstream returned 400, its fixture expects 200: {"error": "Inconsistent
-      object: in table \"hge_tests.test_t1\": in event trigger \"t1_1\": Value for environment variables
-      not found: EVENT_WEBHOOK_HANDLER", "path": "$.args[1].args", "code": "invalid-configuration", "internal":
-      [{"definition": {"configuration": {"definition": {"delete": {"columns":'
-    test_create_reset: 'skipped: step 0: upstream returned 400, its fixture expects 200: {"error": "Inconsistent
-      object: in table \"hge_tests.test_t1\": in event trigger \"t1_1\": Value for environment variables
-      not found: EVENT_WEBHOOK_HANDLER", "path": "$.args[1].args", "code": "invalid-configuration", "internal":
-      [{"definition": {"configuration": {"definition": {"delete": {"columns":'
+    test_create_delete: ported
+    test_create_reset: ported
     test_create_operation_spec_not_provider_err: ported
     test_create_illegal_name_err: ported
 - file: test_events.py
@@ -283,11 +271,9 @@
 - file: test_events.py
   class: TestEventDataFormat
   area: events
-  tests: {}
-  skipped: 'setup failed upstream: /v1/query {"type": "bulk", "args": [{"type": "run_sql", "args": {"sql":
-    "create table hge_tests.test_bigint(\n    id bigint,\n    name text\n);\n\ncreate table hge_tests.test_geojson(\n  id
-    SERIAL PRIMARY KEY,\n  location GEOGRAPHY(Point)\n);\n\nINSERT INTO hge_tests.test_geojson (location)
-    VALUES ('
+  tests:
+    test_bigint: ported by hand
+    test_geojson: ported by hand
 - file: test_events.py
   class: TestEventDataFormatBigIntMSSQL
   skipped: backend mssql
@@ -296,65 +282,51 @@
   skipped: backend mssql
 - file: test_events.py
   class: TestEventFloodPostgresMSSQL
-  skipped: 'cannot evaluate class settings: malformed node or string on line 208: <ast.Call object at
-    0x7f37e6181550>'
+  skipped: 'cannot evaluate class settings: malformed node or string on line 208: <ast.Call object>'
 - file: test_events.py
   class: TestEventHeadersPostgresMSSQL
   area: events
-  tests: {}
-  skipped: 'setup failed upstream: /v1/query {"type": "bulk", "args": [{"type": "run_sql", "args": {"sql":
-    "create table hge_tests.test_t1(\n    c1 int,\n    c2 text\n);\n"}}, {"type": "track_table", "args":
-    {"schema": "hge_tests", "name": "test_t1"}}, {"type": "create_event_trigger", "args": {"name": "t1_all",
-    "table": {"schema": "h'
+  tests:
+    test_basic: ported by hand
 - file: test_events.py
   class: TestEventInsertOnly
   area: events
-  tests: {}
-  skipped: 'setup failed upstream: /v1/query {"type": "bulk", "args": [{"type": "run_sql", "args": {"sql":
-    "create table hge_tests.test_t1(\n    c1 int,\n    c2 text\n);\n"}}, {"type": "track_table", "args":
-    {"schema": "hge_tests", "name": "test_t1"}}, {"type": "create_event_trigger", "args": {"name": "t1_insert",
-    "table": {"schema":'
+  tests:
+    test_insert_only: ported by hand
 - file: test_events.py
   class: TestEventInsertOnlyMSSQL
   skipped: backend mssql
 - file: test_events.py
   class: TestEventRetryConfPostgresMSSQL
   area: events
-  tests: {}
-  skipped: 'setup failed upstream: /v1/query {"type": "bulk", "args": [{"type": "run_sql", "args": {"sql":
-    "create table hge_tests.test_t1(\n    c1 int,\n    c2 text\n);\ncreate table hge_tests.test_t2(\n    c1
-    int,\n    c2 text\n);\ncreate table hge_tests.test_t3(\n    c1 int,\n    c2 text\n);\n"}}, {"type":
-    "track_table", "args": {'
+  tests:
+    test_basic: ported by hand
+    test_timeout_short: ported by hand
+    test_timeout_long: ported by hand
+    test_queue_empty: ported by hand
 - file: test_events.py
   class: TestEventSelCols
   area: events
-  tests: {}
-  skipped: 'setup failed upstream: /v1/query {"type": "bulk", "args": [{"type": "run_sql", "args": {"sql":
-    "create table hge_tests.test_t1(\n    c1 int,\n    c2 text\n);\n"}}, {"type": "track_table", "args":
-    {"schema": "hge_tests", "name": "test_t1"}}, {"type": "create_event_trigger", "args": {"name": "t1_cols",
-    "table": {"schema": "'
+  tests:
+    test_selected_cols: ported by hand
+    test_selected_cols_dep: ported by hand
 - file: test_events.py
   class: TestEventSelColsMSSQL
   skipped: backend mssql
 - file: test_events.py
   class: TestEventSelPayload
   area: events
-  tests: {}
-  skipped: 'setup failed upstream: /v1/query {"type": "bulk", "args": [{"type": "run_sql", "args": {"sql":
-    "create table hge_tests.test_t1(\n    c1 int,\n    c2 text\n);\n"}}, {"type": "track_table", "args":
-    {"schema": "hge_tests", "name": "test_t1"}}, {"type": "create_event_trigger", "args": {"name": "t1_payload",
-    "table": {"schema"'
+  tests:
+    test_selected_payload: ported by hand
+    test_selected_payload_dep: ported by hand
 - file: test_events.py
   class: TestEventSelPayloadMSSQL
   skipped: backend mssql
 - file: test_events.py
   class: TestEventSessionVariables
   area: events
-  tests: {}
-  skipped: 'setup failed upstream: /v1/query {"type": "bulk", "args": [{"type": "run_sql", "args": {"sql":
-    "create table hge_tests.test_t1(\n    c1 int,\n    c2 text\n);\n"}}, {"type": "track_table", "args":
-    {"schema": "hge_tests", "name": "test_t1"}}, {"type": "create_event_trigger", "args": {"name": "t1_all",
-    "table": {"schema": "h'
+  tests:
+    test_basic: ported by hand
 - file: test_events.py
   class: TestEventSessionVariablesMSSQL
   skipped: backend mssql
@@ -362,7 +334,7 @@
   class: TestEventTransform
   area: events
   tests:
-    test_basic: 'skipped: uses extra fixtures: evts_webhook'
+    test_basic: ported by hand
 - file: test_events.py
   class: TestEventTransformMSSQL
   skipped: backend mssql
@@ -372,47 +344,37 @@
 - file: test_events.py
   class: TestEventWebhookTemplateURL
   area: events
-  tests: {}
-  skipped: 'setup failed upstream: /v1/query {"type": "bulk", "args": [{"type": "run_sql", "args": {"sql":
-    "create table hge_tests.test_t1(\n    c1 int,\n    c2 text\n);\n"}}, {"type": "track_table", "args":
-    {"schema": "hge_tests", "name": "test_t1"}}, {"type": "create_event_trigger", "args": {"name": "t1_all",
-    "table": {"schema": "h'
+  tests:
+    test_basic: ported by hand
 - file: test_events.py
   class: TestEventWebhookTemplateURLMSSQL
   skipped: backend mssql
 - file: test_events.py
   class: TestEventsAsynchronousExecutionPostgresMSSQL
   area: events
-  tests: {}
-  skipped: 'setup failed upstream: /v1/query {"type": "bulk", "args": [{"type": "run_sql", "args": {"sql":
-    "create table hge_tests.test_t1(\n    c1 int,\n    c2 text\n);\n"}}, {"type": "track_table", "args":
-    {"schema": "hge_tests", "name": "test_t1"}}, {"type": "create_event_trigger", "args": {"name": "t1_timeout_long",
-    "table": {"sc'
+  tests:
+    test_async_execution: 'skipped: uses extra fixtures: evts_webhook'
 - file: test_events.py
   class: TestManualEvents
   area: events
-  tests: {}
-  skipped: 'setup failed upstream: /v1/query {"type": "bulk", "args": [{"type": "run_sql", "args": {"sql":
-    "create table hge_tests.test_t1(\n    c1 int,\n    c2 text\n);\n"}}, {"type": "track_table", "args":
-    {"schema": "hge_tests", "name": "test_t1"}}, {"type": "create_event_trigger", "args": {"name": "t1_enabled",
-    "table": {"schema"'
+  tests:
+    test_basic: ported by hand
+    test_basic_with_reload_metadata: ported by hand
 - file: test_events.py
   class: TestManualEventsMSSQL
   skipped: backend mssql
 - file: test_events.py
   class: TestUpdateEventQuery
-  skipped: no database state fixture
+  tests:
+    test_update_basic: ported by hand
 - file: test_events.py
   class: TestUpdateEventQueryMSSQL
   skipped: backend mssql
 - file: test_events.py
   class: TestWebhookEvent
   area: events
-  tests: {}
-  skipped: 'setup failed upstream: /v1/query {"type": "bulk", "args": [{"type": "run_sql", "args": {"sql":
-    "create table hge_tests.test_t1(\n    c1 int,\n    c2 text\n);\n"}}, {"type": "track_table", "args":
-    {"schema": "hge_tests", "name": "test_t1"}}, {"type": "create_event_trigger", "args": {"name": "t1_all",
-    "table": {"schema": "h'
+  tests:
+    test_basic: ported by hand
 - file: test_events.py
   class: TestWebhookEventMSSQL
   skipped: backend mssql
@@ -1537,13 +1499,13 @@
   skipped: needs pytest.mark.jwk_path
 - file: test_logging.py
   class: TestLogging
-  skipped: no database state fixture
+  skipped: needs pytest.mark.capture_hge_logs
 - file: test_logging.py
   class: TestNoJwkRefreshLog
   skipped: needs pytest.mark.jwk_path
 - file: test_logging.py
   class: TestWebsocketLogging
-  skipped: no database state fixture
+  skipped: needs pytest.mark.capture_hge_logs
 - file: test_metadata.py
   class: TestMetadata
   skipped: needs fixture gql_server
@@ -1672,7 +1634,10 @@
   skipped: needs fixture fake_graphql_service
 - file: test_roles_inheritance.py
   class: TestActionsPermissionInheritance
-  skipped: needs use_action_fixtures
+  area: permissions
+  tests:
+    test_inheritance_from_multiple_parents: ported
+    test_override_inherited_permission: ported
 - file: test_roles_inheritance.py
   class: TestCustomFunctionPermissionsInheritance
   area: permissions
@@ -1706,12 +1671,10 @@
   skipped: needs fixture actions_fixture
 - file: test_schema_stitching.py
   class: TestAddRemoteSchemaCompareRootQueryFields
-  area: remote-schemas
   tests:
     test_schema_check_arg_default_values_and_field_and_arg_types: ported by hand
 - file: test_schema_stitching.py
   class: TestAddRemoteSchemaTbls
-  area: remote-schemas
   tests:
     test_add_conflicting_table: ported by hand
     test_add_schema: ported by hand
@@ -1726,7 +1689,6 @@
     test_remote_schema_forward_headers: ported by hand
 - file: test_schema_stitching.py
   class: TestRemoteSchemaBasic
-  area: remote-schemas
   tests:
     test_add_remote_schema_err_unknown_interface: ported by hand
     test_add_remote_schema_with_interface_err_empty_fields_list: ported by hand
@@ -1758,63 +1720,52 @@
     test_update_schema_with_url_change: ported by hand
 - file: test_schema_stitching.py
   class: TestRemoteSchemaBasicExtensions
-  area: remote-schemas
   tests:
     test_remote_query: ported by hand
 - file: test_schema_stitching.py
   class: TestRemoteSchemaIntrospectionHeaders
-  area: remote-schemas
   tests:
     test_introspection_and_runtime_headers: ported by hand
 - file: test_schema_stitching.py
   class: TestRemoteSchemaQueriesOverWebsocket
-  area: remote-schemas
   tests:
     test_remote_mutation: ported by hand
     test_remote_query: ported by hand
     test_remote_query_error: ported by hand
 - file: test_schema_stitching.py
   class: TestRemoteSchemaReload
-  skipped: stops and restarts the remote GraphQL server mid-test
+  skipped: no database state fixture
 - file: test_schema_stitching.py
   class: TestRemoteSchemaRequestPayload
-  area: remote-schemas
   tests:
     test_remote_schema_operation_name_in_response: ported by hand
 - file: test_schema_stitching.py
   class: TestRemoteSchemaResponseHeaders
-  area: remote-schemas
   tests:
     test_response_headers_from_remote: ported by hand
 - file: test_schema_stitching.py
   class: TestRemoteSchemaTimeout
-  area: remote-schemas
   tests:
     test_remote_query_timeout: ported by hand
 - file: test_schema_stitching.py
   class: TestRemoteSchemaTypePrefix
-  area: remote-schemas
   tests:
     test_add_schema: ported by hand
     test_introspection: ported by hand
 - file: test_schema_stitching.py
   class: TestValidateRemoteSchemaCustomization
-  area: remote-schemas
   tests:
     test_remote_schema_interface_field_validation: ported by hand
 - file: test_schema_stitching.py
   class: TestValidateRemoteSchemaCustomizeAllTheThings
-  area: remote-schemas
   tests:
     test_remote_schema_customize_all_the_things: ported by hand
 - file: test_schema_stitching.py
   class: TestValidateRemoteSchemaFieldPrefixQuery
-  area: remote-schemas
   tests:
     test_remote_schema_field_prefix_validation: ported by hand
 - file: test_schema_stitching.py
   class: TestValidateRemoteSchemaNamespaceQuery
-  area: remote-schemas
   tests:
     test_multiple_remote_schema_with_namespace: ported by hand
     test_remote_schema_namespace_validation: ported by hand
@@ -1822,11 +1773,10 @@
   class: TestValidateRemoteSchemaQuery
   area: remote-schemas
   tests:
-    test_remote_schema_argument_validation: ported by hand
-    test_remote_schema_field_validation: ported by hand
+    test_remote_schema_argument_validation: ported
+    test_remote_schema_field_validation: ported
 - file: test_schema_stitching.py
   class: TestValidateRemoteSchemaTypePrefixQuery
-  area: remote-schemas
   tests:
     test_remote_schema_type_prefix_validation: ported by hand
 - file: test_subscriptions.py

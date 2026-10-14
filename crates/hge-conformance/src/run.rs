@@ -126,7 +126,7 @@ async fn http_step(
         Ok(()) => Ok(()),
         Err(_) if record => {
             step.status = actual.status;
-            step.response = actual.body;
+            step.response = compare::keep_any(&step.response, &actual.body);
             for (name, value) in step.resp_headers.iter_mut() {
                 *value = header_value(&actual.headers, name);
             }
@@ -145,9 +145,14 @@ async fn send(slot: &Slot, case: &Case, step: &HttpStep) -> Result<Actual, Strin
         }
     });
     let method = reqwest::Method::from_bytes(method.as_bytes()).map_err(|e| e.to_string())?;
-    let mut req = slot
-        .http()
-        .request(method, format!("{}{}", slot.base_url(), step.url));
+    // A URL with a scheme (a `{{helper:..}}` one) goes to that server, not the engine.
+    let absolute = step.url.starts_with("http://") || step.url.starts_with("https://");
+    let url = if absolute {
+        step.url.clone()
+    } else {
+        format!("{}{}", slot.base_url(), step.url)
+    };
+    let mut req = slot.http().request(method, url);
     let mut has_content_type = false;
     for (k, v) in &step.headers {
         has_content_type |= k.eq_ignore_ascii_case("content-type");
@@ -165,6 +170,7 @@ async fn send(slot: &Slot, case: &Case, step: &HttpStep) -> Result<Actual, Strin
         .keys()
         .any(|k| k.eq_ignore_ascii_case("x-hasura-admin-secret"));
     if case.file.admin_secret_header
+        && !absolute
         && !sends_secret
         && let Some(secret) = slot.admin_secret()
     {

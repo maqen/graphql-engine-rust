@@ -1,0 +1,49 @@
+{
+  "version": 3,
+  "sources": [
+    {
+      "name": "default",
+      "kind": "postgres",
+      "tables": [
+        {
+          "table": {
+            "name": "test_t1",
+            "schema": "hge_tests"
+          },
+          "event_triggers": [
+            {
+              "name": "t1_all",
+              "definition": {
+                "delete": {
+                  "columns": "*"
+                },
+                "enable_manual": false,
+                "insert": {
+                  "columns": "*"
+                },
+                "update": {
+                  "columns": "*"
+                }
+              },
+              "retry_conf": {
+                "interval_sec": 10,
+                "num_retries": 0,
+                "timeout_sec": 60
+              },
+              "webhook": "{{EVENT_WEBHOOK_HANDLER}}"
+            }
+          ]
+        }
+      ],
+      "configuration": {
+        "connection_info": {
+          "database_url": {
+            "from_env": "HASURA_GRAPHQL_DATABASE_URL"
+          },
+          "isolation_level": "read-committed",
+          "use_prepared_statements": false
+        }
+      }
+    }
+  ]
+}

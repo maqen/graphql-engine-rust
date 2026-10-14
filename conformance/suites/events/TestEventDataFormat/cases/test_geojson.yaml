@@ -1,0 +1,70 @@
+upstream:
+  file: test_events.py
+  class: TestEventDataFormat
+  method: test_geojson
+  by_hand: true
+steps:
+- description: drop deliveries left by earlier cases
+  url: '{{helper:events_webhook}}/__reset'
+  status: 200
+  response:
+    dropped: '{{any}}'
+- url: /v1/query
+  status: 200
+  query:
+    type: update
+    args:
+      table:
+        schema: hge_tests
+        name: test_geojson
+      where:
+        id: 1
+      $set:
+        id: 2
+  response:
+    affected_rows: 1
+- description: UPDATE event of geojson_all
+  url: '{{helper:events_webhook}}/__next_event?timeout=3'
+  status: 200
+  response:
+    path: /
+    body:
+      created_at: '{{any}}'
+      delivery_info:
+        current_retry: 0
+        max_retries: 0
+      event:
+        data:
+          new:
+            id: 2
+            location:
+              coordinates:
+              - -43.77
+              - 45.64
+              crs:
+                properties:
+                  name: urn:ogc:def:crs:EPSG::4326
+                type: name
+              type: Point
+          old:
+            id: 1
+            location:
+              coordinates:
+              - -43.77
+              - 45.64
+              crs:
+                properties:
+                  name: urn:ogc:def:crs:EPSG::4326
+                type: name
+              type: Point
+        op: UPDATE
+        session_variables:
+          x-hasura-role: admin
+        trace_context: '{{any}}'
+      id: '{{any}}'
+      table:
+        name: test_geojson
+        schema: hge_tests
+      trigger:
+        name: geojson_all
+    headers: {}
