@@ -271,9 +271,18 @@ fn plan_request(
         }
     };
     let rs = state.role_schema(&session.role, session.backend_only);
-    let doc = state.documents.parse(query)?;
+    let cached = state.documents.get(query);
+    let doc = match &cached {
+        Some(doc) => doc.clone(),
+        None => Arc::new(hge_schema::parse_query(query)?),
+    };
     crate::policies::check_allowlist(state, session, &doc, query)?;
     let op = hge_schema::plan(&rs, &doc, req.operation_name.as_deref(), variables)?;
+    // Only documents of requests that got this far are kept, so the cache cannot be filled
+    // with queries the allowlist or the schema rejects.
+    if cached.is_none() {
+        state.documents.insert(query, doc);
+    }
     if req.read_only && op.kind == OperationKind::Mutation {
         return Err(Error::new(
             Code::NotSupported,
