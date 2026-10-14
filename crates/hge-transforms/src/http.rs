@@ -430,11 +430,12 @@ impl Request {
         self.to_json_with_body(&self.body, response_timeout_micros)
     }
 
-    /// [`Request::to_json`] for a request whose body was moved out (into the transport).
+    /// [`Request::to_json`] for a request whose body was moved out (into the transport). Its
+    /// `url` is http-client's `getUri`, which keeps the query string.
     pub fn to_json_with_body(&self, body: &[u8], response_timeout_micros: Option<u128>) -> Value {
         let headers: Vec<Value> = self.headers.iter().map(|(k, v)| json!([k, v])).collect();
         json!({
-            "url": self.url(),
+            "url": self.full_url(),
             "method": self.method,
             "headers": headers,
             "body": std::str::from_utf8(body).ok(),

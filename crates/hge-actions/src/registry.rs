@@ -20,6 +20,9 @@ pub struct HandlerConfig {
     /// `HASURA_GRAPHQL_CONFIGURED_HEADER_PRECEDENCE`: configured headers win over forwarded
     /// client headers.
     pub configured_header_precedence: bool,
+    /// `HASURA_GRAPHQL_REDACT_ACTION_HANDLER_LOGS`: `action-handler-log` request bodies are
+    /// `null`.
+    pub redact_logs: bool,
     /// Shared HTTP client (connection pool).
     pub client: reqwest::Client,
 }
@@ -29,6 +32,7 @@ impl Default for HandlerConfig {
         HandlerConfig {
             user_agent: "hasura-graphql-engine/v2.51.0".to_owned(),
             configured_header_precedence: false,
+            redact_logs: false,
             client: reqwest::Client::new(),
         }
     }
