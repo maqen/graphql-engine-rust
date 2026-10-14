@@ -263,3 +263,19 @@ cases:
       errors:
         - extensions: { path: "$", code: validation-failed }
           message: "unexpected variables in variableValues: y, z, x"
+
+  # V2 applies one order_by object's keys in the hash order of the field names, verified on
+  # v2.51.0-ce: author_id before title, and title before author.
+  - description: a multi-key order_by object sorts in V2's field hash order
+    query:
+      query: "{ article(order_by: {title: desc, author_id: asc}) { id } }"
+    response:
+      data:
+        article: [{ id: 1 }, { id: 2 }, { id: 4 }, { id: 3 }]
+
+  - description: a relationship key in a multi-key order_by object sorts in V2's hash order too
+    query:
+      query: "{ article(order_by: {author: {name: desc}, title: asc}) { id } }"
+    response:
+      data:
+        article: [{ id: 2 }, { id: 3 }, { id: 4 }, { id: 1 }]

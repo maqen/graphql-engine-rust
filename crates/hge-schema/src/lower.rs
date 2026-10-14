@@ -700,7 +700,28 @@ impl Lowerer<'_> {
         path: &str,
         out: &mut Vec<OrderBy>,
     ) -> Result<(), Error> {
-        for (key, value) in obj {
+        // V2 applies the keys of one order_by object in the hash order of the table's field
+        // names (its parser is built from the table's field `HashMap`), not as written: a
+        // column sorts by its database name, `<rel>_aggregate` by the relationship's name.
+        let mut entries: Vec<HashKeyed<(&String, &Json)>> = obj
+            .iter()
+            .map(|entry| {
+                let key = entry.0;
+                let field = match table.column_by_gql_name(key) {
+                    Some(col) => col.name.clone(),
+                    None => match aggregate_relationship(table, key) {
+                        Some(rel) if table.relationship_by_name(key).is_none() => rel.name.clone(),
+                        _ => key.clone(),
+                    },
+                };
+                HashKeyed { field, item: entry }
+            })
+            .collect();
+        hge_core::sort_v2_hash_order(&mut entries);
+        for HashKeyed {
+            item: (key, value), ..
+        } in entries
+        {
             if value.is_null() {
                 continue;
             }
@@ -757,6 +778,18 @@ impl Lowerer<'_> {
             }
         }
         Ok(())
+    }
+}
+
+/// An item sorted by the name of the field it belongs to.
+struct HashKeyed<T> {
+    field: String,
+    item: T,
+}
+
+impl<T> AsRef<str> for HashKeyed<T> {
+    fn as_ref(&self) -> &str {
+        &self.field
     }
 }
 
