@@ -207,6 +207,8 @@ pub struct Prepared {
     pub tables: Arc<Tables>,
     /// Deliverable event triggers.
     pub event_triggers: Arc<hge_events::EventTriggers>,
+    /// SQL trigger changes left for after the transaction the catalog was read in.
+    pub trigger_sync: Vec<crate::events::PendingSync>,
     /// Resolved cron triggers.
     pub scheduled_triggers: Arc<hge_events::scheduled::ScheduledTriggers>,
     pub actions: Arc<ResolvedActions>,
@@ -246,6 +248,8 @@ pub async fn prepare(
 ) -> Prepared {
     let mut sources = HashMap::new();
     let mut inconsistencies = vec![];
+    // Sources read inside an open transaction: their SQL triggers are synced after it.
+    let mut deferred = HashSet::new();
 
     for source in &metadata.sources {
         if !matches!(
@@ -296,6 +300,9 @@ pub async fn prepare(
         // A supplied catalog (read inside a `run_sql` transaction) brings its own enum rows;
         // the pool must not be queried then, as that transaction may hold locks it waits on.
         let supplied = catalogs.remove(&source.name);
+        if supplied.is_some() {
+            deferred.insert(source.name.clone());
+        }
         let enum_reader = supplied.is_none().then_some(&*pg);
         let (catalog, introspected) = if let Some(c) = supplied {
             (Arc::new(c), tracked)
@@ -347,8 +354,8 @@ pub async fn prepare(
         .iter()
         .map(|(name, s)| (name.clone(), s.pg.clone()))
         .collect();
-    let (event_triggers, event_issues) =
-        crate::events::prepare(metadata, &tables, &pg_sources, config).await;
+    let (event_triggers, trigger_sync, event_issues) =
+        crate::events::prepare(metadata, &tables, &pg_sources, &deferred, config).await;
     inconsistencies.extend(event_issues);
     let (scheduled_triggers, cron_issues) = crate::scheduled::prepare(metadata);
     inconsistencies.extend(cron_issues);
@@ -397,6 +404,7 @@ pub async fn prepare(
         sources,
         tables,
         event_triggers: Arc::new(event_triggers),
+        trigger_sync,
         scheduled_triggers: Arc::new(scheduled_triggers),
         actions: Arc::new(actions),
         action_registry: Arc::new(registry),

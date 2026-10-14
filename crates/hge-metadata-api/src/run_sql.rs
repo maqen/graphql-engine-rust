@@ -373,6 +373,11 @@ pub async fn run_checked<R: Runtime>(ctx: &mut Ctx<'_, R>, args: &RunSql) -> Api
         return Err(e);
     }
     tx.commit().await.map_err(|e| sql_error(e, "COMMIT"))?;
+    // Until this runs, other sessions' writes use the previous trigger bodies (as in V2).
+    if let Some(prepared) = &mut ctx.prepared {
+        ctx.rt.after_commit(prepared).await;
+        ctx.inconsistencies = ctx.rt.inconsistencies(prepared).to_vec();
+    }
     Ok(result)
 }
 
