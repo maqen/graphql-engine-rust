@@ -99,8 +99,10 @@ Two step options serve asynchronous results (async actions):
   retry_for: 10                                # resend until it matches, for up to 10 s
 ```
 
-`{{var:<name>}}` is replaced by the captured value anywhere in later steps of the case, and
-recording writes the placeholder back where the value appears.
+`{{var:<name>}}` is replaced by the captured value in the later HTTP steps of the case (a
+string that is only the placeholder becomes the value itself, number or string; an unknown
+name is an error). Recording writes the captured step's value as `'{{any}}'`, and the
+placeholder back wherever a later response body or listed header equals a captured string.
 
 ### Helper servers
 
