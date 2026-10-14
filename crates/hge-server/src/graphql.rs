@@ -13,6 +13,7 @@ use serde_json::{Map, Value as Json};
 
 use crate::response_cache;
 use crate::state::{AppState, Engine, SchemaKey};
+use crate::telemetry::query_log;
 
 /// One GraphQL request.
 #[derive(Debug, Deserialize)]
@@ -49,18 +50,19 @@ pub struct GraphQLResponse {
     pub batch: Vec<(usize, f64, Option<Error>)>,
 }
 
-/// Execute a request body and return the response body.
+/// Execute a request body and return the response body. `request_id` is for `query-log`.
 pub async fn execute_body(
     engine: &Engine,
     session: &Session,
     headers: &HeaderMap,
+    request_id: &str,
     body: GraphQLBody,
 ) -> GraphQLResponse {
     let state = engine.state.load_full();
     match body {
         GraphQLBody::Single(req) => {
             let (body, set_cookies, error) =
-                execute_one(engine, &state, session, headers, req).await;
+                execute_one(engine, &state, session, headers, request_id, req).await;
             GraphQLResponse {
                 body,
                 set_cookies,
@@ -77,7 +79,8 @@ pub async fn execute_body(
                     out.push(',');
                 }
                 let started = std::time::Instant::now();
-                let (body, _, error) = execute_one(engine, &state, session, headers, req).await;
+                let (body, _, error) =
+                    execute_one(engine, &state, session, headers, request_id, req).await;
                 batch.push((body.len(), started.elapsed().as_secs_f64(), error));
                 out.push_str(&body);
             }
@@ -122,9 +125,10 @@ async fn execute_one(
     state: &Arc<AppState>,
     session: &Session,
     headers: &HeaderMap,
+    request_id: &str,
     req: GraphQLRequest,
 ) -> (String, Vec<String>, Option<Error>) {
-    match run(engine, state, session, headers, req).await {
+    match run(engine, state, session, headers, request_id, req).await {
         Ok((body, cookies)) => (body, cookies, None),
         Err(Failure::Error(e)) => {
             let body = error_body(&e, include_internal(engine, session));
@@ -167,12 +171,15 @@ async fn run(
     state: &AppState,
     session: &Session,
     client_headers: &HeaderMap,
+    request_id: &str,
     req: GraphQLRequest,
 ) -> Result<(String, Vec<String>), Failure> {
-    // Introspection-only responses are cached per schema.
+    // Introspection-only responses are cached per schema. A cached response skips planning,
+    // so with `query-log` on every request is planned (and logged) instead.
+    let logging = query_log::enabled();
     let schema_key = state.schema_key(&session.role, session.backend_only);
     let cache_key = cache_key(state, session, &schema_key, &req);
-    if let Some(key) = &cache_key
+    if let Some(key) = cache_key.as_ref().filter(|_| !logging)
         && let Some(body) = state.responses.get(key)
     {
         return Ok((body.to_string(), vec![]));
@@ -184,6 +191,14 @@ async fn run(
             "subscriptions are not supported over HTTP, use websockets instead",
         )
         .into());
+    }
+    if logging {
+        let request = query_log::request(
+            req.query.as_deref().unwrap_or_default(),
+            req.operation_name.as_deref(),
+            req.variables.as_ref(),
+        );
+        query_log::log(state, session, request_id, &request, &op);
     }
     let query = req.query.as_deref();
     let (body, cookies) = execute(engine, state, session, client_headers, query, &op).await?;
@@ -434,6 +449,17 @@ async fn run_concurrently(
     Ok(results)
 }
 
+/// The source of a mutation whose root fields all run in one transaction: every field is a
+/// database mutation on that one source. Otherwise each field runs on its own.
+pub(crate) fn one_transaction(op: &Operation) -> Option<&str> {
+    let mut sources = op.root_fields.iter().map(|(_, rf)| match rf {
+        RootField::Mutation(m) => Some(&*m.source),
+        _ => None,
+    });
+    let first = sources.next()??;
+    sources.all(|s| s == Some(first)).then_some(first)
+}
+
 /// Run the root fields of a mutation operation in order; the first error stops the
 /// operation (spec 03 §1). Like V2, when every root field is a database mutation on the same
 /// source they share one transaction (a failure rolls back all of them); otherwise each runs
@@ -447,19 +473,15 @@ async fn run_mutations(
 ) -> Result<Vec<Option<String>>, Failure> {
     let session = ctx.session;
     let mut results: Vec<Option<String>> = vec![None; op.root_fields.len()];
-    let mutations: Vec<(&str, &Mutation)> = op
-        .root_fields
-        .iter()
-        .filter_map(|(_, rf)| match rf {
-            RootField::Mutation(m) => Some((&*m.source, &m.mutation)),
-            _ => None,
-        })
-        .collect();
-    if let Some(&(first_source, _)) = mutations.first()
-        && mutations.len() == op.root_fields.len()
-        && mutations.iter().all(|(source, _)| *source == first_source)
-    {
-        let batch: Vec<&Mutation> = mutations.iter().map(|(_, m)| *m).collect();
+    if let Some(first_source) = one_transaction(op) {
+        let batch: Vec<&Mutation> = op
+            .root_fields
+            .iter()
+            .filter_map(|(_, rf)| match rf {
+                RootField::Mutation(m) => Some(&m.mutation),
+                _ => None,
+            })
+            .collect();
         let out = source_executor(state, first_source)?
             .execute_mutations(&batch, session)
             .await?;

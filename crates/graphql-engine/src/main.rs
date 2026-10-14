@@ -258,6 +258,10 @@ struct ServeArgs {
     #[arg(long, env = "HASURA_GRAPHQL_ENABLED_LOG_TYPES")]
     enabled_log_types: Option<String>,
 
+    /// Variable names (comma separated) whose values `query-log` writes as `[MASKED]`.
+    #[arg(long, env = "HASURA_GRAPHQL_LOG_MASKED_VARIABLES")]
+    log_masked_variables: Option<String>,
+
     /// Log `/v1/metadata` and `/v1/query` request bodies in `http-log` (with `query-log`).
     #[arg(long, env = "HASURA_GRAPHQL_ENABLE_METADATA_QUERY_LOGGING", value_parser = parse_bool, default_value = "false")]
     enable_metadata_query_logging: bool,
@@ -365,6 +369,18 @@ struct ServeArgs {
     /// Log failed event deliveries at error level.
     #[arg(long, env = "HASURA_GRAPHQL_ENABLE_TRIGGERS_ERROR_LOG_LEVEL", value_parser = parse_bool, default_value = "false")]
     enable_triggers_error_log_level: bool,
+}
+
+/// `HASURA_GRAPHQL_LOG_MASKED_VARIABLES`: comma-separated names, blanks ignored.
+fn masked_variables(args: &ServeArgs) -> std::collections::HashSet<String> {
+    args.log_masked_variables
+        .as_deref()
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 /// The log filter from `HASURA_GRAPHQL_LOG_LEVEL` / `HASURA_GRAPHQL_ENABLED_LOG_TYPES`, with
@@ -699,6 +715,7 @@ fn main() -> anyhow::Result<()> {
         Command::Serve(args) => {
             let (log, ignored) = log_config(args)?;
             let _flush = hge_server::telemetry::init(log);
+            hge_server::telemetry::query_log::set_masked_variables(masked_variables(args));
             let config = serve_config(&cli, args)?;
             log_startup(args, &config, &log, &ignored);
             let runtime = tokio::runtime::Builder::new_multi_thread()

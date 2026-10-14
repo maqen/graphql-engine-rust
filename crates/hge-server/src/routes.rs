@@ -371,7 +371,7 @@ async fn run(
     log: Option<HttpLogInfo>,
 ) -> Response {
     let batched = matches!(body, GraphQLBody::Batch(_));
-    let out = graphql::execute_body(engine, session, headers, body).await;
+    let out = graphql::execute_body(engine, session, headers, &rid, body).await;
     let log = log.map(|mut l| {
         if batched {
             l.request_mode = RequestMode::Batched;

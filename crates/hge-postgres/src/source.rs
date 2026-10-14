@@ -7,7 +7,9 @@ use hge_core::{
     Code, EnumTableRow, Error, NativeQueryCheck, QualifiedFunction, QualifiedTable, Session,
     SourceCatalog,
 };
-use hge_ir::{BoxFuture, MultiplexedQuery, MultiplexedRow, Mutation, QueryRoot, SourceExecutor};
+use hge_ir::{
+    BoxFuture, GeneratedSql, MultiplexedQuery, MultiplexedRow, Mutation, QueryRoot, SourceExecutor,
+};
 use serde_json::json;
 use tokio_postgres::types::{ToSql, Type};
 use tokio_postgres_rustls::MakeRustlsConnect;
@@ -15,7 +17,10 @@ use tokio_postgres_rustls::MakeRustlsConnect;
 use crate::introspect;
 use crate::param::TextParam;
 use crate::pool::{IsolationLevel, PoolConfig, connect_pool};
-use crate::translate::{translate_field_inline, translate_multiplexed, translate_query};
+use crate::sql::SqlBuilder;
+use crate::translate::{
+    translate_field_inline, translate_multiplexed, translate_query, translate_query_with,
+};
 
 /// How long reading one enum table's rows may take.
 pub const ENUM_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
@@ -247,6 +252,18 @@ impl SourceExecutor for PgSource {
                 .map(|v| v.unwrap_or_else(|| "null".to_owned()))
                 .collect())
         })
+    }
+
+    fn generated_sql(
+        &self,
+        field: &QueryRoot,
+        session: &Session,
+    ) -> Result<Option<GeneratedSql>, Error> {
+        let q = translate_query_with(&[field], session, SqlBuilder::new().logging_arguments())?;
+        Ok(Some(GeneratedSql {
+            prepared_arguments: q.logged_arguments(),
+            query: q.sql,
+        }))
     }
 
     fn execute_mutations<'a>(

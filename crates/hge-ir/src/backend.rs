@@ -28,6 +28,18 @@ pub trait SourceExecutor: Send + Sync {
         session: &'a Session,
     ) -> BoxFuture<'a, Result<Vec<String>, Error>>;
 
+    /// For `query-log` only: the statement `field` would run on its own (V2 runs each root
+    /// field separately; this engine may batch them), with its arguments as V2 logs them.
+    /// Backends without SQL keep the default `None`.
+    fn generated_sql(
+        &self,
+        field: &QueryRoot,
+        session: &Session,
+    ) -> Result<Option<GeneratedSql>, Error> {
+        let _ = (field, session);
+        Ok(None)
+    }
+
     /// Build the multiplexed form of a subscription's root fields (all on this source): one
     /// statement serving many cohorts, where each cohort supplies its own values (see
     /// [`MultiplexedQuery`]). Backends without subscriptions keep the default.
@@ -90,6 +102,14 @@ pub trait SourceExecutor: Send + Sync {
             ))
         })
     }
+}
+
+/// A root field's statement as `query-log` writes it (`generated_sql.<alias>`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct GeneratedSql {
+    pub query: String,
+    /// The bound values: numbers, booleans and JSON documents as JSON, the rest as text.
+    pub prepared_arguments: Vec<serde_json::Value>,
 }
 
 /// A statement whose text depends only on the shape of a subscription; every value

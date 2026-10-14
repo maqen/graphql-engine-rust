@@ -14,6 +14,53 @@ pub struct SqlBuilder {
     vars: Option<String>,
     /// `/v1/graphql/explain`: parameters are written as literals (`('<text>')`) instead.
     inline: bool,
+    /// `query-log`: how to log each parameter, only when [`Self::logging_arguments`] asked.
+    arg_kinds: Option<Vec<ArgKind>>,
+}
+
+/// How a parameter is written in `query-log`'s `prepared_arguments` (V2's
+/// `pgScalarValueToJson`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArgKind {
+    Number,
+    Bool,
+    Json,
+    Text,
+}
+
+impl ArgKind {
+    fn of(ty: &ColumnType) -> ArgKind {
+        if ty.dimensions > 0 || ty.schema != "pg_catalog" {
+            return ArgKind::Text;
+        }
+        match ty.name.as_str() {
+            "int2" | "int4" | "int8" | "smallint" | "integer" | "bigint" | "float4" | "float8"
+            | "real" | "double precision" | "numeric" | "decimal" => ArgKind::Number,
+            "bool" | "boolean" => ArgKind::Bool,
+            "json" | "jsonb" => ArgKind::Json,
+            _ => ArgKind::Text,
+        }
+    }
+
+    fn to_json(self, value: &str) -> serde_json::Value {
+        use serde_json::Value;
+        let parsed = match self {
+            ArgKind::Text => None,
+            // Postgres spells booleans `t`/`f` as well as `true`/`false`.
+            ArgKind::Bool => match value {
+                "t" | "true" => Some(Value::Bool(true)),
+                "f" | "false" => Some(Value::Bool(false)),
+                _ => None,
+            },
+            // `NaN`, `Infinity`, and numbers a JSON number would not write back digit for
+            // digit (huge or very precise `numeric`s) stay text.
+            ArgKind::Number => serde_json::from_str(value).ok().filter(
+                |v: &Value| matches!(v, Value::Number(n) if n.to_string().as_str() == value),
+            ),
+            ArgKind::Json => serde_json::from_str(value).ok(),
+        };
+        parsed.unwrap_or_else(|| Value::String(value.to_owned()))
+    }
 }
 
 impl SqlBuilder {
@@ -37,6 +84,27 @@ impl SqlBuilder {
             inline: true,
             ..Self::default()
         }
+    }
+
+    /// Also record each parameter's type, for [`Self::logged_arguments`].
+    pub fn logging_arguments(mut self) -> Self {
+        self.arg_kinds = Some(vec![]);
+        self
+    }
+
+    /// The parameters as `query-log` writes them (`prepared_arguments`): numbers, booleans
+    /// and JSON documents as JSON, everything else as text. Empty unless the builder was made
+    /// with [`Self::logging_arguments`].
+    pub fn logged_arguments(&self) -> Vec<serde_json::Value> {
+        let kinds = self.arg_kinds.as_deref().unwrap_or_default();
+        self.params
+            .iter()
+            .zip(kinds)
+            .map(|(p, kind)| match p {
+                None => serde_json::Value::Null,
+                Some(p) => kind.to_json(p),
+            })
+            .collect()
     }
 
     pub fn push(&mut self, s: &str) -> &mut Self {
@@ -84,7 +152,7 @@ impl SqlBuilder {
 
     /// Bind a text-format parameter cast to `ty`: `$n::"schema"."type"`.
     pub fn param(&mut self, value: Option<String>, ty: &ColumnType) -> &mut Self {
-        self.placeholder(value);
+        self.placeholder(value, ty);
         self.sql.push_str("::");
         push_type(&mut self.sql, ty);
         self
@@ -92,7 +160,7 @@ impl SqlBuilder {
 
     /// Bind `value` and write its untyped placeholder: `($n)`, or `(<vars>->>n-1)` when
     /// multiplexed.
-    fn placeholder(&mut self, value: Option<String>) {
+    fn placeholder(&mut self, value: Option<String>, ty: &ColumnType) {
         if self.inline {
             match value {
                 None => self.sql.push_str("(NULL)"),
@@ -105,6 +173,9 @@ impl SqlBuilder {
             return;
         }
         self.params.push(value);
+        if let Some(kinds) = &mut self.arg_kinds {
+            kinds.push(ArgKind::of(ty));
+        }
         let n = self.params.len();
         match &self.vars {
             None => write!(self.sql, "(${n})"),
@@ -118,7 +189,7 @@ impl SqlBuilder {
     pub fn input_param(&mut self, value: Option<String>, ty: &ColumnType) -> &mut Self {
         if ty.dimensions == 0 && matches!(ty.name.as_str(), "geometry" | "geography") {
             self.sql.push_str("ST_GeomFromGeoJSON(");
-            self.placeholder(value);
+            self.placeholder(value, ty);
             self.sql.push_str("::text)::");
             push_type(&mut self.sql, ty);
             return self;
@@ -169,6 +240,32 @@ mod tests {
         b.push(" AND ")
             .param(Some("1".into()), &ColumnType::builtin("int4").array_of());
         assert!(b.sql.ends_with(r#"($1)::"pg_catalog"."int4"[]"#));
+    }
+
+    #[test]
+    fn logged_arguments() {
+        let mut b = SqlBuilder::new();
+        b.param(Some("1".into()), &ColumnType::builtin("int4"));
+        assert!(b.logged_arguments().is_empty());
+        let mut b = SqlBuilder::new().logging_arguments();
+        for (value, ty) in [
+            (Some("5"), "int4"),
+            (Some("1.5"), "numeric"),
+            (Some("NaN"), "numeric"),
+            (Some("12345678901234567890.123456789"), "numeric"),
+            (Some("t"), "bool"),
+            (Some(r#"{"a":[1]}"#), "jsonb"),
+            (Some("[1]"), "text"),
+            (Some("7"), "text"),
+            (None, "text"),
+        ] {
+            b.param(value.map(str::to_owned), &ColumnType::builtin(ty));
+        }
+        b.param(Some("1".into()), &ColumnType::builtin("int4").array_of());
+        assert_eq!(
+            serde_json::Value::Array(b.logged_arguments()),
+            serde_json::json!([5, 1.5, "NaN", "12345678901234567890.123456789", true, {"a": [1]}, "[1]", "7", null, "1"])
+        );
     }
 
     #[test]
