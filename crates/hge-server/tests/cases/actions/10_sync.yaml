@@ -71,6 +71,46 @@ cases:
       data:
         authorInfo: { authorId: 99, author: null, articles: [] }
 
+  - description: a null join field gives null for every relationship kind
+    query:
+      query: '{ respond(status: 200, body: {label: "x"}) { authorId author { id } articles { id } articles_aggregate { aggregate { count } } } }'
+    response:
+      data:
+        respond: { authorId: null, author: null, articles: null, articles_aggregate: null }
+
+  - description: array relationships have an aggregate field
+    query:
+      query: |
+        { authorInfo(id: 1) { articles_aggregate(where: {id: {_gt: 0}}) { aggregate { count max { id } } nodes { title } } } }
+    response:
+      data:
+        authorInfo:
+          articles_aggregate:
+            aggregate: { count: 2, max: { id: 2 } }
+            nodes: [{ title: Rust in production }, { title: Draft notes }]
+
+  - description: the aggregate over no matching rows counts zero
+    query:
+      query: '{ authorInfo(id: 99) { articles_aggregate { aggregate { count } } } }'
+    response:
+      data:
+        authorInfo: { articles_aggregate: { aggregate: { count: 0 } } }
+
+  - description: action relationship fields have no description, as in V2
+    query:
+      query: |
+        { __type(name: "AuthorInfo") { fields { name description } } }
+    response:
+      data:
+        __type:
+          fields:
+            - { name: address, description: null }
+            - { name: articles, description: null }
+            - { name: articles_aggregate, description: null }
+            - { name: author, description: null }
+            - { name: authorId, description: null }
+            - { name: label, description: null }
+
   - description: aliases on root, scalar, nested and relationship fields
     query:
       query: '{ a: authorInfo(id: 2) { l: label addr: address { c: city } who: author { n: name } } }'

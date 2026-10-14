@@ -267,6 +267,8 @@ pub enum FieldKind {
     CustomObjectField,
     /// A relationship from a custom object type to a table.
     ActionRelationship(Arc<ActionRelInfo>),
+    /// `<rel>_aggregate` of an array relationship of an action output type.
+    ActionRelationshipAggregate(Arc<ActionRelInfo>),
     /// A field of the result object of an asynchronous action.
     AsyncActionResult(AsyncResultField),
     /// A remote schema root field, a namespace field, or a field of a remote type.

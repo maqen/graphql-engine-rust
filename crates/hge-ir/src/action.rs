@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use hge_core::ColumnType;
 
-use crate::Select;
+use crate::{AggregateSelect, Select};
 
 /// One action root field.
 #[derive(Debug, Clone)]
@@ -111,10 +111,20 @@ pub enum ActionField {
 #[derive(Debug, Clone)]
 pub struct ActionRelationship {
     pub source: Arc<str>,
-    pub array: bool,
     /// `(output field name, table column, column type)`.
     pub mapping: Vec<(String, String, ColumnType)>,
     /// The selection on the table, with the role's permissions and the user's arguments; the
     /// join condition is added per output object at execution.
-    pub select: Select,
+    pub target: ActionRelTarget,
+}
+
+/// What an action relationship field selects from the table.
+#[derive(Debug, Clone)]
+pub enum ActionRelTarget {
+    /// An object relationship: one row or `null`.
+    Object(Select),
+    /// An array relationship: the matching rows.
+    Array(Select),
+    /// `<rel>_aggregate` of an array relationship.
+    Aggregate(AggregateSelect),
 }
