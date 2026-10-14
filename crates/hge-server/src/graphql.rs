@@ -11,7 +11,8 @@ use http::HeaderMap;
 use serde::Deserialize;
 use serde_json::{Map, Value as Json};
 
-use crate::state::{AppState, Engine};
+use crate::response_cache;
+use crate::state::{AppState, Engine, SchemaKey};
 
 /// One GraphQL request.
 #[derive(Debug, Deserialize)]
@@ -168,8 +169,17 @@ async fn run(
     client_headers: &HeaderMap,
     req: GraphQLRequest,
 ) -> Result<(String, Vec<String>), Failure> {
-    let query = req.query.clone();
-    let op = plan(state, session, req)?;
+    // Introspection-only responses are cached per schema. The allowlist is checked on the
+    // parsed query, so requests it applies to always take the full path.
+    let cacheable = state.prepared.allowlist.is_none() || session.role.is_admin();
+    let schema_key = state.schema_key(&session.role, session.backend_only);
+    if cacheable
+        && let Some(query) = req.query.as_deref()
+        && let Some(body) = state.responses.get(&cache_key(&schema_key, query, &req))
+    {
+        return Ok((body, vec![]));
+    }
+    let op = plan_request(state, session, &req)?;
     if op.kind == OperationKind::Subscription {
         return Err(Error::new(
             Code::UnexpectedPayload,
@@ -177,24 +187,44 @@ async fn run(
         )
         .into());
     }
-    execute(
-        engine,
-        state,
-        session,
-        client_headers,
-        query.as_deref(),
-        &op,
-    )
-    .await
+    let query = req.query.as_deref();
+    let (body, cookies) = execute(engine, state, session, client_headers, query, &op).await?;
+    if cacheable && let Some(query) = query {
+        let key = cache_key(&schema_key, query, &req);
+        state.responses.insert_if_static(&key, &op, &body);
+    }
+    Ok((body, cookies))
+}
+
+fn cache_key<'a>(
+    schema: &'a SchemaKey,
+    query: &'a str,
+    req: &'a GraphQLRequest,
+) -> response_cache::Key<'a> {
+    response_cache::Key {
+        schema,
+        query,
+        operation_name: req.operation_name.as_deref(),
+        variables: req.variables.as_ref().filter(|v| !v.is_null()),
+    }
 }
 
 /// Parse, validate and lower a request (everything that can fail before execution).
 pub fn plan(state: &AppState, session: &Session, req: GraphQLRequest) -> Result<Operation, Error> {
+    plan_request(state, session, &req)
+}
+
+fn plan_request(
+    state: &AppState,
+    session: &Session,
+    req: &GraphQLRequest,
+) -> Result<Operation, Error> {
     let query = req.query.as_deref().ok_or_else(|| {
         Error::new(Code::BadRequest, "the key 'query' was not present").with_path("$")
     })?;
-    let variables = match req.variables {
-        None | Some(Json::Null) => Map::new(),
+    let no_variables = Map::new();
+    let variables = match &req.variables {
+        None | Some(Json::Null) => &no_variables,
         Some(Json::Object(m)) => m,
         Some(_) => {
             return Err(Error::validation("variables must be an object").with_path("$.variables"));
@@ -203,7 +233,7 @@ pub fn plan(state: &AppState, session: &Session, req: GraphQLRequest) -> Result<
     let rs = state.role_schema(&session.role, session.backend_only);
     let doc = hge_schema::parse_query(query)?;
     crate::policies::check_allowlist(state, session, &doc, query)?;
-    let op = hge_schema::plan(&rs, &doc, req.operation_name.as_deref(), &variables)?;
+    let op = hge_schema::plan(&rs, &doc, req.operation_name.as_deref(), variables)?;
     if req.read_only && op.kind == OperationKind::Mutation {
         return Err(Error::new(
             Code::NotSupported,

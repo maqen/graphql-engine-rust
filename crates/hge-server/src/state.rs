@@ -19,7 +19,7 @@ use crate::load::{self, Prepared};
 
 /// A known role and whether the request uses backend-only permissions; `None` for every
 /// unknown role.
-type SchemaKey = Option<(RoleName, bool)>;
+pub(crate) type SchemaKey = Option<(RoleName, bool)>;
 
 /// Everything derived from one metadata version.
 pub struct AppState {
@@ -49,6 +49,8 @@ pub struct AppState {
     /// unknown roles, so request headers cannot grow this map.
     /// Known roles are keyed with whether the request uses backend-only permissions.
     schemas: RwLock<HashMap<SchemaKey, Arc<RoleSchema>>>,
+    /// Responses of introspection-only queries, per schema.
+    pub(crate) responses: crate::response_cache::ResponseCache,
 }
 
 fn known_roles(metadata: &Metadata) -> HashSet<RoleName> {
@@ -153,10 +155,21 @@ impl AppState {
             prepared,
             options,
             schemas: RwLock::new(schemas),
+            responses: Default::default(),
         };
         // Build the admin schema eagerly so the first request is fast and errors surface early.
         state.role_schema(&RoleName::admin(), false);
         state
+    }
+
+    /// Which cached schema a role uses: requests with equal keys see the same schema.
+    pub(crate) fn schema_key(&self, role: &RoleName, backend_only: bool) -> SchemaKey {
+        self.known_roles.contains(role).then(|| {
+            (
+                role.clone(),
+                backend_only && self.backend_only_roles.contains(role),
+            )
+        })
     }
 
     /// The schema for a role, built on first use and cached for this metadata version.
@@ -164,12 +177,7 @@ impl AppState {
     ///
     /// [`Session::backend_only`]: hge_core::Session::backend_only
     pub fn role_schema(&self, role: &RoleName, backend_only: bool) -> Arc<RoleSchema> {
-        let key = self.known_roles.contains(role).then(|| {
-            (
-                role.clone(),
-                backend_only && self.backend_only_roles.contains(role),
-            )
-        });
+        let key = self.schema_key(role, backend_only);
         if let Some(s) = self.schemas.read().expect("lock").get(&key) {
             return s.clone();
         }
