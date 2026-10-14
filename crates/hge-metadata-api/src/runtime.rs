@@ -63,11 +63,45 @@ impl Reload {
     }
 }
 
+/// Which remote schemas a rebuild must introspect again, besides those whose definition
+/// changed ([`Reload`] is about sources only).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum RemoteReload {
+    #[default]
+    Changed,
+    All,
+    Only(HashSet<String>),
+}
+
+impl RemoteReload {
+    pub fn includes(&self, name: &str) -> bool {
+        match self {
+            RemoteReload::Changed => false,
+            RemoteReload::All => true,
+            RemoteReload::Only(names) => names.contains(name),
+        }
+    }
+
+    pub fn merge(&mut self, other: RemoteReload) {
+        *self = match (std::mem::take(self), other) {
+            (RemoteReload::All, _) | (_, RemoteReload::All) => RemoteReload::All,
+            (RemoteReload::Only(mut a), RemoteReload::Only(b)) => {
+                a.extend(b);
+                RemoteReload::Only(a)
+            }
+            (RemoteReload::Only(a), RemoteReload::Changed)
+            | (RemoteReload::Changed, RemoteReload::Only(a)) => RemoteReload::Only(a),
+            (RemoteReload::Changed, RemoteReload::Changed) => RemoteReload::Changed,
+        };
+    }
+}
+
 /// Options for [`Runtime::prepare`].
 pub struct PrepareOptions<'a, P> {
     /// A previously prepared state to reuse pools and catalogs from (else the installed one).
     pub base: Option<&'a P>,
     pub reload: Reload,
+    pub remote_schemas: RemoteReload,
     /// Catalogs to use as-is instead of introspecting (e.g. read inside a `run_sql`
     /// transaction before it commits).
     pub catalogs: HashMap<String, SourceCatalog>,
@@ -78,6 +112,7 @@ impl<P> Default for PrepareOptions<'_, P> {
         PrepareOptions {
             base: None,
             reload: Reload::Changed,
+            remote_schemas: RemoteReload::Changed,
             catalogs: HashMap::new(),
         }
     }
@@ -122,6 +157,23 @@ pub trait Runtime: Send + Sync {
 
     /// The introspected catalog of a source of a prepared (or else the installed) state.
     fn catalog(&self, prepared: Option<&Self::Prepared>, name: &str) -> Option<Arc<SourceCatalog>>;
+
+    /// Validate a `remote_schemas[]` entry and (with `introspect`) introspect its server, as
+    /// `add_remote_schema` does before it touches the metadata (V2's `fetchRemoteSchema`):
+    /// failures are the command's error, not an inconsistency.
+    fn validate_remote_schema<'a>(
+        &'a self,
+        entry: &'a serde_json::Value,
+        introspect: bool,
+    ) -> impl Future<Output = Result<(), hge_core::Error>> + Send + 'a;
+
+    /// The response of a remote schema of a prepared (or else the installed) state to the
+    /// introspection query, verbatim; `None` unless the remote schema is consistent.
+    fn remote_introspection(
+        &self,
+        prepared: Option<&Self::Prepared>,
+        name: &str,
+    ) -> Option<Arc<str>>;
 
     /// The metadata database, where cron and one-off scheduled events live (none when
     /// metadata is kept in memory).

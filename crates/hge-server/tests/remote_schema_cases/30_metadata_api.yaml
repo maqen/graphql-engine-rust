@@ -1,0 +1,171 @@
+config:
+  fixture: remote_schemas_api
+cases:
+  - description: add a remote schema
+    url: /v1/metadata
+    query:
+      type: add_remote_schema
+      args:
+        name: extra
+        definition:
+          url: "{{REMOTE_URL}}/graphql"
+          customization: {root_fields_namespace: extra}
+        comment: added at runtime
+    response: {message: success}
+
+  - description: its fields are in the schema right away
+    query:
+      query: "{ extra { hello } }"
+    response:
+      data:
+        extra: {hello: world}
+
+  - description: a second remote schema of the same name
+    url: /v1/metadata
+    status: 400
+    query:
+      type: add_remote_schema
+      args:
+        name: extra
+        definition: {url: "{{REMOTE_URL}}/graphql"}
+    response: {"error": "remote schema with name \"extra\" already exists", "path": "$.args", "code": "already-exists"}
+
+  - description: a server that does not answer introspection
+    url: /v1/metadata
+    status: 400
+    query:
+      type: add_remote_schema
+      args:
+        name: broken
+        definition: {url: "{{REMOTE_URL}}/broken"}
+    response: {"error": "Error in $: expected ident at line 1 column 2", "path": "$.args", "code": "remote-schema-error"}
+
+  - description: url and url_from_env together
+    url: /v1/metadata
+    status: 400
+    query:
+      type: add_remote_schema
+      args:
+        name: both
+        definition: {url: "{{REMOTE_URL}}/graphql", url_from_env: REMOTE_GRAPHQL_URL}
+    response: {"error": "both `url` and `url_from_env` can't be present", "path": "$.args", "code": "invalid-params"}
+
+  - description: a remote schema whose root fields clash with another's
+    url: /v1/metadata
+    status: 400
+    query:
+      type: add_remote_schema
+      args:
+        name: clash
+        definition:
+          url: "{{REMOTE_URL}}/graphql"
+          customization: {root_fields_namespace: extra}
+    response:
+      error: "Inconsistent object: Duplicate remote field 'extra', Duplicate remote field 'extra'"
+      path: $.args
+      code: invalid-configuration
+      internal:
+        - name: remote_schema clash
+          type: remote_schema
+          reason: "Inconsistent object: Duplicate remote field 'extra', Duplicate remote field 'extra'"
+          definition:
+            name: clash
+            definition:
+              url: "{{REMOTE_URL}}/graphql"
+              customization: {root_fields_namespace: extra}
+
+  - description: the failed adds left nothing behind
+    url: /v1/metadata
+    query: {type: get_inconsistent_metadata, args: {}}
+    response: {"inconsistent_objects": [], "is_consistent": true}
+
+  - description: update the namespace
+    url: /v1/metadata
+    query:
+      type: update_remote_schema
+      args:
+        name: extra
+        definition:
+          url_from_env: REMOTE_GRAPHQL_URL
+          customization: {root_fields_namespace: extra2}
+    response: {message: success}
+
+  - description: the updated remote schema answers under its new namespace
+    query:
+      query: "{ extra2 { hello } }"
+    response:
+      data:
+        extra2: {hello: world}
+
+  - description: update a remote schema that does not exist
+    url: /v1/metadata
+    status: 400
+    query:
+      type: update_remote_schema
+      args:
+        name: nope
+        definition: {url: "{{REMOTE_URL}}/graphql"}
+    response: {"error": "remote schema with name \"nope\" doesn't exist", "path": "$.args", "code": "not-exists"}
+
+  - description: reload a remote schema
+    url: /v1/metadata
+    query: {type: reload_remote_schema, args: {name: extra}}
+    response: {message: success}
+
+  - description: reload a remote schema that does not exist
+    url: /v1/metadata
+    status: 400
+    query: {type: reload_remote_schema, args: {name: nope}}
+    response: {"error": "remote schema with name \"nope\" does not exist", "path": "$.args", "code": "not-exists"}
+
+  - description: introspect a remote schema that does not exist
+    url: /v1/metadata
+    status: 400
+    query: {type: introspect_remote_schema, args: {name: nope}}
+    response: {"error": "remote schema: \"nope\" not found", "path": "$.args", "code": "not-exists"}
+
+  - description: remote schema permissions are disabled
+    url: /v1/metadata
+    status: 400
+    query:
+      type: add_remote_schema_permissions
+      args:
+        remote_schema: extra
+        role: user
+        definition: {schema: "type Query { hello: String }"}
+    response: {"error": "remote schema permissions can only be added when remote schema permissions are enabled in the graphql-engine", "path": "$.args", "code": "constraint-violation"}
+
+  - description: drop a permission that does not exist
+    url: /v1/metadata
+    status: 400
+    query:
+      type: drop_remote_schema_permissions
+      args: {remote_schema: extra, role: user}
+    response: {"error": "permissions for role: \"user\" for remote schema:\"extra\" doesn't exist", "path": "$.args", "code": "not-exists"}
+
+  - description: remove the remote schema
+    url: /v1/metadata
+    query: {type: remove_remote_schema, args: {name: extra}}
+    response: {message: success}
+
+  - description: its fields are gone
+    query:
+      query: "{ extra2 { hello } }"
+    response: {"errors": [{"message": "field 'extra2' not found in type: 'query_root'", "extensions": {"path": "$.selectionSet.extra2", "code": "validation-failed"}}]}
+
+  - description: remove it again
+    url: /v1/metadata
+    status: 400
+    query: {type: remove_remote_schema, args: {name: extra}}
+    response: {"error": "no such remote schema", "path": "$.args", "code": "not-exists"}
+
+  - description: the legacy query API takes remote schema commands too
+    url: /v1/query
+    query:
+      type: add_remote_schema
+      args:
+        name: legacy
+        definition:
+          url: "{{REMOTE_URL}}/graphql"
+          customization: {root_fields_namespace: legacy}
+    response: {message: success}

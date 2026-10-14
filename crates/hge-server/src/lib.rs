@@ -20,7 +20,7 @@ pub mod ws;
 use std::sync::Arc;
 
 use hge_metadata::store::{MemoryStore, MetadataStore};
-use hge_metadata_api::{PgCatalog, Reload};
+use hge_metadata_api::{PgCatalog, Reload, RemoteReload};
 
 pub use config::ServerConfig;
 pub use state::{AppState, Engine};
@@ -59,7 +59,15 @@ pub async fn build_engine(config: ServerConfig) -> Result<Arc<Engine>, hge_core:
     if let Some(dir) = &config.migrations_dir {
         migrations::apply(dir, &metadata, &config).await?;
     }
-    let prepared = load::prepare(&metadata, &config, None, &Reload::All, Default::default()).await;
+    let prepared = load::prepare(
+        &metadata,
+        &config,
+        None,
+        &Reload::All,
+        &RemoteReload::All,
+        Default::default(),
+    )
+    .await;
     load::log_prepared(&prepared);
     let options = load::schema_options(&config);
     let action_log = match config.catalog_url() {

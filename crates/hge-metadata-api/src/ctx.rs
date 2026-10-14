@@ -15,7 +15,7 @@ use serde_json::Value;
 use tokio::sync::MutexGuard;
 
 use crate::response::{ApiError, ApiResult};
-use crate::runtime::{PrepareOptions, Reload, Runtime};
+use crate::runtime::{PrepareOptions, Reload, RemoteReload, Runtime};
 
 /// How a modifying command treats inconsistencies of the resulting metadata.
 #[derive(Debug, Clone)]
@@ -60,6 +60,8 @@ pub struct Ctx<'a, R: Runtime> {
     pub bump: bool,
     /// Sources to reconnect on the next check.
     pub reload: Reload,
+    /// Remote schemas to introspect again on the next check.
+    pub reload_remotes: RemoteReload,
     pub invalidations: Invalidations,
     pub warnings: Vec<Value>,
     /// Changes to stored cron events, applied after the metadata is committed.
@@ -74,6 +76,7 @@ pub struct Snapshot<P> {
     modified: bool,
     bump: bool,
     reload: Reload,
+    reload_remotes: RemoteReload,
     invalidations: Invalidations,
     warnings: usize,
     cron_changes: usize,
@@ -99,7 +102,12 @@ impl<'a, R: Runtime> Ctx<'a, R> {
         // Another instance changed the metadata since we installed ours: resolve it first so
         // "new" inconsistencies are judged against the right baseline.
         let (prepared, inconsistencies) = if resource_version != installed.resource_version {
-            let p = rt.prepare(&metadata, PrepareOptions::default()).await;
+            // Its notifications may not say which remote schemas it reloaded.
+            let options = PrepareOptions {
+                remote_schemas: RemoteReload::All,
+                ..PrepareOptions::default()
+            };
+            let p = rt.prepare(&metadata, options).await;
             let inc = rt.inconsistencies(&p).to_vec();
             (Some(p), inc)
         } else {
@@ -116,6 +124,7 @@ impl<'a, R: Runtime> Ctx<'a, R> {
             modified: false,
             bump: false,
             reload: Reload::Changed,
+            reload_remotes: RemoteReload::Changed,
             invalidations: Invalidations::default(),
             warnings: vec![],
             cron_changes: vec![],
@@ -130,6 +139,7 @@ impl<'a, R: Runtime> Ctx<'a, R> {
             modified: self.modified,
             bump: self.bump,
             reload: self.reload.clone(),
+            reload_remotes: self.reload_remotes.clone(),
             invalidations: self.invalidations.clone(),
             warnings: self.warnings.len(),
             cron_changes: self.cron_changes.len(),
@@ -143,6 +153,7 @@ impl<'a, R: Runtime> Ctx<'a, R> {
         self.modified = s.modified;
         self.bump = s.bump;
         self.reload = s.reload;
+        self.reload_remotes = s.reload_remotes;
         self.invalidations = s.invalidations;
         self.warnings.truncate(s.warnings);
         self.cron_changes.truncate(s.cron_changes);
@@ -161,6 +172,7 @@ impl<'a, R: Runtime> Ctx<'a, R> {
         self.modified = true;
         self.invalidations.metadata = true;
         let reload = std::mem::take(&mut self.reload);
+        let remote_schemas = std::mem::take(&mut self.reload_remotes);
         let prepared = self
             .rt
             .prepare(
@@ -168,6 +180,7 @@ impl<'a, R: Runtime> Ctx<'a, R> {
                 PrepareOptions {
                     base: self.prepared.as_ref(),
                     reload,
+                    remote_schemas,
                     catalogs,
                 },
             )
@@ -219,9 +232,22 @@ impl<'a, R: Runtime> Ctx<'a, R> {
 
     /// Re-resolve the unchanged metadata (reconnecting `reload`) and bump the resource
     /// version on commit, like `reload_metadata`.
-    pub async fn refresh(&mut self, reload: Reload) {
+    pub async fn refresh(&mut self, reload: Reload, remotes: RemoteReload) {
         self.reload.merge(reload);
+        self.reload_remotes.merge(remotes);
         let reload = std::mem::take(&mut self.reload);
+        let remote_schemas = std::mem::take(&mut self.reload_remotes);
+        match &remote_schemas {
+            RemoteReload::Only(names) => self
+                .invalidations
+                .remote_schemas
+                .extend(names.iter().cloned()),
+            RemoteReload::All => self
+                .invalidations
+                .remote_schemas
+                .extend(self.metadata.remote_schemas.iter().map(remote_name)),
+            RemoteReload::Changed => {}
+        }
         if let Reload::Sources(s) = &reload {
             self.invalidations.sources.extend(s.iter().cloned());
         }
@@ -233,6 +259,7 @@ impl<'a, R: Runtime> Ctx<'a, R> {
                 PrepareOptions {
                     base: self.prepared.as_ref(),
                     reload,
+                    remote_schemas,
                     catalogs: Default::default(),
                 },
             )
@@ -288,15 +315,22 @@ impl<'a, R: Runtime> Ctx<'a, R> {
             ));
         }
         let prepared = match self.prepared.take() {
-            Some(p) if self.reload == Reload::Changed => p,
+            Some(p)
+                if self.reload == Reload::Changed
+                    && self.reload_remotes == RemoteReload::Changed =>
+            {
+                p
+            }
             base => {
                 let reload = std::mem::take(&mut self.reload);
+                let remote_schemas = std::mem::take(&mut self.reload_remotes);
                 self.rt
                     .prepare(
                         &self.metadata,
                         PrepareOptions {
                             base: base.as_ref(),
                             reload,
+                            remote_schemas,
                             catalogs: Default::default(),
                         },
                     )
@@ -333,6 +367,15 @@ impl<'a, R: Runtime> Ctx<'a, R> {
         }
         Ok(version)
     }
+}
+
+/// A `remote_schemas[]` entry's name.
+fn remote_name(entry: &Value) -> String {
+    entry
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned()
 }
 
 fn objects_json(objects: &[&InconsistentObject]) -> Value {

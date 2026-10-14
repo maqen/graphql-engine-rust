@@ -12,7 +12,7 @@ use crate::response::{
     ApiError, ApiResult, already_exists, consistency, not_exists, not_supported, parse_failed,
     success,
 };
-use crate::runtime::{Reload, Runtime};
+use crate::runtime::{Reload, RemoteReload, Runtime};
 
 /// Cron triggers marked `include_in_metadata: false` live in metadata but are not exported.
 fn excluded_cron(trigger: &Value) -> bool {
@@ -268,21 +268,26 @@ pub async fn reload_metadata<R: Runtime>(ctx: &mut Ctx<'_, R>, args: &Value) -> 
             Reload::Sources(names.into_iter().collect())
         }
     };
-    if let Some(names) = reload_selector(args, "reload_remote_schemas", true)? {
-        for n in &names {
-            let known = ctx
-                .metadata
-                .remote_schemas
-                .iter()
-                .any(|r| r.get("name").and_then(Value::as_str) == Some(n));
-            if !known {
-                return Err(not_exists(format!(
-                    "Remote schema with name \"{n}\" not found in metadata"
-                )));
+    let remotes = match reload_selector(args, "reload_remote_schemas", true)? {
+        None => RemoteReload::Changed,
+        Some(names) if names.is_empty() => RemoteReload::All,
+        Some(names) => {
+            for n in &names {
+                let known = ctx
+                    .metadata
+                    .remote_schemas
+                    .iter()
+                    .any(|r| r.get("name").and_then(Value::as_str) == Some(n));
+                if !known {
+                    return Err(not_exists(format!(
+                        "Remote schema with name \"{n}\" not found in metadata"
+                    )));
+                }
             }
+            RemoteReload::Only(names.into_iter().collect())
         }
-    }
-    ctx.refresh(reload).await;
+    };
+    ctx.refresh(reload, remotes).await;
     let mut out = Map::new();
     if !ctx.inconsistencies.is_empty() {
         out.insert(
@@ -328,6 +333,7 @@ fn drop_object(md: &mut Metadata, obj: &InconsistentObject) -> bool {
                 None => false,
             }
         }
+        "remote_schema" => super::remote_schemas::drop_inconsistent(md, obj),
         "table" => {
             let (Some(source), Ok(table)) = (
                 source_of(&obj.name),

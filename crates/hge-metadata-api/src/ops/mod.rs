@@ -10,6 +10,7 @@ pub mod functions_events;
 pub mod metadata;
 pub mod objects;
 pub mod relationships_permissions;
+pub mod remote_schemas;
 pub mod scheduled;
 pub mod sources_tables;
 
@@ -208,6 +209,17 @@ pub async fn run_agnostic<R: Runtime>(ctx: &mut Ctx<'_, R>, cmd: &Command) -> Ap
         "create_action_permission" => actions::create_action_permission(ctx, args).await,
         "drop_action_permission" => actions::drop_action_permission(ctx, args).await,
         "set_custom_types" => actions::set_custom_types(ctx, args).await,
+        "add_remote_schema" => remote_schemas::add_remote_schema(ctx, args).await,
+        "update_remote_schema" => remote_schemas::update_remote_schema(ctx, args).await,
+        "remove_remote_schema" => remote_schemas::remove_remote_schema(ctx, args).await,
+        "reload_remote_schema" => remote_schemas::reload_remote_schema(ctx, args).await,
+        "introspect_remote_schema" => remote_schemas::introspect_remote_schema(ctx, args).await,
+        "add_remote_schema_permissions" => {
+            remote_schemas::add_remote_schema_permissions(ctx, args).await
+        }
+        "drop_remote_schema_permissions" => {
+            remote_schemas::drop_remote_schema_permissions(ctx, args).await
+        }
         "create_cron_trigger" => scheduled::create_cron_trigger(ctx, args).await,
         "delete_cron_trigger" => scheduled::delete_cron_trigger(ctx, args).await,
         "get_cron_triggers" => scheduled::get_cron_triggers(ctx),

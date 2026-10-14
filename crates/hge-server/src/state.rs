@@ -285,6 +285,7 @@ impl Runtime for Engine {
             &self.config,
             Some(base),
             &options.reload,
+            &options.remote_schemas,
             options.catalogs,
         )
         .await
@@ -329,6 +330,22 @@ impl Runtime for Engine {
                 "Error executing cleanup actions after removing source '{}'. Consider cleaning up tables in hdb_catalog schema manually.",
                 source.name
             );
+        }
+    }
+
+    fn validate_remote_schema<'a>(
+        &'a self,
+        entry: &'a serde_json::Value,
+        introspect: bool,
+    ) -> impl Future<Output = Result<(), hge_core::Error>> + Send + 'a {
+        crate::remote::validate(entry, introspect, &self.config)
+    }
+
+    fn remote_introspection(&self, prepared: Option<&Prepared>, name: &str) -> Option<Arc<str>> {
+        let remote = |p: &Prepared| p.remotes.get(name).map(|r| r.raw_introspection.clone());
+        match prepared {
+            Some(p) => remote(p),
+            None => remote(&self.state.load().prepared),
         }
     }
 
