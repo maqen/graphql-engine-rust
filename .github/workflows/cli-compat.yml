@@ -4,6 +4,9 @@ name: CLI compatibility
 # full project lifecycle against Hasura v2.51.0-ce and against our engine, and diffs every
 # step (cli-compat/README.md). Fails on a step that differs from Hasura and is not listed in
 # cli-compat/expected-failures.txt, and on a listed step that now matches.
+#
+# The rust-cli job runs the same lifecycle with our own CLI (crates/hge-cli) and with the
+# official one, both against our engine, and diffs them (cli-compat/expected-failures-rust-cli.txt).
 
 on:
   push:
@@ -64,3 +67,43 @@ jobs:
         with:
           name: cli-compat-results
           path: cli-compat-results/
+
+  rust-cli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the engine and our CLI
+        run: cargo build --locked -p graphql-engine -p hge-cli
+      - name: Extract the official CLI
+        run: |
+          docker pull -q mirror.gcr.io/hasura/graphql-engine:v2.51.0-ce.cli-migrations-v3
+          id=$(docker create mirror.gcr.io/hasura/graphql-engine:v2.51.0-ce.cli-migrations-v3)
+          docker cp "$id:/bin/hasura-cli" ./hasura
+          docker rm "$id"
+          ./hasura version --skip-update-check
+      - name: Run both CLIs against our engine
+        run: >-
+          python3 cli-compat/run.py --hasura-cli ./hasura
+          --rust-cli target/debug/hasura
+          --rust-bin target/debug/graphql-engine
+          --pg postgres://postgres:postgres@localhost:5432/postgres
+          --out rust-cli-results
+      - name: Publish report
+        if: always()
+        run: test -f rust-cli-results/report.md && head -c 900000 rust-cli-results/report.md >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rust-cli-results
+          path: rust-cli-results/

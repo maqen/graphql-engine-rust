@@ -60,3 +60,21 @@ bundled `cli-ext` (which turns `actions.graphql` into metadata) with "exit statu
 Step ids that still differ. CI fails on a differing step that is not listed (a regression) and
 on a listed step that now matches: delete its line in the same PR, or rewrite the list from a
 full run with `--write-expected-failures`.
+
+## Our CLI (`--rust-cli`)
+
+`crates/hge-cli` builds our own `hasura` binary. `--rust-cli target/debug/hasura` runs the
+`cli/…` and `boot/…` scenarios twice against our engine, once with the official CLI and once
+with ours, plus the `rust-cli/…` steps (flag and argument errors, aliases, `init`, `metadata
+diff` of local edits and its `--type` variants, `seed apply --all-databases`, `migrate delete
+--all`). A step matches when the exit code, the output, the project files and the server state
+afterwards (metadata, inconsistencies and the CLI's catalog state) are the same. The HTTP
+traffic is not compared: our CLI may call the server differently.
+
+The official CLI's first-run notice about usage statistics is dropped from both outputs, since
+ours collects none. Known differences are listed in `expected-failures-rust-cli.txt`.
+
+```sh
+cargo build -p graphql-engine -p hge-cli
+cli-compat/run.py --hasura-cli /tmp/hasura --rust-cli target/debug/hasura
+```
