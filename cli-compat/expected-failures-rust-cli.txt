@@ -1,0 +1,7 @@
+# Steps where our CLI (crates/hge-cli) still differs from the official hasura CLI, both run
+# against our engine (run.py --rust-cli). CI fails on a differing step that is not listed and
+# on a listed step that now matches.
+
+# `metadata diff --type yaml`: go-yaml re-emits each node in its source style (for example
+# flow style for action fields read from SDL); we print plain block style.
+rust-cli/metadata-diff-type-yaml

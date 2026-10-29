@@ -187,6 +187,7 @@ class Engine:
     proc: subprocess.Popen | None = None
     container: str | None = None
     log_path: Path | None = None
+    cli: str | None = None  # the CLI to drive this engine with (default: --hasura-cli)
 
     def start(self, db_url: str, port: int, extra_env: dict[str, str], mounts: dict[str, str],
               cli_migrations: bool = False) -> None:
@@ -324,6 +325,8 @@ class Ctx:
     pg_url: str
     db_url: str
     created: list[str] = field(default_factory=list)  # migration versions the CLI created
+    # --rust-cli mode: record the server state after each step instead of the HTTP exchanges.
+    state_port: int | None = None
 
     def env(self) -> dict[str, str]:
         env = {
@@ -475,26 +478,54 @@ def run_step(ctx: Ctx, step: Step, recorder: Recorder, norm: Normaliser) -> dict
             out["output"] = []
     if step.after:
         step.after(ctx)
-    out["http"] = [
-        {
-            "request": f"{e.method} {e.path}",
-            "body": norm.value(e.request),
-            "status": e.status,
-            "response": norm.value(e.response),
-        }
-        for e in recorder.take()
-    ]
+    if ctx.state_port:
+        recorder.take()
+        out["state"] = server_state(ctx.state_port, norm)
+    else:
+        out["http"] = [
+            {
+                "request": f"{e.method} {e.path}",
+                "body": norm.value(e.request),
+                "status": e.status,
+                "response": norm.value(e.response),
+            }
+            for e in recorder.take()
+        ]
     for rel in step.snapshot:
         out.setdefault("files", {}).update(snapshot(ctx.project, rel, norm))
     return out
 
 
+TELEMETRY_NOTICE = "Help us improve Hasura! The cli collects anonymized usage stats"
 PG_DUMP_NOISE = re.compile(r"^(\\(un)?restrict |SET |SELECT pg_catalog\.set_config|--)")
 
 
 def sql_text(s: str) -> str:
     """pg_dump output without what depends on the pg_dump version (header, SET lines)."""
     return "\n".join(l for l in s.splitlines() if l.strip() and not PG_DUMP_NOISE.match(l))
+
+
+def server_state(port: int, norm: Normaliser) -> dict:
+    """What a CLI step left on the server: metadata, inconsistencies and the CLI's state."""
+
+    def call(body: dict) -> object:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/v1/metadata", json.dumps(body).encode(),
+            {"content-type": "application/json", "x-hasura-admin-secret": ADMIN_SECRET})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return {"status": e.code, "body": json.loads(e.read() or b"null")}
+
+    metadata = call({"type": "export_metadata", "version": 2, "args": {}})
+    if isinstance(metadata, dict):
+        metadata.pop("resource_version", None)
+    return {
+        "metadata": norm.value(metadata),
+        "inconsistent": norm.value(call({"type": "get_inconsistent_metadata", "args": {}})),
+        "catalog_state": norm.value(call({"type": "get_catalog_state", "args": {}})),
+    }
 
 
 def run_step_safely(ctx: Ctx, step: Step, recorder: Recorder, norm: Normaliser) -> dict:
@@ -519,24 +550,96 @@ def snapshot(project: Path, rel: str, norm: Normaliser) -> dict[str, str]:
     return files
 
 
-def run_cli_scenario(engine: Engine, args, work: Path) -> dict[str, dict]:
-    project = work / engine.name / "project"
+def edit(path: str, old: str, new: str) -> Callable[[Ctx], None]:
+    def run(ctx: Ctx) -> None:
+        f = ctx.project / path
+        text = f.read_text()
+        assert old in text, f"{old!r} not in {path}"
+        f.write_text(text.replace(old, new, 1))
+    return run
+
+
+def write(path: str, text: str) -> Callable[[Ctx], None]:
+    def run(ctx: Ctx) -> None:
+        target = ctx.project / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
+    return run
+
+
+# --- Extra CLI steps for --rust-cli mode: our CLI against the official one on our engine
+# (flags, errors, init, diffs of local edits). Not run against V2.
+
+SCENARIO_RUST_CLI: list[Step] = [
+    Step("metadata-ic-list-ls-alias", ["md", "ic", "ls"]),
+    Step("migrate-status-no-database", ["migrate", "status"]),
+    Step("migrate-status-unknown-database", ["migrate", "status", "--database-name", "nope"]),
+    Step("migrate-status-unknown-flag", ["migrate", "status", "--bogus", *DB]),
+    Step("migrate-squash-no-from", ["migrate", "squash", *DB]),
+    Step("migrate-create-no-name", ["migrate", "create", *DB]),
+    Step("migrate-delete-no-flags", ["migrate", "delete", *DB]),
+    Step("migrate-apply-dry-run", ["migrate", "apply", "--dry-run", *DB]),
+    Step("migrate-apply-all", ["migrate", "apply", "--all-databases"]),
+    Step("metadata-apply", ["metadata", "apply"]),
+    Step("metadata-apply-dry-run", ["metadata", "apply", "--dry-run"]),
+    Step("metadata-apply-dry-run-yaml", ["metadata", "apply", "--dry-run", "-o", "yaml"]),
+    Step("metadata-export-json", ["metadata", "export", "-o", "json"]),
+    Step("metadata-export-yaml", ["metadata", "export", "--output", "yaml"]),
+    Step("metadata-ic-list-json", ["metadata", "inconsistencies", "list", "-o", "json"]),
+    Step("metadata-diff-unchanged", ["metadata", "diff"]),
+    Step(
+        "metadata-diff-local-edits",
+        ["metadata", "diff"],
+        before=lambda c: [
+            edit("metadata/databases/default/tables/public_album.yaml", "limit: 500", "limit: 50")(c),
+            edit("metadata/databases/default/tables/public_genre.yaml", "table:",
+                 "configuration:\n  custom_name: Genre\ntable:")(c),
+            edit("metadata/actions.graphql", "currency: String!", "currency: String!\n  note: String")(c),
+            edit("metadata/query_collections.yaml", "album_id\n", "album_id\n                  released_on\n")(c),
+        ],
+    ),
+    Step("metadata-diff-type-json", ["metadata", "diff", "--type", "json"]),
+    Step("metadata-diff-type-yaml", ["metadata", "diff", "--type", "yaml"]),
+    Step("metadata-diff-type-unified-json", ["metadata", "diff", "--type", "unified-json"]),
+    Step("metadata-diff-type-unknown", ["metadata", "diff", "--type", "nope"]),
+    Step("init", ["init", "newproj"], snapshot=["newproj"]),
+    Step("init-existing-directory", ["init", "newproj"]),
+    Step("metadata-diff-two-directories", ["metadata", "diff", "metadata", "newproj/metadata"]),
+    Step("metadata-diff-not-a-directory", ["metadata", "diff", "config.yaml"]),
+    Step("init-from-server",
+         lambda c: ["init", "fromserver", "--endpoint", c.endpoint, "--admin-secret", ADMIN_SECRET],
+         snapshot=["fromserver/metadata", "fromserver/config.yaml"]),
+    Step("seed-apply-all-databases", ["seed", "apply", "--all-databases"],
+         before=write("seeds/default/1_genres.sql",
+                      "INSERT INTO public.genre (genre_id, name) VALUES (950, 'All dbs');\n")),
+    Step("migrate-delete-all", ["migrate", "delete", "--all", "--force", *DB],
+         snapshot=["migrations"]),
+    Step("migrate-status-after-delete-all", ["migrate", "status", *DB]),
+    Step("metadata-reset-alias", ["metadata", "reset"]),
+]
+
+
+def run_cli_scenario(engine: Engine, args, work: Path, steps: list[Step] | None = None,
+                     prefix: str = "cli") -> dict[str, dict]:
+    project = work / (engine.name if prefix == "cli" else f"{engine.name}-{prefix}") / "project"
     shutil.copytree(PROJECT, project)
     # The CLI reads endpoint and secret from the environment (no edits to the copy needed).
     (project.parent / "home").mkdir()
-    db_url = fresh_db(args.pg, f"cli_compat_{engine.name}")
+    db_url = fresh_db(args.pg, f"cli_compat_{engine.name}" if prefix == "cli"
+                      else f"cli_compat_{prefix.replace('-', '_')}_{engine.name}")
     port = free_port()
     engine.start(db_url, port, {}, {})
     recorder = Recorder(port)
     proxy, proxy_port = start_proxy(recorder)
-    ctx = Ctx(args.hasura_cli, project, f"http://127.0.0.1:{proxy_port}", args.pg, db_url)
+    ctx = Ctx(engine.cli or args.hasura_cli, project, f"http://127.0.0.1:{proxy_port}", args.pg,
+              db_url, state_port=port if args.rust_cli else None)
     norm = Normaliser({"1700000000000", "1700000000001"}, ctx.endpoint)
     results = {}
     try:
-        for step in SCENARIO_CLI:
+        for step in SCENARIO_CLI if steps is None else steps:
             if args.filter and args.filter not in step.id:
                 continue
-            results[f"cli/{step.id}"] = run_step_safely(ctx, step, recorder, norm)
+            results[f"{prefix}/{step.id}"] = run_step_safely(ctx, step, recorder, norm)
     finally:
         proxy.shutdown()
         engine.stop()
@@ -568,7 +671,8 @@ def run_boot_scenario(engine: Engine, args, work: Path) -> dict[str, dict]:
     engine.start(db_url, port, env, mounts, cli_migrations=True)
     recorder = Recorder(port)
     proxy, proxy_port = start_proxy(recorder)
-    ctx = Ctx(args.hasura_cli, project, f"http://127.0.0.1:{proxy_port}", args.pg, db_url)
+    ctx = Ctx(engine.cli or args.hasura_cli, project, f"http://127.0.0.1:{proxy_port}", args.pg,
+              db_url, state_port=port if args.rust_cli else None)
     norm = Normaliser({"1700000000000", "1700000000001"}, ctx.endpoint)
     results = {}
     try:
@@ -596,8 +700,8 @@ def compare(a: dict, b: dict) -> list[str]:
     return list(difflib.unified_diff(pretty(a), pretty(b), "hasura", "rust", lineterm="", n=2))
 
 
-def load_expected() -> list[str]:
-    path = ROOT / "expected-failures.txt"
+def load_expected(name: str) -> list[str]:
+    path = ROOT / name
     if not path.exists():
         return []
     return [l.split("#", 1)[0].strip() for l in path.read_text().splitlines()
@@ -615,6 +719,8 @@ def main() -> int:
     ap.add_argument("--scenario", choices=["cli", "boot", "console", "all"], default="all")
     ap.add_argument("--chromium", help="Chromium for the console scenario (default: Playwright's)")
     ap.add_argument("--screenshots", action="store_true", help="save console page screenshots")
+    ap.add_argument("--rust-cli", help="compare our CLI (this binary) with the official one, "
+                    "both against our engine; uses expected-failures-rust-cli.txt")
     ap.add_argument("--hasura-results", help="reuse a hasura results JSON instead of running V2")
     ap.add_argument("--out", default="cli-compat-results", help="directory for results/report")
     ap.add_argument("--write-expected-failures", action="store_true")
@@ -624,17 +730,30 @@ def main() -> int:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="cli-compat-"))
-    engines = [Engine("rust", "rust", rust_bin=str(Path(args.rust_bin).resolve()))]
-    if not args.hasura_results:
-        engines.insert(0, Engine("hasura", "hasura"))
+    rust_bin = str(Path(args.rust_bin).resolve())
+    if args.rust_cli:
+        # Our CLI against the official one, both driving our engine. "hasura" is the official
+        # CLI's run here.
+        args.rust_cli = str(Path(args.rust_cli).resolve())
+        if args.scenario in ("console", "all"):
+            args.scenario = "cli+boot"
+        engines = [Engine("rust", "rust", rust_bin=rust_bin, cli=args.rust_cli)]
+        if not args.hasura_results:
+            engines.insert(0, Engine("hasura", "rust", rust_bin=rust_bin, cli=args.hasura_cli))
+    else:
+        engines = [Engine("rust", "rust", rust_bin=rust_bin)]
+        if not args.hasura_results:
+            engines.insert(0, Engine("hasura", "hasura"))
     results: dict[str, dict[str, dict]] = {}
     for engine in engines:
         r: dict[str, dict] = {}
         try:
-            if args.scenario in ("cli", "all"):
+            if args.scenario in ("cli", "cli+boot", "all"):
                 r.update(run_cli_scenario(engine, args, work))
-            if args.scenario in ("boot", "all"):
+            if args.scenario in ("boot", "cli+boot", "all"):
                 r.update(run_boot_scenario(engine, args, work))
+            if args.rust_cli and args.scenario in ("cli", "cli+boot"):
+                r.update(run_cli_scenario(engine, args, work, SCENARIO_RUST_CLI, "rust-cli"))
             if args.scenario in ("console", "all"):
                 import console  # needs playwright
 
@@ -651,10 +770,19 @@ def main() -> int:
         results["hasura"] = json.loads(Path(args.hasura_results).read_text())
 
     # Each engine's project copy lives in its own directory.
-    project_re = re.compile(r"/[^\s\"']*/(hasura|rust)(-boot)?/project")
+    project_re = re.compile(r"/[^\s\"']*/(hasura|rust)(-boot|-rust-cli)?/project")
     results = {k: json.loads(project_re.sub("<project>", json.dumps(v))) for k, v in results.items()}
+    if args.rust_cli:
+        # The official CLI announces its usage stats on first run; ours collects none.
+        for steps in results.values():
+            for step in steps.values():
+                if isinstance(step.get("output"), list):
+                    step["output"] = [l for l in step["output"] if not (
+                        isinstance(l, dict) and TELEMETRY_NOTICE in str(l.get("msg", "")))]
     step_ids = list(dict.fromkeys([*results["hasura"], *results["rust"]]))
-    expected = set(load_expected())
+    expected_file = "expected-failures-rust-cli.txt" if args.rust_cli else "expected-failures.txt"
+    expected = set(load_expected(expected_file))
+    reference = "the official hasura CLI" if args.rust_cli else "Hasura v2.51.0-ce"
     failing, report = [], ["# Hasura CLI compatibility", ""]
     rows = []
     for sid in step_ids:
@@ -670,7 +798,7 @@ def main() -> int:
             report += [f"## {sid}", "", "```diff", *diff[:200], "```", ""]
             print(f"--- {sid}", *diff[:60], sep="\n")  # visible in CI logs too
     passed = sum(ok for _, ok in rows)
-    summary = [f"{passed} of {len(rows)} steps match Hasura v2.51.0-ce.", "",
+    summary = [f"{passed} of {len(rows)} steps match {reference}.", "",
                "| step | result |", "|---|---|"]
     summary += [f"| {sid} | {'✅' if ok else '❌'} |" for sid, ok in rows]
     report[2:2] = summary + [""]
@@ -678,16 +806,16 @@ def main() -> int:
     print("\n".join(summary))
 
     if args.write_expected_failures:
-        (ROOT / "expected-failures.txt").write_text(
+        (ROOT / expected_file).write_text(
             "# Steps whose outcome still differs from Hasura (see README). Only ever shrinks.\n"
             + "".join(f"{s}\n" for s in failing))
         return 0
     regressions = [s for s in failing if s not in expected]
     fixed = [s for s in expected if s in step_ids and s not in failing]
     for s in regressions:
-        print(f"REGRESSION: {s} differs from Hasura (not in expected-failures.txt)")
+        print(f"REGRESSION: {s} differs from {reference} (not in {expected_file})")
     for s in fixed:
-        print(f"NOW PASSING: {s}; delete it from cli-compat/expected-failures.txt")
+        print(f"NOW PASSING: {s}; delete it from cli-compat/{expected_file}")
     print(f"report: {out / 'report.md'}")
     return 1 if regressions or fixed else 0
 
